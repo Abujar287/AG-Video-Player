@@ -6,6 +6,9 @@
     <files-path
         name="apk_updates_files"
         path="updates/" />
+    <files-path
+        name="preview_videos"
+        path="preview_videos/" />
     <external-files-path
         name="external_updates"
         path="updates/" />

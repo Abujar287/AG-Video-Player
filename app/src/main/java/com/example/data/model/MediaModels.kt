@@ -18,6 +18,7 @@ data class VideoItem(
     val displayName: String,
     val bucketId: Long,
     val folderName: String,
+    val relativePath: String = "",
     val durationMs: Long,
     val sizeBytes: Long,
     val width: Int,

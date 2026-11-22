@@ -1,6 +1,7 @@
 package com.example
 
 import android.Manifest
+import android.app.Activity
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
@@ -11,6 +12,7 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.activity.result.IntentSenderRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -20,12 +22,14 @@ import androidx.compose.runtime.setValue
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.example.data.model.VideoItem
 import com.example.player.PlayerActivity
 import com.example.player.PlaylistEntry
 import com.example.ui.MainViewModel
 import com.example.ui.components.UpdateCheckDialog
 import com.example.ui.screens.VeloMainScreen
 import com.example.ui.theme.VeloPlayTheme
+import com.example.util.PreviewEnvironment
 import java.io.File
 
 class MainActivity : ComponentActivity() {
@@ -46,12 +50,15 @@ class MainActivity : ComponentActivity() {
                 }
             }
 
+            val isPreviewMode = remember { PreviewEnvironment.isEmulator() }
+
             var hasStoragePermission by remember {
                 mutableStateOf(
                     ContextCompat.checkSelfPermission(this, storagePermission) ==
                         PackageManager.PERMISSION_GRANTED
                 )
             }
+            val canBrowseLibrary = hasStoragePermission || isPreviewMode
 
             val permissionLauncher = rememberLauncherForActivityResult(
                 contract = ActivityResultContracts.RequestMultiplePermissions()
@@ -62,6 +69,21 @@ class MainActivity : ComponentActivity() {
                 hasStoragePermission = granted
                 if (granted) {
                     viewModel.refreshLibrary()
+                }
+            }
+
+            val mediaWritePermissionLauncher = rememberLauncherForActivityResult(
+                contract = ActivityResultContracts.StartIntentSenderForResult()
+            ) { result ->
+                viewModel.onPermissionRequestResult(result.resultCode == Activity.RESULT_OK)
+            }
+
+            val pendingMediaRequest = uiState.pendingPermissionRequest
+            LaunchedEffect(pendingMediaRequest) {
+                if (pendingMediaRequest != null) {
+                    mediaWritePermissionLauncher.launch(
+                        IntentSenderRequest.Builder(pendingMediaRequest.intentSender).build()
+                    )
                 }
             }
 
@@ -90,8 +112,8 @@ class MainActivity : ComponentActivity() {
                 }
             }
 
-            LaunchedEffect(hasStoragePermission) {
-                if (hasStoragePermission) {
+            LaunchedEffect(canBrowseLibrary, hasStoragePermission) {
+                if (canBrowseLibrary) {
                     viewModel.refreshLibrary()
                 } else {
                     val perms = buildList {
@@ -123,18 +145,32 @@ class MainActivity : ComponentActivity() {
                 }
             }
 
+            fun shareVideo(video: VideoItem) {
+                val shareIntent = Intent(Intent.ACTION_SEND).apply {
+                    type = video.mimeType.ifBlank { "video/*" }
+                    putExtra(Intent.EXTRA_STREAM, Uri.parse(video.uriString))
+                    putExtra(Intent.EXTRA_SUBJECT, video.title)
+                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                }
+                startActivity(Intent.createChooser(shareIntent, "Share ${video.title}"))
+            }
+
             VeloPlayTheme(darkTheme = uiState.preferences.isDarkMode) {
                 VeloMainScreen(
                     uiState = uiState,
-                    hasStoragePermission = hasStoragePermission,
+                    hasStoragePermission = canBrowseLibrary,
                     onRequestPermission = { requestStorageAndNotifyPermissions() },
                     onOpenSingleFile = { singleVideoLauncher.launch(arrayOf("video/*")) },
                     onRefresh = { viewModel.refreshLibrary() },
                     onToggleTheme = { viewModel.toggleDarkMode() },
-                    onCycleSort = { viewModel.cycleSortOption() },
+                    onToggleGridView = { viewModel.toggleGridView() },
+                    onApplySort = { field, dir -> viewModel.setSortOption(field, dir) },
                     onOpenUpdateCheck = { viewModel.openUpdateSheet() },
                     onSearchQueryChange = { viewModel.setSearchQuery(it) },
                     onFolderClick = { folder -> viewModel.openFolder(folder.bucketId) },
+                    onOpenFavorites = { viewModel.openFavorites() },
+                    onOpenPlaylist = { name -> viewModel.openPlaylist(name) },
+                    onDeletePlaylist = { name -> viewModel.deletePlaylist(name) },
                     onBackToFolders = { viewModel.navigateBackToFolders() },
                     onVideoClick = { video, playlist ->
                         val entries = playlist.map { PlaylistEntry(it.uriString, it.title) }
@@ -147,7 +183,71 @@ class MainActivity : ComponentActivity() {
                             )
                         )
                     },
+                    onResumeLastPlayed = {
+                        val lastEntry = uiState.lastHistoryEntry
+                        if (lastEntry != null) {
+                            val matchingVideo = uiState.allVideos.firstOrNull {
+                                it.uriString == lastEntry.videoUri
+                            }
+                            if (matchingVideo != null) {
+                                val folderList = uiState.videosByFolder[matchingVideo.bucketId].orEmpty()
+                                val playlist = folderList.ifEmpty { listOf(matchingVideo) }
+                                val entries = playlist.map { PlaylistEntry(it.uriString, it.title) }
+                                val idx = playlist.indexOfFirst {
+                                    it.uriString == matchingVideo.uriString
+                                }.coerceAtLeast(0)
+                                startActivity(
+                                    PlayerActivity.createPlaylistIntent(
+                                        context = this,
+                                        playlist = entries,
+                                        startIndex = idx
+                                    )
+                                )
+                            } else {
+                                startActivity(
+                                    PlayerActivity.createIntent(
+                                        context = this,
+                                        videoUri = lastEntry.videoUri,
+                                        title = lastEntry.title.ifBlank { "Video" }
+                                    )
+                                )
+                            }
+                        } else {
+                            val firstVideo = uiState.allVideos.firstOrNull()
+                            if (firstVideo != null) {
+                                val folderList = uiState.videosByFolder[firstVideo.bucketId].orEmpty()
+                                val playlist = folderList.ifEmpty { listOf(firstVideo) }
+                                val entries = playlist.map { PlaylistEntry(it.uriString, it.title) }
+                                val idx = playlist.indexOfFirst {
+                                    it.uriString == firstVideo.uriString
+                                }.coerceAtLeast(0)
+                                startActivity(
+                                    PlayerActivity.createPlaylistIntent(
+                                        context = this,
+                                        playlist = entries,
+                                        startIndex = idx
+                                    )
+                                )
+                            }
+                        }
+                    },
+                    onStartSelection = { uri -> viewModel.startVideoSelection(uri) },
+                    onToggleSelection = { uri -> viewModel.toggleVideoSelection(uri) },
+                    onSelectAll = { viewModel.selectAllCurrentVideos() },
+                    onClearSelection = { viewModel.clearSelection() },
+                    onToggleFavorite = { video -> viewModel.toggleFavorite(video) },
+                    onAddToPlaylist = { playlistName, video ->
+                        viewModel.addVideoToPlaylist(playlistName, video)
+                    },
+                    onRemoveFromPlaylist = { playlistName, video ->
+                        viewModel.removeVideoFromPlaylist(playlistName, video)
+                    },
+                    onShareVideo = { video -> shareVideo(video) },
+                    onRenameVideo = { video, newName -> viewModel.renameVideo(video, newName) },
+                    onMoveVideos = { videos, targetPath -> viewModel.moveVideos(videos, targetPath) },
+                    onDeleteVideos = { videos -> viewModel.deleteVideos(videos) },
                     onClearResume = { uri -> viewModel.clearResumePosition(uri) },
+                    onClearActionMessage = { viewModel.clearActionMessage() },
                     loadThumbnail = { id, uri -> viewModel.loadThumbnail(id, uri) }
                 )
 

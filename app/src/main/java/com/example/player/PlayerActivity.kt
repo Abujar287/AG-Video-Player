@@ -23,6 +23,7 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.annotation.OptIn
+import androidx.annotation.RequiresApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
@@ -247,8 +248,22 @@ class PlayerActivity : ComponentActivity() {
 
                     override fun onPlaybackStateChanged(playbackState: Int) {
                         if (playbackState == Player.STATE_READY) {
-                            durationMs = activePlayer.duration.coerceAtLeast(0L)
+                            val dur = activePlayer.duration.coerceAtLeast(0L)
+                            durationMs = dur
                             updatePipParams(activePlayer)
+                            val uriNow = activeUri.orEmpty()
+                            if (uriNow.isNotBlank() && dur > 0L) {
+                                scope.launch {
+                                    playbackRepository.savePlaybackState(
+                                        videoUri = uriNow,
+                                        title = activeTitle,
+                                        positionMs = activePlayer.currentPosition.coerceAtLeast(0L),
+                                        durationMs = dur,
+                                        playbackSpeed = playbackSpeed,
+                                        useSoftwareDecoder = useSoftwareDecoder
+                                    )
+                                }
+                            }
                         }
                     }
                 }
@@ -483,13 +498,15 @@ class PlayerActivity : ComponentActivity() {
                         onVolumeChange = { nextPercent ->
                             PlayerSessionManager.setVolumeWithBoost(this@PlayerActivity, nextPercent)
                         },
-                        onDoubleTapSeek = { isRight ->
-                            val delta = if (isRight) 10_000L else -10_000L
+                        onDoubleTapPlayPause = {
                             val p = player ?: return@PlayerOverlay
-                            val next = (p.currentPosition + delta).coerceIn(0L, durationMs.coerceAtLeast(0L))
-                            p.seekTo(next)
-                            currentPosMs = next
-                            doubleTapFeedback = if (isRight) "+10s >>" else "<< -10s"
+                            if (p.isPlaying) {
+                                p.pause()
+                                doubleTapFeedback = "Paused"
+                            } else {
+                                p.play()
+                                doubleTapFeedback = "Playing"
+                            }
                         }
                     )
                 }
@@ -563,6 +580,7 @@ class PlayerActivity : ComponentActivity() {
         runCatching { setPictureInPictureParams(buildPipParams(player)) }
     }
 
+    @RequiresApi(Build.VERSION_CODES.O)
     private fun buildPipParams(player: ExoPlayer?): PictureInPictureParams {
         val builder = PictureInPictureParams.Builder()
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
