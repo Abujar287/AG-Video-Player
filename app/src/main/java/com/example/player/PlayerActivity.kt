@@ -8,6 +8,7 @@ import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.content.pm.ActivityInfo
+import android.content.pm.PackageManager
 import android.content.res.Configuration
 import android.graphics.drawable.Icon
 import android.net.Uri
@@ -60,6 +61,9 @@ import com.example.data.repository.UserPreferences
 import com.example.data.repository.UserPreferencesRepository
 import com.example.ui.theme.VeloPlayTheme
 import com.example.util.FormatUtils
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
@@ -69,12 +73,14 @@ class PlayerActivity : ComponentActivity() {
 
     private lateinit var playbackRepository: PlaybackRepository
     private lateinit var prefsRepository: UserPreferencesRepository
+    private val persistScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     private var playlistEntries by mutableStateOf<List<PlaylistEntry>>(emptyList())
     private var startPlaylistIndex by mutableIntStateOf(0)
     private var isInPipState by mutableStateOf(false)
     private var autoPipEnabled by mutableStateOf(true)
     private var pipSourceRect: android.graphics.Rect? = null
+    private var hasPipFeature: Boolean = false
 
     private val pipActionReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
@@ -99,11 +105,14 @@ class PlayerActivity : ComponentActivity() {
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         hideSystemBars()
 
+        hasPipFeature = Build.VERSION.SDK_INT >= Build.VERSION_CODES.O &&
+            packageManager.hasSystemFeature(PackageManager.FEATURE_PICTURE_IN_PICTURE)
+
         playbackRepository = PlaybackRepository(VeloDatabase.getInstance(this).playbackHistoryDao())
         prefsRepository = UserPreferencesRepository(this)
 
         handleLaunchIntent(intent)
-        startService(Intent(this, PlaybackService::class.java))
+        runCatching { startService(Intent(this, PlaybackService::class.java)) }
 
         ContextCompat.registerReceiver(
             this,
@@ -116,7 +125,7 @@ class PlayerActivity : ComponentActivity() {
             ContextCompat.RECEIVER_NOT_EXPORTED
         )
 
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && Build.VERSION.SDK_INT < Build.VERSION_CODES.S) {
+        if (hasPipFeature && Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && Build.VERSION.SDK_INT < Build.VERSION_CODES.S) {
             addOnUserLeaveHintListener {
                 val player = PlayerSessionManager.playerFlow.value
                 if (autoPipEnabled &&
@@ -140,6 +149,7 @@ class PlayerActivity : ComponentActivity() {
             val audioTracks by PlayerSessionManager.audioTracks.collectAsStateWithLifecycle()
             val subtitleTracks by PlayerSessionManager.subtitleTracks.collectAsStateWithLifecycle()
             val subtitlesDisabled by PlayerSessionManager.subtitlesDisabled.collectAsStateWithLifecycle()
+            val playerError by PlayerSessionManager.playerError.collectAsStateWithLifecycle()
             val prefs by prefsRepository.preferences.collectAsStateWithLifecycle(
                 initialValue = UserPreferences()
             )
@@ -171,9 +181,15 @@ class PlayerActivity : ComponentActivity() {
                             Intent.FLAG_GRANT_READ_URI_PERMISSION
                         )
                     }
-                    val subName = resolveSubtitleName(subUri) ?: "subtitle.srt"
+                    val subName = resolveDisplayName(subUri) ?: "subtitle.srt"
                     PlayerSessionManager.attachExternalSubtitle(subUri, subName)
                     statusBanner = "Loaded subtitle: $subName"
+                }
+            }
+
+            LaunchedEffect(playerError) {
+                if (playerError != null) {
+                    statusBanner = playerError
                 }
             }
 
@@ -287,7 +303,7 @@ class PlayerActivity : ComponentActivity() {
 
             LaunchedEffect(statusBanner) {
                 if (statusBanner != null) {
-                    delay(2_200L)
+                    delay(2_400L)
                     statusBanner = null
                 }
             }
@@ -298,8 +314,13 @@ class PlayerActivity : ComponentActivity() {
                         .fillMaxSize()
                         .background(Color.Black)
                         .onGloballyPositioned { coords ->
-                            pipSourceRect = coords.boundsInWindow().toAndroidRectF().toRect()
-                            updatePipParams(player)
+                            if (coords.isAttached) {
+                                val newRect = coords.boundsInWindow().toAndroidRectF().toRect()
+                                if (newRect != pipSourceRect && newRect.width() > 0 && newRect.height() > 0) {
+                                    pipSourceRect = newRect
+                                    updatePipParams(player)
+                                }
+                            }
                         }
                 ) {
                     AndroidView(
@@ -483,18 +504,16 @@ class PlayerActivity : ComponentActivity() {
     }
 
     private fun handleLaunchIntent(intent: Intent?) {
-        val uris = intent?.getStringArrayListExtra(EXTRA_PLAYLIST_URIS)
-        val titles = intent?.getStringArrayListExtra(EXTRA_PLAYLIST_TITLES)
-        val index = intent?.getIntExtra(EXTRA_PLAYLIST_INDEX, 0) ?: 0
-
-        if (!uris.isNullOrEmpty() && titles != null && uris.size == titles.size) {
-            playlistEntries = uris.zip(titles) { u, t -> PlaylistEntry(u, t) }
-            startPlaylistIndex = index.coerceIn(0, playlistEntries.lastIndex)
+        val pending = PlayerSessionManager.consumePendingPlaylist()
+        if (pending != null && pending.first.isNotEmpty()) {
+            playlistEntries = pending.first
+            startPlaylistIndex = pending.second
             return
         }
 
         val uriExtra = intent?.getStringExtra(EXTRA_VIDEO_URI) ?: intent?.dataString
         val titleExtra = intent?.getStringExtra(EXTRA_VIDEO_TITLE)
+            ?: intent?.data?.let { resolveDisplayName(it) }
         if (!uriExtra.isNullOrBlank()) {
             playlistEntries = listOf(PlaylistEntry(uriExtra, titleExtra?.takeIf { it.isNotBlank() } ?: "Video"))
             startPlaylistIndex = 0
@@ -512,14 +531,16 @@ class PlayerActivity : ComponentActivity() {
         }
     }
 
-    private fun resolveSubtitleName(uri: Uri): String? {
-        return contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)
-            ?.use { cursor ->
-                if (cursor.moveToFirst()) {
-                    val idx = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
-                    if (idx >= 0) cursor.getString(idx) else null
-                } else null
-            }
+    private fun resolveDisplayName(uri: Uri): String? {
+        return runCatching {
+            contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)
+                ?.use { cursor ->
+                    if (cursor.moveToFirst()) {
+                        val idx = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
+                        if (idx >= 0) cursor.getString(idx) else null
+                    } else null
+                }
+        }.getOrNull()
     }
 
     private fun hideSystemBars() {
@@ -530,16 +551,16 @@ class PlayerActivity : ComponentActivity() {
     }
 
     private fun enterPipModeNow() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+        if (!hasPipFeature || Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
+        runCatching {
             val params = buildPipParams(PlayerSessionManager.playerFlow.value)
             enterPictureInPictureMode(params)
         }
     }
 
     private fun updatePipParams(player: ExoPlayer?) {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            runCatching { setPictureInPictureParams(buildPipParams(player)) }
-        }
+        if (!hasPipFeature || Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
+        runCatching { setPictureInPictureParams(buildPipParams(player)) }
     }
 
     private fun buildPipParams(player: ExoPlayer?): PictureInPictureParams {
@@ -554,7 +575,11 @@ class PlayerActivity : ComponentActivity() {
             } else {
                 builder.setAspectRatio(Rational(16, 9))
             }
-            pipSourceRect?.let { builder.setSourceRectHint(it) }
+            pipSourceRect?.let {
+                if (it.width() > 0 && it.height() > 0) {
+                    builder.setSourceRectHint(it)
+                }
+            }
 
             val isPlayingNow = player?.isPlaying == true
             val rewindAction = RemoteAction(
@@ -636,7 +661,7 @@ class PlayerActivity : ComponentActivity() {
         val dur = player.duration.coerceAtLeast(0L)
         val speed = player.playbackParameters.speed
         val isSw = PlayerSessionManager.useSoftwareDecoder.value
-        lifecycleScope.launch {
+        persistScope.launch {
             playbackRepository.savePlaybackState(
                 videoUri = uri,
                 title = title,
@@ -651,9 +676,6 @@ class PlayerActivity : ComponentActivity() {
     companion object {
         const val EXTRA_VIDEO_URI = "extra_video_uri"
         const val EXTRA_VIDEO_TITLE = "extra_video_title"
-        const val EXTRA_PLAYLIST_URIS = "extra_playlist_uris"
-        const val EXTRA_PLAYLIST_TITLES = "extra_playlist_titles"
-        const val EXTRA_PLAYLIST_INDEX = "extra_playlist_index"
         private const val ACTION_PIP_PLAY_PAUSE = "com.example.player.PIP_PLAY_PAUSE"
         private const val ACTION_PIP_REWIND = "com.example.player.PIP_REWIND"
         private const val ACTION_PIP_FORWARD = "com.example.player.PIP_FORWARD"
@@ -667,15 +689,11 @@ class PlayerActivity : ComponentActivity() {
 
         fun createPlaylistIntent(
             context: Context,
-            uris: ArrayList<String>,
-            titles: ArrayList<String>,
+            playlist: List<PlaylistEntry>,
             startIndex: Int
         ): Intent {
-            return Intent(context, PlayerActivity::class.java).apply {
-                putStringArrayListExtra(EXTRA_PLAYLIST_URIS, uris)
-                putStringArrayListExtra(EXTRA_PLAYLIST_TITLES, titles)
-                putExtra(EXTRA_PLAYLIST_INDEX, startIndex)
-            }
+            PlayerSessionManager.setPendingPlaylist(playlist, startIndex)
+            return Intent(context, PlayerActivity::class.java)
         }
     }
 }

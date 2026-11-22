@@ -10,6 +10,7 @@ import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
 import androidx.media3.common.MimeTypes
+import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.common.TrackGroup
 import androidx.media3.common.TrackSelectionOverride
@@ -73,10 +74,33 @@ object PlayerSessionManager {
     private val _subtitlesDisabled = MutableStateFlow(false)
     val subtitlesDisabled: StateFlow<Boolean> = _subtitlesDisabled.asStateFlow()
 
+    private val _playerError = MutableStateFlow<String?>(null)
+    val playerError: StateFlow<String?> = _playerError.asStateFlow()
+
+    private var pendingPlaylist: List<PlaylistEntry>? = null
+    private var pendingStartIndex: Int = 0
+
     private var loudnessEnhancer: LoudnessEnhancer? = null
     private var attachedAudioSessionId: Int = C.AUDIO_SESSION_ID_UNSET
     private var onPlayerRebuiltListener: ((ExoPlayer) -> Unit)? = null
     private var lastNonZeroVolumePercent: Int = 100
+
+    fun setPendingPlaylist(entries: List<PlaylistEntry>, startIndex: Int) {
+        pendingPlaylist = entries
+        pendingStartIndex = startIndex.coerceIn(0, (entries.size - 1).coerceAtLeast(0))
+    }
+
+    fun consumePendingPlaylist(): Pair<List<PlaylistEntry>, Int>? {
+        val list = pendingPlaylist ?: return null
+        val idx = pendingStartIndex
+        pendingPlaylist = null
+        pendingStartIndex = 0
+        return list to idx
+    }
+
+    fun clearPlayerError() {
+        _playerError.value = null
+    }
 
     fun setOnPlayerRebuiltListener(listener: ((ExoPlayer) -> Unit)?) {
         onPlayerRebuiltListener = listener
@@ -109,7 +133,6 @@ object PlayerSessionManager {
         val player = ExoPlayer.Builder(appContext, renderersFactory)
             .setAudioAttributes(audioAttributes, true)
             .setHandleAudioBecomingNoisy(true)
-            .setWakeMode(C.WAKE_MODE_LOCAL)
             .build()
 
         player.addListener(object : Player.Listener {
@@ -127,7 +150,12 @@ object PlayerSessionManager {
                         mediaItem.localConfiguration?.uri?.toString()
                     }
                     _currentVideoTitle.value = mediaItem.mediaMetadata.title?.toString() ?: "Video"
+                    _playerError.value = null
                 }
+            }
+
+            override fun onPlayerError(error: PlaybackException) {
+                _playerError.value = error.localizedMessage ?: "Playback error (${error.errorCodeName})"
             }
         })
 
@@ -143,6 +171,7 @@ object PlayerSessionManager {
         playbackSpeed: Float,
         preferSoftware: Boolean
     ): ExoPlayer {
+        _playerError.value = null
         val current = _playerFlow.value
         val player = if (current == null || _useSoftwareDecoder.value != preferSoftware) {
             rebuildPlayerInternal(context.applicationContext, preferSoftware, preserveState = false)
@@ -341,18 +370,20 @@ object PlayerSessionManager {
     }
 
     fun syncSystemVolume(context: Context) {
-        val audioManager = context.getSystemService(Context.AUDIO_SERVICE) as? AudioManager ?: return
-        val maxVol = audioManager.getStreamMaxVolume(AudioManager.STREAM_MUSIC).coerceAtLeast(1)
-        val currVol = audioManager.getStreamVolume(AudioManager.STREAM_MUSIC)
-        val basePercent = ((currVol.toFloat() / maxVol.toFloat()) * 100f).roundToInt().coerceIn(0, 100)
-        val currentTotal = _volumePercent.value
-        if (currentTotal > 100 && basePercent >= 95) {
-            applyLoudnessGainForPercent(currentTotal)
-        } else {
-            _volumePercent.value = basePercent
-            applyLoudnessGainForPercent(basePercent)
+        runCatching {
+            val audioManager = context.getSystemService(Context.AUDIO_SERVICE) as? AudioManager ?: return
+            val maxVol = audioManager.getStreamMaxVolume(AudioManager.STREAM_MUSIC).coerceAtLeast(1)
+            val currVol = audioManager.getStreamVolume(AudioManager.STREAM_MUSIC)
+            val basePercent = ((currVol.toFloat() / maxVol.toFloat()) * 100f).roundToInt().coerceIn(0, 100)
+            val currentTotal = _volumePercent.value
+            if (currentTotal > 100 && basePercent >= 95) {
+                applyLoudnessGainForPercent(currentTotal)
+            } else {
+                _volumePercent.value = basePercent
+                applyLoudnessGainForPercent(basePercent)
+            }
+            _isMuted.value = _volumePercent.value == 0
         }
-        _isMuted.value = _volumePercent.value == 0
     }
 
     fun setVolumeWithBoost(context: Context, targetPercent: Int) {
@@ -360,12 +391,14 @@ object PlayerSessionManager {
         if (clamped > 0) lastNonZeroVolumePercent = clamped
         _volumePercent.value = clamped
         _isMuted.value = clamped == 0
-        val audioManager = context.getSystemService(Context.AUDIO_SERVICE) as? AudioManager
-        if (audioManager != null) {
-            val maxVol = audioManager.getStreamMaxVolume(AudioManager.STREAM_MUSIC).coerceAtLeast(1)
-            val streamPercent = clamped.coerceAtMost(100)
-            val targetStreamVol = ((streamPercent / 100f) * maxVol).roundToInt().coerceIn(0, maxVol)
-            audioManager.setStreamVolume(AudioManager.STREAM_MUSIC, targetStreamVol, 0)
+        runCatching {
+            val audioManager = context.getSystemService(Context.AUDIO_SERVICE) as? AudioManager
+            if (audioManager != null) {
+                val maxVol = audioManager.getStreamMaxVolume(AudioManager.STREAM_MUSIC).coerceAtLeast(1)
+                val streamPercent = clamped.coerceAtMost(100)
+                val targetStreamVol = ((streamPercent / 100f) * maxVol).roundToInt().coerceIn(0, maxVol)
+                audioManager.setStreamVolume(AudioManager.STREAM_MUSIC, targetStreamVol, 0)
+            }
         }
         _playerFlow.value?.volume = if (clamped == 0) 0f else 1f
         applyLoudnessGainForPercent(clamped)
@@ -431,6 +464,7 @@ object PlayerSessionManager {
         _currentVideoTitle.value = ""
         _audioTracks.value = emptyList()
         _subtitleTracks.value = emptyList()
+        _playerError.value = null
         _isBackgroundPlayEnabled.value = false
     }
 }

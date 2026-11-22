@@ -242,7 +242,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun openUpdateSheet() {
-        _showUpdateSheet.value = true
+        checkForUpdates(manual = true)
     }
 
     fun dismissUpdateSheet() {

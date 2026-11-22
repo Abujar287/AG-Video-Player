@@ -71,9 +71,7 @@ class GitHubUpdateManager(private val context: Context) {
 
             val code = connection.responseCode
             if (code == 404) {
-                return@withContext UpdateCheckResult.Error(
-                    "No published GitHub release found for $cleanedSlug."
-                )
+                return@withContext UpdateCheckResult.UpToDate(BuildConfig.VERSION_NAME)
             }
             if (code !in 200..299) {
                 return@withContext UpdateCheckResult.Error("GitHub API returned HTTP $code.")
@@ -160,7 +158,7 @@ class GitHubUpdateManager(private val context: Context) {
                     instanceFollowRedirects = false
                     connectTimeout = 15_000
                     readTimeout = 30_000
-                    setRequestProperty("User-Agent", "VeloPlay/${BuildConfig.VERSION_NAME}")
+                    setRequestProperty("User-Agent", "AGVideoPlayer/${BuildConfig.VERSION_NAME}")
                 }
                 val status = connection.responseCode
                 if (status in 300..399) {

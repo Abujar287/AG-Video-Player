@@ -21,8 +21,9 @@ import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.player.PlayerActivity
+import com.example.player.PlaylistEntry
 import com.example.ui.MainViewModel
-import com.example.ui.components.UpdateAndSettingsSheet
+import com.example.ui.components.UpdateCheckDialog
 import com.example.ui.screens.VeloMainScreen
 import com.example.ui.theme.VeloPlayTheme
 import java.io.File
@@ -131,19 +132,17 @@ class MainActivity : ComponentActivity() {
                     onRefresh = { viewModel.refreshLibrary() },
                     onToggleTheme = { viewModel.toggleDarkMode() },
                     onCycleSort = { viewModel.cycleSortOption() },
-                    onOpenUpdateSheet = { viewModel.openUpdateSheet() },
+                    onOpenUpdateCheck = { viewModel.openUpdateSheet() },
                     onSearchQueryChange = { viewModel.setSearchQuery(it) },
                     onFolderClick = { folder -> viewModel.openFolder(folder.bucketId) },
                     onBackToFolders = { viewModel.navigateBackToFolders() },
                     onVideoClick = { video, playlist ->
-                        val uris = ArrayList(playlist.map { it.uriString })
-                        val titles = ArrayList(playlist.map { it.title })
+                        val entries = playlist.map { PlaylistEntry(it.uriString, it.title) }
                         val idx = playlist.indexOfFirst { it.uriString == video.uriString }.coerceAtLeast(0)
                         startActivity(
                             PlayerActivity.createPlaylistIntent(
                                 context = this,
-                                uris = uris,
-                                titles = titles,
+                                playlist = entries,
                                 startIndex = idx
                             )
                         )
@@ -153,22 +152,17 @@ class MainActivity : ComponentActivity() {
                 )
 
                 if (uiState.showUpdateSheet) {
-                    UpdateAndSettingsSheet(
+                    UpdateCheckDialog(
                         currentVersionLabel = viewModel.currentAppVersionLabel(),
-                        preferences = uiState.preferences,
                         updateState = uiState.updateState,
                         onDismiss = { viewModel.dismissUpdateSheet() },
-                        onCheckUpdates = { slug -> viewModel.saveGithubRepoAndCheck(slug) },
+                        onRetryCheck = { viewModel.checkForUpdates(manual = true) },
                         onStartInAppDownload = { release -> viewModel.startInAppDownload(release) },
                         onCancelDownload = { viewModel.cancelInAppDownload() },
                         onOpenExternalDownload = { url ->
                             viewModel.updateManager.openExternalDownloadUrl(url)
                         },
-                        onInstallApk = { file -> triggerApkInstall(file) },
-                        onToggleAutoPip = { enabled -> viewModel.setAutoPipEnabled(enabled) },
-                        onToggleDefaultSwDecoder = { enabled ->
-                            viewModel.setDefaultSoftwareDecoder(enabled)
-                        }
+                        onInstallApk = { file -> triggerApkInstall(file) }
                     )
                 }
             }
@@ -176,12 +170,14 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun resolveDisplayName(uri: Uri): String? {
-        return contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)
-            ?.use { cursor ->
-                if (cursor.moveToFirst()) {
-                    val idx = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
-                    if (idx >= 0) cursor.getString(idx)?.substringBeforeLast('.') else null
-                } else null
-            }
+        return runCatching {
+            contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)
+                ?.use { cursor ->
+                    if (cursor.moveToFirst()) {
+                        val idx = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
+                        if (idx >= 0) cursor.getString(idx)?.substringBeforeLast('.') else null
+                    } else null
+                }
+        }.getOrNull()
     }
 }

@@ -52,7 +52,6 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
@@ -81,6 +80,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.example.R
 import com.example.data.local.PlaybackHistoryEntity
 import com.example.data.model.VideoFolder
@@ -101,7 +101,7 @@ fun VeloMainScreen(
     onRefresh: () -> Unit,
     onToggleTheme: () -> Unit,
     onCycleSort: () -> Unit,
-    onOpenUpdateSheet: () -> Unit,
+    onOpenUpdateCheck: () -> Unit,
     onSearchQueryChange: (String) -> Unit,
     onFolderClick: (VideoFolder) -> Unit,
     onBackToFolders: () -> Unit,
@@ -125,7 +125,7 @@ fun VeloMainScreen(
         topBar = {
             TopAppBar(
                 colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.94f),
+                    containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.96f),
                     titleContentColor = MaterialTheme.colorScheme.onSurface
                 ),
                 navigationIcon = {
@@ -147,7 +147,7 @@ fun VeloMainScreen(
                     Column {
                         Text(
                             text = activeFolder?.name ?: stringResource(R.string.app_name),
-                            style = MaterialTheme.typography.titleLarge,
+                            style = MaterialTheme.typography.titleMedium.copy(fontSize = 16.sp),
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis
                         )
@@ -159,13 +159,13 @@ fun VeloMainScreen(
                             }
                             Text(
                                 text = "${activeFolder.videoCount} $unit · ${FormatUtils.formatFileSize(activeFolder.totalSizeBytes)}",
-                                style = MaterialTheme.typography.labelSmall,
+                                style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp),
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         } else if (hasStoragePermission && uiState.folders.isNotEmpty()) {
                             Text(
                                 text = "${uiState.folders.size} folders · ${uiState.allVideos.size} videos",
-                                style = MaterialTheme.typography.labelSmall,
+                                style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp),
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         }
@@ -180,7 +180,8 @@ fun VeloMainScreen(
                     ) {
                         Icon(
                             imageVector = Icons.Default.FileOpen,
-                            contentDescription = stringResource(R.string.open_file_desc)
+                            contentDescription = stringResource(R.string.open_file_desc),
+                            modifier = Modifier.size(20.dp)
                         )
                     }
 
@@ -197,12 +198,13 @@ fun VeloMainScreen(
                                 Icons.Default.DarkMode
                             },
                             contentDescription = stringResource(R.string.toggle_theme_desc),
-                            tint = MaterialTheme.colorScheme.primary
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(20.dp)
                         )
                     }
 
                     IconButton(
-                        onClick = onOpenUpdateSheet,
+                        onClick = onOpenUpdateCheck,
                         modifier = Modifier
                             .minimumInteractiveComponentSize()
                             .testTag("update_menu_button")
@@ -216,7 +218,8 @@ fun VeloMainScreen(
                         ) {
                             Icon(
                                 imageVector = Icons.Default.SystemUpdate,
-                                contentDescription = stringResource(R.string.check_updates_desc)
+                                contentDescription = stringResource(R.string.check_updates_desc),
+                                modifier = Modifier.size(20.dp)
                             )
                         }
                     }
@@ -230,7 +233,8 @@ fun VeloMainScreen(
                         ) {
                             Icon(
                                 imageVector = Icons.Default.Refresh,
-                                contentDescription = stringResource(R.string.refresh_library_desc)
+                                contentDescription = stringResource(R.string.refresh_library_desc),
+                                modifier = Modifier.size(20.dp)
                             )
                         }
                     }
@@ -296,12 +300,13 @@ fun VeloMainScreen(
             title = {
                 Text(
                     text = video.title,
+                    style = MaterialTheme.typography.titleSmall,
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis
                 )
             },
             text = {
-                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                     Text("File: ${video.displayName}", style = MaterialTheme.typography.bodyMedium)
                     Text("Folder: ${video.folderName}", style = MaterialTheme.typography.bodyMedium)
                     Text("Resolution: ${FormatUtils.formatResolution(video.width, video.height)}", style = MaterialTheme.typography.bodyMedium)
@@ -350,19 +355,19 @@ private fun PermissionPromptView(
         contentAlignment = Alignment.Center
     ) {
         Card(
-            shape = RoundedCornerShape(24.dp),
+            shape = RoundedCornerShape(20.dp),
             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
             elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
             modifier = Modifier.fillMaxWidth()
         ) {
             Column(
-                modifier = Modifier.padding(24.dp),
+                modifier = Modifier.padding(22.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(14.dp)
+                verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
                 Box(
                     modifier = Modifier
-                        .size(72.dp)
+                        .size(64.dp)
                         .clip(CircleShape)
                         .background(
                             Brush.linearGradient(
@@ -378,13 +383,13 @@ private fun PermissionPromptView(
                         imageVector = Icons.Default.VideoLibrary,
                         contentDescription = null,
                         tint = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.size(36.dp)
+                        modifier = Modifier.size(32.dp)
                     )
                 }
 
                 Text(
                     text = stringResource(R.string.permission_title),
-                    style = MaterialTheme.typography.titleLarge
+                    style = MaterialTheme.typography.titleMedium
                 )
                 Text(
                     text = stringResource(R.string.permission_body),
@@ -432,17 +437,17 @@ private fun FolderBrowserContent(
         ) {
             Column(
                 horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(12.dp)
+                verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
                 Icon(
                     imageVector = Icons.Default.FolderOpen,
                     contentDescription = null,
                     tint = MaterialTheme.colorScheme.primary.copy(alpha = 0.7f),
-                    modifier = Modifier.size(64.dp)
+                    modifier = Modifier.size(52.dp)
                 )
                 Text(
                     text = stringResource(R.string.empty_folders_title),
-                    style = MaterialTheme.typography.titleMedium
+                    style = MaterialTheme.typography.titleSmall
                 )
                 Text(
                     text = stringResource(R.string.empty_folders_body),
@@ -466,9 +471,9 @@ private fun FolderBrowserContent(
 
         LazyVerticalGrid(
             columns = GridCells.Fixed(columns),
-            contentPadding = PaddingValues(16.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 8.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
             modifier = Modifier.fillMaxSize()
         ) {
             item(span = { GridItemSpan(columns) }) {
@@ -480,58 +485,52 @@ private fun FolderBrowserContent(
                 )
             }
 
-            // Compact quick-resume banner without pushing Folders down
             val lastPlayed = uiState.recentVideos.firstOrNull()
             if (lastPlayed != null && uiState.searchQuery.isBlank()) {
                 item(span = { GridItemSpan(columns) }) {
                     val (video, history) = lastPlayed
                     Surface(
                         onClick = { onResumeLastVideo(video) },
-                        shape = RoundedCornerShape(14.dp),
-                        color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.55f),
+                        shape = RoundedCornerShape(10.dp),
+                        color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f),
                         modifier = Modifier
                             .fillMaxWidth()
                             .testTag("quick_resume_banner")
                     ) {
                         Row(
-                            modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
+                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Icon(
                                 imageVector = Icons.Default.PlayArrow,
                                 contentDescription = null,
-                                tint = MaterialTheme.colorScheme.primary
+                                tint = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.size(16.dp)
                             )
-                            Spacer(Modifier.width(10.dp))
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text(
-                                    text = "Resume: ${video.title}",
-                                    style = MaterialTheme.typography.titleSmall,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis
-                                )
-                                Text(
-                                    text = "${FormatUtils.formatDuration(history.positionMs)} / ${FormatUtils.formatDuration(video.durationMs)}",
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = MaterialTheme.colorScheme.secondary
-                                )
-                            }
+                            Spacer(Modifier.width(6.dp))
+                            Text(
+                                text = "Resume: ${video.title}",
+                                style = MaterialTheme.typography.bodyMedium.copy(
+                                    fontSize = 11.5.sp,
+                                    fontWeight = FontWeight.Medium
+                                ),
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                                modifier = Modifier.weight(1f)
+                            )
+                            Spacer(Modifier.width(8.dp))
+                            Text(
+                                text = FormatUtils.formatDuration(history.positionMs),
+                                style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp),
+                                color = MaterialTheme.colorScheme.secondary
+                            )
                         }
                     }
                 }
             }
 
-            item(span = { GridItemSpan(columns) }) {
-                Text(
-                    text = "${stringResource(R.string.folders_title)} (${uiState.filteredFolders.size})",
-                    style = MaterialTheme.typography.titleMedium,
-                    color = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.padding(top = 2.dp)
-                )
-            }
-
             items(uiState.filteredFolders, key = { it.bucketId }) { folder ->
-                FolderCard(
+                CompactFolderRow(
                     folder = folder,
                     onClick = { onFolderClick(folder) }
                 )
@@ -553,8 +552,8 @@ private fun VideoListContent(
     loadThumbnail: suspend (Long, String) -> Bitmap?
 ) {
     LazyColumn(
-        contentPadding = PaddingValues(16.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp),
+        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 8.dp),
+        verticalArrangement = Arrangement.spacedBy(6.dp),
         modifier = Modifier.fillMaxSize()
     ) {
         item {
@@ -567,7 +566,7 @@ private fun VideoListContent(
         }
 
         items(videos, key = { it.id }) { video ->
-            VideoRowCard(
+            CompactVideoRow(
                 video = video,
                 history = historyByUri[video.uriString],
                 onClick = { onVideoClick(video) },
@@ -587,46 +586,65 @@ private fun SearchAndSortRow(
 ) {
     Row(
         modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(10.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         OutlinedTextField(
             value = query,
             onValueChange = onQueryChange,
-            placeholder = { Text(stringResource(R.string.search_videos_hint)) },
-            leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
+            placeholder = {
+                Text(
+                    text = stringResource(R.string.search_videos_hint),
+                    style = MaterialTheme.typography.bodyMedium.copy(fontSize = 12.sp)
+                )
+            },
+            textStyle = MaterialTheme.typography.bodyMedium.copy(fontSize = 12.5.sp),
+            leadingIcon = { Icon(Icons.Default.Search, contentDescription = null, modifier = Modifier.size(18.dp)) },
             trailingIcon = {
                 if (query.isNotEmpty()) {
                     IconButton(onClick = { onQueryChange("") }) {
-                        Icon(Icons.Default.Close, contentDescription = "Clear search")
+                        Icon(Icons.Default.Close, contentDescription = "Clear search", modifier = Modifier.size(16.dp))
                     }
                 }
             },
             singleLine = true,
-            shape = RoundedCornerShape(14.dp),
+            shape = RoundedCornerShape(12.dp),
             modifier = Modifier
                 .weight(1f)
                 .testTag("library_search_input")
         )
 
-        FilterChip(
-            selected = false,
+        Surface(
             onClick = onCycleSort,
-            label = { Text(sortOption.label) },
-            leadingIcon = {
+            shape = RoundedCornerShape(10.dp),
+            color = MaterialTheme.colorScheme.surfaceVariant,
+            modifier = Modifier
+                .minimumInteractiveComponentSize()
+                .testTag("sort_chip_button")
+        ) {
+            Row(
+                modifier = Modifier.padding(horizontal = 10.dp, vertical = 10.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(4.dp)
+            ) {
                 Icon(
                     imageVector = Icons.AutoMirrored.Filled.Sort,
                     contentDescription = "Sort",
-                    modifier = Modifier.size(18.dp)
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(16.dp)
                 )
-            },
-            modifier = Modifier.testTag("sort_chip_button")
-        )
+                Text(
+                    text = sortOption.label,
+                    style = MaterialTheme.typography.labelSmall.copy(fontSize = 11.sp),
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+            }
+        }
     }
 }
 
 @Composable
-private fun FolderCard(
+private fun CompactFolderRow(
     folder: VideoFolder,
     onClick: () -> Unit
 ) {
@@ -637,9 +655,9 @@ private fun FolderCard(
     }
 
     Card(
-        shape = RoundedCornerShape(18.dp),
+        shape = RoundedCornerShape(12.dp),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
+        elevation = CardDefaults.cardElevation(defaultElevation = 0.5.dp),
         modifier = Modifier
             .fillMaxWidth()
             .clickable(onClick = onClick)
@@ -648,13 +666,13 @@ private fun FolderCard(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(14.dp),
+                .padding(horizontal = 10.dp, vertical = 8.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             Box(
                 modifier = Modifier
-                    .size(54.dp)
-                    .clip(RoundedCornerShape(14.dp))
+                    .size(38.dp)
+                    .clip(RoundedCornerShape(10.dp))
                     .background(MaterialTheme.colorScheme.primaryContainer),
                 contentAlignment = Alignment.Center
             ) {
@@ -662,49 +680,43 @@ private fun FolderCard(
                     imageVector = Icons.Default.Folder,
                     contentDescription = null,
                     tint = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.size(30.dp)
+                    modifier = Modifier.size(22.dp)
                 )
             }
-            Spacer(Modifier.width(14.dp))
+            Spacer(Modifier.width(10.dp))
             Column(modifier = Modifier.weight(1f)) {
                 Text(
                     text = folder.name,
-                    style = MaterialTheme.typography.titleMedium,
+                    style = MaterialTheme.typography.titleSmall.copy(
+                        fontSize = 13.5.sp,
+                        lineHeight = 17.sp
+                    ),
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
-                Spacer(Modifier.height(2.dp))
-                Text(
-                    text = folder.pathHint,
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-                Spacer(Modifier.height(4.dp))
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Surface(
-                        shape = RoundedCornerShape(6.dp),
-                        color = MaterialTheme.colorScheme.surfaceVariant
-                    ) {
-                        Text(
-                            text = stringResource(R.string.video_count_format, folder.videoCount, unit),
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.primary,
-                            modifier = Modifier.padding(horizontal = 7.dp, vertical = 3.dp)
-                        )
-                    }
-                    Surface(
-                        shape = RoundedCornerShape(6.dp),
-                        color = MaterialTheme.colorScheme.surfaceVariant
-                    ) {
-                        Text(
-                            text = FormatUtils.formatFileSize(folder.totalSizeBytes),
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.padding(horizontal = 7.dp, vertical = 3.dp)
-                        )
-                    }
+                Spacer(Modifier.height(1.dp))
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    Text(
+                        text = "${folder.videoCount} $unit",
+                        style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp),
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                    Text(
+                        text = "· ${FormatUtils.formatFileSize(folder.totalSizeBytes)}",
+                        style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Text(
+                        text = "· ${folder.pathHint}",
+                        style = MaterialTheme.typography.labelSmall.copy(fontSize = 9.5.sp),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.78f),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f)
+                    )
                 }
             }
         }
@@ -712,7 +724,7 @@ private fun FolderCard(
 }
 
 @Composable
-private fun VideoRowCard(
+private fun CompactVideoRow(
     video: VideoItem,
     history: PlaybackHistoryEntity?,
     onClick: () -> Unit,
@@ -723,11 +735,12 @@ private fun VideoRowCard(
     val progress = if (history != null && history.durationMs > 0L) {
         (history.positionMs.toFloat() / history.durationMs.toFloat()).coerceIn(0f, 1f)
     } else 0f
+    val ext = video.displayName.substringAfterLast('.', "").uppercase().ifBlank { "VID" }
 
     Card(
-        shape = RoundedCornerShape(16.dp),
+        shape = RoundedCornerShape(12.dp),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
+        elevation = CardDefaults.cardElevation(defaultElevation = 0.5.dp),
         modifier = Modifier
             .fillMaxWidth()
             .clickable(onClick = onClick)
@@ -736,14 +749,14 @@ private fun VideoRowCard(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(10.dp),
+                .padding(horizontal = 8.dp, vertical = 6.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             Box(
                 modifier = Modifier
-                    .width(128.dp)
+                    .width(92.dp)
                     .aspectRatio(16f / 9f)
-                    .clip(RoundedCornerShape(12.dp))
+                    .clip(RoundedCornerShape(8.dp))
             ) {
                 VideoThumbnail(
                     videoId = video.id,
@@ -754,17 +767,17 @@ private fun VideoRowCard(
                 )
 
                 Surface(
-                    shape = RoundedCornerShape(6.dp),
-                    color = Color.Black.copy(alpha = 0.78f),
+                    shape = RoundedCornerShape(4.dp),
+                    color = Color.Black.copy(alpha = 0.8f),
                     modifier = Modifier
                         .align(Alignment.BottomEnd)
-                        .padding(6.dp)
+                        .padding(3.dp)
                 ) {
                     Text(
                         text = FormatUtils.formatDuration(video.durationMs),
-                        style = MaterialTheme.typography.labelSmall,
+                        style = MaterialTheme.typography.labelSmall.copy(fontSize = 9.sp),
                         color = Color.White,
-                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                        modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
                     )
                 }
 
@@ -775,46 +788,37 @@ private fun VideoRowCard(
                         trackColor = Color.White.copy(alpha = 0.25f),
                         modifier = Modifier
                             .fillMaxWidth()
-                            .height(3.dp)
+                            .height(2.5.dp)
                             .align(Alignment.BottomCenter)
                     )
                 }
             }
 
-            Spacer(Modifier.width(12.dp))
+            Spacer(Modifier.width(10.dp))
 
             Column(
                 modifier = Modifier.weight(1f),
-                verticalArrangement = Arrangement.spacedBy(4.dp)
+                verticalArrangement = Arrangement.spacedBy(2.dp)
             ) {
                 Text(
                     text = video.title,
-                    style = MaterialTheme.typography.titleSmall,
+                    style = MaterialTheme.typography.titleSmall.copy(
+                        fontSize = 12.5.sp,
+                        lineHeight = 16.sp
+                    ),
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis
                 )
 
-                Row(
-                    horizontalArrangement = Arrangement.spacedBy(6.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Surface(
-                        shape = RoundedCornerShape(6.dp),
-                        color = MaterialTheme.colorScheme.surfaceVariant
-                    ) {
-                        Text(
-                            text = FormatUtils.formatResolution(video.width, video.height),
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
-                        )
-                    }
-                    Text(
-                        text = FormatUtils.formatFileSize(video.sizeBytes),
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
+                val resTag = FormatUtils.formatResolution(video.width, video.height)
+                    .substringBefore(" ·")
+                Text(
+                    text = "$resTag · ${FormatUtils.formatFileSize(video.sizeBytes)} · $ext",
+                    style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
 
                 if (resumePos > 1_500L) {
                     Text(
@@ -822,8 +826,10 @@ private fun VideoRowCard(
                             R.string.resume_badge_format,
                             FormatUtils.formatDuration(resumePos)
                         ),
-                        style = MaterialTheme.typography.labelSmall,
-                        fontWeight = FontWeight.SemiBold,
+                        style = MaterialTheme.typography.labelSmall.copy(
+                            fontSize = 9.5.sp,
+                            fontWeight = FontWeight.SemiBold
+                        ),
                         color = MaterialTheme.colorScheme.secondary
                     )
                 }
@@ -836,7 +842,8 @@ private fun VideoRowCard(
                 Icon(
                     imageVector = Icons.Default.Info,
                     contentDescription = "Video Details",
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(18.dp)
                 )
             }
         }
