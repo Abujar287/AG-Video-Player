@@ -112,9 +112,18 @@ class MainActivity : ComponentActivity() {
                 }
             }
 
-            LaunchedEffect(canBrowseLibrary, hasStoragePermission) {
+            LaunchedEffect(canBrowseLibrary, hasStoragePermission, isPreviewMode) {
                 if (canBrowseLibrary) {
                     viewModel.refreshLibrary()
+                    if (!isPreviewMode &&
+                        Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+                        ContextCompat.checkSelfPermission(
+                            this@MainActivity,
+                            Manifest.permission.POST_NOTIFICATIONS
+                        ) != PackageManager.PERMISSION_GRANTED
+                    ) {
+                        permissionLauncher.launch(arrayOf(Manifest.permission.POST_NOTIFICATIONS))
+                    }
                 } else {
                     val perms = buildList {
                         add(storagePermission)
@@ -248,6 +257,17 @@ class MainActivity : ComponentActivity() {
                     onDeleteVideos = { videos -> viewModel.deleteVideos(videos) },
                     onClearResume = { uri -> viewModel.clearResumePosition(uri) },
                     onClearActionMessage = { viewModel.clearActionMessage() },
+                    onSingleClickActionChange = { viewModel.setSingleClickAction(it) },
+                    onDoubleClickActionChange = { viewModel.setDoubleClickAction(it) },
+                    onAlwaysBackgroundPlayChange = { viewModel.setAlwaysBackgroundPlay(it) },
+                    onAutoPipChange = { viewModel.setAutoPipEnabled(it) },
+                    onEnableSwipeGesturesChange = { viewModel.setEnableSwipeGestures(it) },
+                    onGestureSeekStepChange = { viewModel.setGestureSeekStepSeconds(it) },
+                    onDefaultSoftwareDecoderChange = { viewModel.setDefaultSoftwareDecoder(it) },
+                    onTogglePlayerButtonVisibility = { btn, visible ->
+                        viewModel.setPlayerButtonVisible(btn, visible)
+                    },
+                    onShowAllButtons = { viewModel.showAllPlayerButtons() },
                     loadThumbnail = { id, uri -> viewModel.loadThumbnail(id, uri) }
                 )
 
@@ -266,9 +286,6 @@ class MainActivity : ComponentActivity() {
                         onRetryCheck = { viewModel.checkForUpdates(manual = true) },
                         onStartInAppDownload = { release -> viewModel.startInAppDownload(release) },
                         onCancelDownload = { viewModel.cancelInAppDownload() },
-                        onOpenExternalDownload = { url ->
-                            viewModel.updateManager.openExternalDownloadUrl(url)
-                        },
                         onInstallApk = { file -> triggerApkInstall(file) }
                     )
                 }

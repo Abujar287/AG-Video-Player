@@ -10,9 +10,12 @@ import com.example.data.local.PlaybackHistoryEntity
 import com.example.data.local.VeloDatabase
 import com.example.data.model.VideoFolder
 import com.example.data.model.VideoItem
+import com.example.data.repository.DoubleClickAction
 import com.example.data.repository.MediaFileOpResult
 import com.example.data.repository.PendingMediaOp
 import com.example.data.repository.PlaybackRepository
+import com.example.data.repository.PlayerControlButton
+import com.example.data.repository.SingleClickAction
 import com.example.data.repository.UserPreferences
 import com.example.data.repository.UserPreferencesRepository
 import com.example.data.repository.VideoLibraryRepository
@@ -479,6 +482,37 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun setDefaultSoftwareDecoder(enabled: Boolean) {
         viewModelScope.launch { prefsRepo.setDefaultSoftwareDecoder(enabled) }
+    }
+
+    fun setSingleClickAction(action: SingleClickAction) {
+        viewModelScope.launch { prefsRepo.setSingleClickAction(action) }
+    }
+
+    fun setDoubleClickAction(action: DoubleClickAction) {
+        viewModelScope.launch { prefsRepo.setDoubleClickAction(action) }
+    }
+
+    fun setAlwaysBackgroundPlay(enabled: Boolean) {
+        viewModelScope.launch {
+            prefsRepo.setAlwaysBackgroundPlay(enabled)
+            com.example.player.PlayerSessionManager.setBackgroundPlayEnabled(enabled)
+        }
+    }
+
+    fun setEnableSwipeGestures(enabled: Boolean) {
+        viewModelScope.launch { prefsRepo.setEnableSwipeGestures(enabled) }
+    }
+
+    fun setGestureSeekStepSeconds(seconds: Int) {
+        viewModelScope.launch { prefsRepo.setGestureSeekStepSeconds(seconds) }
+    }
+
+    fun setPlayerButtonVisible(button: PlayerControlButton, visible: Boolean) {
+        viewModelScope.launch { prefsRepo.setPlayerButtonVisible(button, visible) }
+    }
+
+    fun showAllPlayerButtons() {
+        viewModelScope.launch { prefsRepo.showAllPlayerButtons() }
     }
 
     fun openUpdateSheet() {

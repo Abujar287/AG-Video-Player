@@ -18,8 +18,11 @@ import androidx.media3.common.Tracks
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.DefaultRenderersFactory
 import androidx.media3.exoplayer.ExoPlayer
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlin.math.roundToInt
 
@@ -77,6 +80,9 @@ object PlayerSessionManager {
     private val _playerError = MutableStateFlow<String?>(null)
     val playerError: StateFlow<String?> = _playerError.asStateFlow()
 
+    private val _stopPlaybackSignal = MutableSharedFlow<Unit>(extraBufferCapacity = 1)
+    val stopPlaybackSignal: SharedFlow<Unit> = _stopPlaybackSignal.asSharedFlow()
+
     private var pendingPlaylist: List<PlaylistEntry>? = null
     private var pendingStartIndex: Int = 0
 
@@ -133,6 +139,7 @@ object PlayerSessionManager {
         val player = ExoPlayer.Builder(appContext, renderersFactory)
             .setAudioAttributes(audioAttributes, true)
             .setHandleAudioBecomingNoisy(true)
+            .setWakeMode(C.WAKE_MODE_LOCAL)
             .build()
 
         player.addListener(object : Player.Listener {
@@ -198,6 +205,7 @@ object PlayerSessionManager {
                     .setMediaMetadata(
                         MediaMetadata.Builder()
                             .setTitle(entry.title)
+                            .setArtist("AG Video Player")
                             .build()
                     )
                     .build()
@@ -445,6 +453,20 @@ object PlayerSessionManager {
 
     fun setBackgroundPlayEnabled(enabled: Boolean) {
         _isBackgroundPlayEnabled.value = enabled
+    }
+
+    fun stopPlaybackFromNotification() {
+        _isBackgroundPlayEnabled.value = false
+        _playerFlow.value?.let { player ->
+            player.playWhenReady = false
+            player.pause()
+            player.stop()
+            player.clearMediaItems()
+        }
+        _currentVideoUri.value = null
+        _currentVideoTitle.value = ""
+        _playerError.value = null
+        _stopPlaybackSignal.tryEmit(Unit)
     }
 
     private fun releaseLoudnessEnhancer() {

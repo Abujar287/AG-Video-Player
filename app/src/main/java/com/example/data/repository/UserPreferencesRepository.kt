@@ -5,6 +5,7 @@ import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
+import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.core.stringSetPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
@@ -16,6 +17,102 @@ import org.json.JSONObject
 
 private val Context.dataStore: DataStore<Preferences> by preferencesDataStore(name = "veloplay_prefs")
 
+enum class SingleClickAction(val label: String, val subtitle: String) {
+    TOGGLE_CONTROLS("Show / Hide Controls", "Tap once to toggle player overlay"),
+    PLAY_PAUSE("Play / Pause", "Tap once to toggle playback"),
+    TOGGLE_MUTE("Mute / Unmute", "Tap once to mute or unmute audio"),
+    NONE("Do Nothing", "Ignore single taps while playing");
+
+    companion object {
+        fun fromStored(name: String?): SingleClickAction {
+            return entries.firstOrNull { it.name == name } ?: TOGGLE_CONTROLS
+        }
+    }
+}
+
+enum class DoubleClickAction(val label: String, val subtitle: String) {
+    PLAY_PAUSE("Play / Pause", "Double tap screen to play or pause"),
+    SEEK_10S("Seek ±10s", "Double tap left/right side to skip 10s"),
+    SEEK_20S("Seek ±20s", "Double tap left/right side to skip 20s"),
+    NONE("Do Nothing", "Disable double tap action");
+
+    companion object {
+        fun fromStored(name: String?): DoubleClickAction {
+            return entries.firstOrNull { it.name == name } ?: PLAY_PAUSE
+        }
+    }
+}
+
+enum class PlayerControlButton(val label: String) {
+    FIT("Fit / Full"),
+    ROTATE("Rotate"),
+    SPEED("Speed"),
+    LOOP("Loop"),
+    MUTE("Mute"),
+    SLEEP("Sleep Timer"),
+    BG_PLAY("BG Play"),
+    TRACKS("Tracks"),
+    DECODER("HW / SW"),
+    LOCK("Lock"),
+    PREV_NEXT("Prev / Next"),
+    PIP("PiP")
+}
+
+data class PlayerControlsVisibility(
+    val showFitButton: Boolean = true,
+    val showRotateButton: Boolean = true,
+    val showSpeedButton: Boolean = true,
+    val showLoopButton: Boolean = true,
+    val showMuteButton: Boolean = true,
+    val showSleepButton: Boolean = true,
+    val showBgPlayButton: Boolean = true,
+    val showTracksButton: Boolean = true,
+    val showDecoderButton: Boolean = true,
+    val showLockButton: Boolean = true,
+    val showPrevNextButtons: Boolean = true,
+    val showPipButton: Boolean = true
+) {
+    fun isVisible(button: PlayerControlButton): Boolean = when (button) {
+        PlayerControlButton.FIT -> showFitButton
+        PlayerControlButton.ROTATE -> showRotateButton
+        PlayerControlButton.SPEED -> showSpeedButton
+        PlayerControlButton.LOOP -> showLoopButton
+        PlayerControlButton.MUTE -> showMuteButton
+        PlayerControlButton.SLEEP -> showSleepButton
+        PlayerControlButton.BG_PLAY -> showBgPlayButton
+        PlayerControlButton.TRACKS -> showTracksButton
+        PlayerControlButton.DECODER -> showDecoderButton
+        PlayerControlButton.LOCK -> showLockButton
+        PlayerControlButton.PREV_NEXT -> showPrevNextButtons
+        PlayerControlButton.PIP -> showPipButton
+    }
+
+    fun hiddenSet(): Set<String> = buildSet {
+        PlayerControlButton.entries.forEach { btn ->
+            if (!isVisible(btn)) add(btn.name)
+        }
+    }
+
+    companion object {
+        fun fromHiddenSet(hidden: Set<String>): PlayerControlsVisibility {
+            return PlayerControlsVisibility(
+                showFitButton = !hidden.contains(PlayerControlButton.FIT.name),
+                showRotateButton = !hidden.contains(PlayerControlButton.ROTATE.name),
+                showSpeedButton = !hidden.contains(PlayerControlButton.SPEED.name),
+                showLoopButton = !hidden.contains(PlayerControlButton.LOOP.name),
+                showMuteButton = !hidden.contains(PlayerControlButton.MUTE.name),
+                showSleepButton = !hidden.contains(PlayerControlButton.SLEEP.name),
+                showBgPlayButton = !hidden.contains(PlayerControlButton.BG_PLAY.name),
+                showTracksButton = !hidden.contains(PlayerControlButton.TRACKS.name),
+                showDecoderButton = !hidden.contains(PlayerControlButton.DECODER.name),
+                showLockButton = !hidden.contains(PlayerControlButton.LOCK.name),
+                showPrevNextButtons = !hidden.contains(PlayerControlButton.PREV_NEXT.name),
+                showPipButton = !hidden.contains(PlayerControlButton.PIP.name)
+            )
+        }
+    }
+}
+
 data class UserPreferences(
     val isDarkMode: Boolean = true,
     val isGridView: Boolean = false,
@@ -24,7 +121,13 @@ data class UserPreferences(
     val githubRepoSlug: String = DEFAULT_GITHUB_REPO,
     val favoriteUris: Set<String> = emptySet(),
     val playlists: Map<String, List<String>> = emptyMap(),
-    val playedVideoUris: Set<String> = emptySet()
+    val playedVideoUris: Set<String> = emptySet(),
+    val singleClickAction: SingleClickAction = SingleClickAction.TOGGLE_CONTROLS,
+    val doubleClickAction: DoubleClickAction = DoubleClickAction.PLAY_PAUSE,
+    val alwaysBackgroundPlay: Boolean = false,
+    val enableSwipeGestures: Boolean = true,
+    val gestureSeekStepSeconds: Int = 20,
+    val controlsVisibility: PlayerControlsVisibility = PlayerControlsVisibility()
 ) {
     companion object {
         val DEFAULT_GITHUB_REPO: String
@@ -42,6 +145,12 @@ class UserPreferencesRepository(private val context: Context) {
         val FAVORITE_URIS = stringSetPreferencesKey("favorite_uris")
         val PLAYLISTS_JSON = stringPreferencesKey("playlists_json")
         val PLAYED_VIDEO_URIS = stringSetPreferencesKey("played_video_uris")
+        val SINGLE_CLICK_ACTION = stringPreferencesKey("single_click_action")
+        val DOUBLE_CLICK_ACTION = stringPreferencesKey("double_click_action")
+        val ALWAYS_BACKGROUND_PLAY = booleanPreferencesKey("always_background_play")
+        val ENABLE_SWIPE_GESTURES = booleanPreferencesKey("enable_swipe_gestures")
+        val GESTURE_SEEK_STEP_SECONDS = intPreferencesKey("gesture_seek_step_seconds")
+        val HIDDEN_PLAYER_BUTTONS = stringSetPreferencesKey("hidden_player_buttons")
     }
 
     val preferences: Flow<UserPreferences> = context.dataStore.data.map { prefs ->
@@ -55,7 +164,17 @@ class UserPreferencesRepository(private val context: Context) {
             githubRepoSlug = savedSlug ?: UserPreferences.DEFAULT_GITHUB_REPO,
             favoriteUris = prefs[Keys.FAVORITE_URIS] ?: emptySet(),
             playlists = parsePlaylists(prefs[Keys.PLAYLISTS_JSON]),
-            playedVideoUris = prefs[Keys.PLAYED_VIDEO_URIS] ?: emptySet()
+            playedVideoUris = prefs[Keys.PLAYED_VIDEO_URIS] ?: emptySet(),
+            singleClickAction = SingleClickAction.fromStored(prefs[Keys.SINGLE_CLICK_ACTION]),
+            doubleClickAction = DoubleClickAction.fromStored(prefs[Keys.DOUBLE_CLICK_ACTION]),
+            alwaysBackgroundPlay = prefs[Keys.ALWAYS_BACKGROUND_PLAY] ?: false,
+            enableSwipeGestures = prefs[Keys.ENABLE_SWIPE_GESTURES] ?: true,
+            gestureSeekStepSeconds = (prefs[Keys.GESTURE_SEEK_STEP_SECONDS] ?: 20).let {
+                if (it == 10 || it == 20) it else 20
+            },
+            controlsVisibility = PlayerControlsVisibility.fromHiddenSet(
+                prefs[Keys.HIDDEN_PLAYER_BUTTONS] ?: emptySet()
+            )
         )
     }
 
@@ -73,6 +192,42 @@ class UserPreferencesRepository(private val context: Context) {
 
     suspend fun setDefaultSoftwareDecoder(enabled: Boolean) {
         context.dataStore.edit { it[Keys.DEFAULT_SW_DECODER] = enabled }
+    }
+
+    suspend fun setSingleClickAction(action: SingleClickAction) {
+        context.dataStore.edit { it[Keys.SINGLE_CLICK_ACTION] = action.name }
+    }
+
+    suspend fun setDoubleClickAction(action: DoubleClickAction) {
+        context.dataStore.edit { it[Keys.DOUBLE_CLICK_ACTION] = action.name }
+    }
+
+    suspend fun setAlwaysBackgroundPlay(enabled: Boolean) {
+        context.dataStore.edit { it[Keys.ALWAYS_BACKGROUND_PLAY] = enabled }
+    }
+
+    suspend fun setEnableSwipeGestures(enabled: Boolean) {
+        context.dataStore.edit { it[Keys.ENABLE_SWIPE_GESTURES] = enabled }
+    }
+
+    suspend fun setGestureSeekStepSeconds(seconds: Int) {
+        context.dataStore.edit { it[Keys.GESTURE_SEEK_STEP_SECONDS] = seconds.coerceIn(5, 60) }
+    }
+
+    suspend fun setPlayerButtonVisible(button: PlayerControlButton, visible: Boolean) {
+        context.dataStore.edit { prefs ->
+            val hidden = prefs[Keys.HIDDEN_PLAYER_BUTTONS]?.toMutableSet() ?: mutableSetOf()
+            if (visible) {
+                hidden.remove(button.name)
+            } else {
+                hidden.add(button.name)
+            }
+            prefs[Keys.HIDDEN_PLAYER_BUTTONS] = hidden
+        }
+    }
+
+    suspend fun showAllPlayerButtons() {
+        context.dataStore.edit { it[Keys.HIDDEN_PLAYER_BUTTONS] = emptySet() }
     }
 
     suspend fun setGithubRepoSlug(slug: String) {

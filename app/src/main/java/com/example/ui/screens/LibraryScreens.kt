@@ -3,6 +3,7 @@ package com.example.ui.screens
 import android.graphics.Bitmap
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -41,9 +42,15 @@ import androidx.compose.material.icons.automirrored.filled.PlaylistPlay
 import androidx.compose.material.icons.automirrored.filled.Sort
 import androidx.compose.material.icons.automirrored.filled.ViewList
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.ArrowDownward
+import androidx.compose.material.icons.filled.ArrowUpward
+import androidx.compose.material.icons.filled.CalendarToday
+import androidx.compose.material.icons.filled.Category
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.DarkMode
+import androidx.compose.material.icons.filled.DataUsage
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.DriveFileRenameOutline
 import androidx.compose.material.icons.filled.Favorite
@@ -59,7 +66,7 @@ import androidx.compose.material.icons.filled.RadioButtonUnchecked
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.SelectAll
 import androidx.compose.material.icons.filled.Share
-import androidx.compose.material.icons.filled.SystemUpdate
+import androidx.compose.material.icons.filled.SortByAlpha
 import androidx.compose.material.icons.filled.VideoLibrary
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Badge
@@ -80,7 +87,6 @@ import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
@@ -109,15 +115,20 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.BuildConfig
 import com.example.R
 import com.example.data.local.PlaybackHistoryEntity
 import com.example.data.model.VideoFolder
 import com.example.data.model.VideoItem
+import com.example.data.repository.DoubleClickAction
+import com.example.data.repository.PlayerControlButton
+import com.example.data.repository.SingleClickAction
 import com.example.ui.BrowserDestination
 import com.example.ui.MainUiState
 import com.example.ui.SortDirection
 import com.example.ui.SortField
 import com.example.ui.UpdateUiState
+import com.example.ui.components.ControlSettingsDialog
 import com.example.ui.components.VideoThumbnail
 import com.example.util.FormatUtils
 
@@ -154,6 +165,15 @@ fun VeloMainScreen(
     onDeleteVideos: (List<VideoItem>) -> Unit,
     onClearResume: (String) -> Unit,
     onClearActionMessage: () -> Unit,
+    onSingleClickActionChange: (SingleClickAction) -> Unit,
+    onDoubleClickActionChange: (DoubleClickAction) -> Unit,
+    onAlwaysBackgroundPlayChange: (Boolean) -> Unit,
+    onAutoPipChange: (Boolean) -> Unit,
+    onEnableSwipeGesturesChange: (Boolean) -> Unit,
+    onGestureSeekStepChange: (Int) -> Unit,
+    onDefaultSoftwareDecoderChange: (Boolean) -> Unit,
+    onTogglePlayerButtonVisibility: (PlayerControlButton, Boolean) -> Unit,
+    onShowAllButtons: () -> Unit,
     loadThumbnail: suspend (Long, String) -> Bitmap?
 ) {
     val activeFolder = uiState.selectedFolder
@@ -171,6 +191,7 @@ fun VeloMainScreen(
     var moveTargetVideos by remember { mutableStateOf<List<VideoItem>?>(null) }
     var deleteTargetVideos by remember { mutableStateOf<List<VideoItem>?>(null) }
     var showSortDialog by remember { mutableStateOf(false) }
+    var showControlSettingsDialog by remember { mutableStateOf(false) }
 
     val snackbarHostState = remember { SnackbarHostState() }
     LaunchedEffect(uiState.actionMessage) {
@@ -344,27 +365,6 @@ fun VeloMainScreen(
                             )
                         }
 
-                        IconButton(
-                            onClick = onOpenUpdateCheck,
-                            modifier = Modifier
-                                .minimumInteractiveComponentSize()
-                                .testTag("update_menu_button")
-                        ) {
-                            BadgedBox(
-                                badge = {
-                                    if (hasAvailableUpdate) {
-                                        Badge(containerColor = MaterialTheme.colorScheme.secondary)
-                                    }
-                                }
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Default.SystemUpdate,
-                                    contentDescription = stringResource(R.string.check_updates_desc),
-                                    modifier = Modifier.size(20.dp)
-                                )
-                            }
-                        }
-
                         if (hasStoragePermission) {
                             IconButton(
                                 onClick = onToggleGridView,
@@ -398,6 +398,28 @@ fun VeloMainScreen(
                                     imageVector = Icons.AutoMirrored.Filled.Sort,
                                     contentDescription = "Sort Videos",
                                     tint = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                            }
+                        }
+
+                        IconButton(
+                            onClick = { showControlSettingsDialog = true },
+                            modifier = Modifier
+                                .minimumInteractiveComponentSize()
+                                .testTag("header_settings_menu_button")
+                        ) {
+                            BadgedBox(
+                                badge = {
+                                    if (hasAvailableUpdate) {
+                                        Badge(containerColor = MaterialTheme.colorScheme.secondary)
+                                    }
+                                }
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.MoreVert,
+                                    contentDescription = "Player & Control Settings",
+                                    tint = MaterialTheme.colorScheme.onSurface,
                                     modifier = Modifier.size(20.dp)
                                 )
                             }
@@ -499,6 +521,26 @@ fun VeloMainScreen(
                 onApplySort(field, dir)
                 showSortDialog = false
             }
+        )
+    }
+
+    // 3-Dot Header Player & Control Settings Dialog
+    if (showControlSettingsDialog) {
+        ControlSettingsDialog(
+            preferences = uiState.preferences,
+            currentVersionLabel = "v${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})",
+            hasAvailableUpdate = hasAvailableUpdate,
+            onDismiss = { showControlSettingsDialog = false },
+            onOpenUpdateCheck = onOpenUpdateCheck,
+            onSingleClickActionChange = onSingleClickActionChange,
+            onDoubleClickActionChange = onDoubleClickActionChange,
+            onAlwaysBackgroundPlayChange = onAlwaysBackgroundPlayChange,
+            onAutoPipChange = onAutoPipChange,
+            onEnableSwipeGesturesChange = onEnableSwipeGesturesChange,
+            onGestureSeekStepChange = onGestureSeekStepChange,
+            onDefaultSoftwareDecoderChange = onDefaultSoftwareDecoderChange,
+            onTogglePlayerButtonVisibility = onTogglePlayerButtonVisibility,
+            onShowAllButtons = onShowAllButtons
         )
     }
 
@@ -798,63 +840,173 @@ private fun SortOptionsDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Sort By", style = MaterialTheme.typography.titleMedium) },
+        icon = {
+            Surface(
+                shape = RoundedCornerShape(12.dp),
+                color = MaterialTheme.colorScheme.primary.copy(alpha = 0.14f),
+                modifier = Modifier.size(40.dp)
+            ) {
+                Icon(
+                    imageVector = Icons.AutoMirrored.Filled.Sort,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.padding(9.dp)
+                )
+            }
+        },
+        title = {
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                Text(
+                    text = "Sort By",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold
+                )
+                Text(
+                    text = "Organize folders & videos",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 SortField.entries.forEach { field ->
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clip(RoundedCornerShape(10.dp))
-                            .clickable { selectedField = field }
-                            .padding(horizontal = 6.dp, vertical = 4.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        RadioButton(
-                            selected = selectedField == field,
-                            onClick = { selectedField = field }
-                        )
-                        Spacer(Modifier.width(8.dp))
-                        Text(field.label, style = MaterialTheme.typography.bodyLarge)
+                    val selected = selectedField == field
+                    val fieldIcon = when (field) {
+                        SortField.NAME -> Icons.Default.SortByAlpha
+                        SortField.SIZE -> Icons.Default.DataUsage
+                        SortField.DATE -> Icons.Default.CalendarToday
+                        SortField.TYPE -> Icons.Default.Category
                     }
-                }
-
-                HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
-
-                Text(
-                    text = "Order",
-                    style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    SortDirection.entries.forEach { dir ->
-                        val active = selectedDirection == dir
-                        Surface(
-                            onClick = { selectedDirection = dir },
-                            shape = RoundedCornerShape(10.dp),
-                            color = if (active) {
-                                MaterialTheme.colorScheme.primaryContainer
+                    Surface(
+                        onClick = { selectedField = field },
+                        shape = RoundedCornerShape(12.dp),
+                        color = if (selected) {
+                            MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.72f)
+                        } else {
+                            MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f)
+                        },
+                        border = BorderStroke(
+                            width = 1.dp,
+                            color = if (selected) {
+                                MaterialTheme.colorScheme.primary
                             } else {
-                                MaterialTheme.colorScheme.surfaceVariant
-                            },
-                            modifier = Modifier.weight(1f)
+                                Color.Transparent
+                            }
+                        ),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 12.dp, vertical = 10.dp),
+                            verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Text(
-                                text = if (dir == SortDirection.ASC) "Ascending (ASC)" else "Descending (DESC)",
-                                style = MaterialTheme.typography.labelMedium,
-                                fontWeight = if (active) FontWeight.Bold else FontWeight.Normal,
-                                color = if (active) {
+                            Icon(
+                                imageVector = fieldIcon,
+                                contentDescription = null,
+                                tint = if (selected) {
                                     MaterialTheme.colorScheme.primary
                                 } else {
                                     MaterialTheme.colorScheme.onSurfaceVariant
                                 },
-                                textAlign = TextAlign.Center,
-                                modifier = Modifier.padding(vertical = 10.dp, horizontal = 8.dp)
+                                modifier = Modifier.size(18.dp)
                             )
+                            Spacer(Modifier.width(10.dp))
+                            Text(
+                                text = field.label,
+                                style = MaterialTheme.typography.bodyMedium,
+                                fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
+                                color = if (selected) {
+                                    MaterialTheme.colorScheme.onPrimaryContainer
+                                } else {
+                                    MaterialTheme.colorScheme.onSurface
+                                },
+                                modifier = Modifier.weight(1f)
+                            )
+                            if (selected) {
+                                Icon(
+                                    imageVector = Icons.Default.Check,
+                                    contentDescription = "Selected",
+                                    tint = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                            }
+                        }
+                    }
+                }
+
+                Spacer(Modifier.height(2.dp))
+
+                Text(
+                    text = "Order",
+                    style = MaterialTheme.typography.labelMedium,
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+
+                Surface(
+                    shape = RoundedCornerShape(12.dp),
+                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(4.dp),
+                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        SortDirection.entries.forEach { dir ->
+                            val active = selectedDirection == dir
+                            val subHint = when (selectedField) {
+                                SortField.NAME, SortField.TYPE -> if (dir == SortDirection.ASC) "A → Z" else "Z → A"
+                                SortField.SIZE -> if (dir == SortDirection.ASC) "Smallest" else "Largest"
+                                SortField.DATE -> if (dir == SortDirection.ASC) "Oldest" else "Newest"
+                            }
+                            Surface(
+                                onClick = { selectedDirection = dir },
+                                shape = RoundedCornerShape(10.dp),
+                                color = if (active) {
+                                    MaterialTheme.colorScheme.primary
+                                } else {
+                                    Color.Transparent
+                                },
+                                modifier = Modifier.weight(1f)
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(vertical = 9.dp, horizontal = 8.dp),
+                                    horizontalArrangement = Arrangement.Center,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Icon(
+                                        imageVector = if (dir == SortDirection.ASC) {
+                                            Icons.Default.ArrowUpward
+                                        } else {
+                                            Icons.Default.ArrowDownward
+                                        },
+                                        contentDescription = null,
+                                        tint = if (active) {
+                                            MaterialTheme.colorScheme.onPrimary
+                                        } else {
+                                            MaterialTheme.colorScheme.onSurfaceVariant
+                                        },
+                                        modifier = Modifier.size(15.dp)
+                                    )
+                                    Spacer(Modifier.width(5.dp))
+                                    Text(
+                                        text = "${dir.label} ($subHint)",
+                                        style = MaterialTheme.typography.labelMedium,
+                                        fontWeight = if (active) FontWeight.Bold else FontWeight.Medium,
+                                        color = if (active) {
+                                            MaterialTheme.colorScheme.onPrimary
+                                        } else {
+                                            MaterialTheme.colorScheme.onSurfaceVariant
+                                        },
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                }
+                            }
                         }
                     }
                 }
@@ -1591,37 +1743,15 @@ private fun CompactVideoRow(
                 modifier = Modifier.weight(1f),
                 verticalArrangement = Arrangement.spacedBy(2.dp)
             ) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(6.dp)
-                ) {
-                    Text(
-                        text = video.title,
-                        style = MaterialTheme.typography.titleSmall.copy(
-                            fontSize = 12.5.sp,
-                            lineHeight = 16.sp
-                        ),
-                        maxLines = 2,
-                        overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.weight(1f, fill = false)
-                    )
-                    if (isNew) {
-                        Surface(
-                            shape = RoundedCornerShape(4.dp),
-                            color = Color(0xFFE53935)
-                        ) {
-                            Text(
-                                text = "NEW",
-                                style = MaterialTheme.typography.labelSmall.copy(
-                                    fontSize = 8.5.sp,
-                                    fontWeight = FontWeight.Bold
-                                ),
-                                color = Color.White,
-                                modifier = Modifier.padding(horizontal = 5.dp, vertical = 1.dp)
-                            )
-                        }
-                    }
-                }
+                Text(
+                    text = video.title,
+                    style = MaterialTheme.typography.titleSmall.copy(
+                        fontSize = 12.5.sp,
+                        lineHeight = 16.sp
+                    ),
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis
+                )
 
                 val resTag = FormatUtils.formatResolution(video.width, video.height)
                     .substringBefore(" ·")

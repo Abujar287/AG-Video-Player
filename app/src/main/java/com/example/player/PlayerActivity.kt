@@ -4,6 +4,7 @@ import android.app.PendingIntent
 import android.app.PictureInPictureParams
 import android.app.RemoteAction
 import android.content.BroadcastReceiver
+import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
@@ -49,11 +50,12 @@ import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import androidx.lifecycle.lifecycleScope
 import androidx.media3.common.Player
 import androidx.media3.common.VideoSize
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.session.MediaController
+import androidx.media3.session.SessionToken
 import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.PlayerView
 import com.example.data.local.VeloDatabase
@@ -62,6 +64,7 @@ import com.example.data.repository.UserPreferences
 import com.example.data.repository.UserPreferencesRepository
 import com.example.ui.theme.VeloPlayTheme
 import com.example.util.FormatUtils
+import com.google.common.util.concurrent.ListenableFuture
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -82,6 +85,7 @@ class PlayerActivity : ComponentActivity() {
     private var autoPipEnabled by mutableStateOf(true)
     private var pipSourceRect: android.graphics.Rect? = null
     private var hasPipFeature: Boolean = false
+    private var mediaControllerFuture: ListenableFuture<MediaController>? = null
 
     private val pipActionReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
@@ -113,7 +117,11 @@ class PlayerActivity : ComponentActivity() {
         prefsRepository = UserPreferencesRepository(this)
 
         handleLaunchIntent(intent)
-        runCatching { startService(Intent(this, PlaybackService::class.java)) }
+        runCatching {
+            startService(Intent(this, PlaybackService::class.java))
+            val sessionToken = SessionToken(this, ComponentName(this, PlaybackService::class.java))
+            mediaControllerFuture = MediaController.Builder(this, sessionToken).buildAsync()
+        }
 
         ContextCompat.registerReceiver(
             this,
@@ -157,6 +165,17 @@ class PlayerActivity : ComponentActivity() {
 
             LaunchedEffect(prefs.autoPipOnHome) {
                 autoPipEnabled = prefs.autoPipOnHome
+            }
+
+            LaunchedEffect(prefs.alwaysBackgroundPlay) {
+                PlayerSessionManager.setBackgroundPlayEnabled(prefs.alwaysBackgroundPlay)
+                updatePipParams(player)
+            }
+
+            LaunchedEffect(Unit) {
+                PlayerSessionManager.stopPlaybackSignal.collect {
+                    finish()
+                }
             }
 
             var isPlaying by remember { mutableStateOf(false) }
@@ -210,6 +229,7 @@ class PlayerActivity : ComponentActivity() {
                 val startSpeed = saved?.playbackSpeed ?: 1.0f
                 val startSw = saved?.useSoftwareDecoder ?: initialPrefs.defaultSoftwareDecoder
                 playbackSpeed = startSpeed
+                PlayerSessionManager.setBackgroundPlayEnabled(initialPrefs.alwaysBackgroundPlay)
 
                 PlayerSessionManager.preparePlaylist(
                     context = this@PlayerActivity,
@@ -393,6 +413,11 @@ class PlayerActivity : ComponentActivity() {
                         subtitlesDisabled = subtitlesDisabled,
                         doubleTapFeedback = doubleTapFeedback,
                         statusBanner = statusBanner,
+                        singleClickAction = prefs.singleClickAction,
+                        doubleClickAction = prefs.doubleClickAction,
+                        enableSwipeGestures = prefs.enableSwipeGestures,
+                        gestureSeekStepSeconds = prefs.gestureSeekStepSeconds,
+                        controlsVisibility = prefs.controlsVisibility,
                         onBack = {
                             persistPositionBlocking()
                             if (!isBackgroundPlayEnabled) {
@@ -514,6 +539,14 @@ class PlayerActivity : ComponentActivity() {
                                 p.play()
                                 doubleTapFeedback = "Playing"
                             }
+                        },
+                        onDoubleTapSeek = { delta ->
+                            val p = player ?: return@PlayerOverlay
+                            val upper = durationMs.takeIf { it > 0L } ?: Long.MAX_VALUE
+                            val next = (p.currentPosition + delta).coerceIn(0L, upper)
+                            p.seekTo(next)
+                            currentPosMs = next
+                            doubleTapFeedback = FormatUtils.formatSignedDelta(delta)
                         }
                     )
                 }
@@ -674,6 +707,10 @@ class PlayerActivity : ComponentActivity() {
     }
 
     override fun onDestroy() {
+        mediaControllerFuture?.let { future ->
+            runCatching { MediaController.releaseFuture(future) }
+            mediaControllerFuture = null
+        }
         runCatching { unregisterReceiver(pipActionReceiver) }
         super.onDestroy()
     }

@@ -32,7 +32,7 @@
     <string name="back_desc">Go Back</string>
     <string name="update_available_title">Update Available</string>
     <string name="update_up_to_date_title">You Are Up to Date</string>
-    <string name="update_now_cta">Update Now</string>
+    <string name="update_now_cta">Download Update APK</string>
     <string name="download_idm_browser_cta">Download with IDM / Browser</string>
     <string name="install_apk_cta">Install Update</string>
     <string name="cancel_cta">Cancel</string>

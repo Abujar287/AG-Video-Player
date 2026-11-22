@@ -14,7 +14,6 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.OpenInNew
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.CloudDownload
 import androidx.compose.material.icons.filled.ErrorOutline
@@ -26,7 +25,6 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -44,8 +42,7 @@ import com.example.util.FormatUtils
 import java.io.File
 
 /**
- * Minimal, clean Update Dialog: tapping Update immediately checks GitHub and only shows
- * whether a new update is available (plus download/install controls if available).
+ * Clean Update Dialog: shows Current version vs Update version note and single Download Update APK CTA.
  */
 @Composable
 fun UpdateCheckDialog(
@@ -55,7 +52,6 @@ fun UpdateCheckDialog(
     onRetryCheck: () -> Unit,
     onStartInAppDownload: (GitHubReleaseInfo) -> Unit,
     onCancelDownload: () -> Unit,
-    onOpenExternalDownload: (String) -> Unit,
     onInstallApk: (File) -> Unit
 ) {
     AlertDialog(
@@ -142,35 +138,59 @@ fun UpdateCheckDialog(
                             modifier = Modifier.fillMaxWidth()
                         ) {
                             Column(
-                                modifier = Modifier.padding(12.dp),
-                                verticalArrangement = Arrangement.spacedBy(6.dp)
+                                modifier = Modifier.padding(14.dp),
+                                verticalArrangement = Arrangement.spacedBy(8.dp)
                             ) {
                                 Row(
                                     modifier = Modifier.fillMaxWidth(),
-                                    horizontalArrangement = Arrangement.SpaceBetween
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
                                 ) {
                                     Text(
-                                        text = "v${release.versionName}",
-                                        style = MaterialTheme.typography.titleSmall,
+                                        text = "Current version :",
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                    Text(
+                                        text = currentVersionLabel,
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        fontWeight = FontWeight.SemiBold,
+                                        color = MaterialTheme.colorScheme.onSurface
+                                    )
+                                }
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text(
+                                        text = "Update version :",
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                    Text(
+                                        text = buildString {
+                                            append("v${release.versionName}")
+                                            if (release.apkSizeBytes > 0L) {
+                                                append(" · ${FormatUtils.formatFileSize(release.apkSizeBytes)}")
+                                            }
+                                        },
+                                        style = MaterialTheme.typography.bodyMedium,
                                         fontWeight = FontWeight.Bold,
                                         color = MaterialTheme.colorScheme.primary
                                     )
-                                    if (release.apkSizeBytes > 0L) {
-                                        Text(
-                                            text = FormatUtils.formatFileSize(release.apkSizeBytes),
-                                            style = MaterialTheme.typography.labelMedium,
-                                            color = MaterialTheme.colorScheme.secondary
-                                        )
-                                    }
                                 }
-                                Text(
-                                    text = release.releaseNotes.ifBlank { "New update ready to install." },
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .heightIn(max = 120.dp)
-                                        .verticalScroll(rememberScrollState())
-                                )
+                                if (release.releaseNotes.isNotBlank()) {
+                                    Text(
+                                        text = release.releaseNotes,
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .heightIn(max = 110.dp)
+                                            .verticalScroll(rememberScrollState())
+                                    )
+                                }
                             }
                         }
 
@@ -183,17 +203,6 @@ fun UpdateCheckDialog(
                             Icon(Icons.Default.CloudDownload, contentDescription = null, modifier = Modifier.size(18.dp))
                             Spacer(Modifier.width(8.dp))
                             Text(stringResource(R.string.update_now_cta))
-                        }
-
-                        OutlinedButton(
-                            onClick = { onOpenExternalDownload(release.apkDownloadUrl) },
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .testTag("download_idm_button")
-                        ) {
-                            Icon(Icons.AutoMirrored.Filled.OpenInNew, contentDescription = null, modifier = Modifier.size(18.dp))
-                            Spacer(Modifier.width(8.dp))
-                            Text(stringResource(R.string.download_idm_browser_cta))
                         }
                     }
 
