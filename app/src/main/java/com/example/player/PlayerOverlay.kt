@@ -10,11 +10,10 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.ExperimentalLayoutApi
-import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
@@ -55,7 +54,6 @@ import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material.icons.filled.SkipPrevious
 import androidx.compose.material.icons.filled.Speed
 import androidx.compose.material.icons.filled.Subtitles
-import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -118,7 +116,6 @@ private enum class ActiveDragGesture {
     VOLUME
 }
 
-@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun PlayerOverlay(
     title: String,
@@ -178,7 +175,6 @@ fun PlayerOverlay(
     var startBrightness by remember { mutableFloatStateOf(brightnessPercent.toFloat()) }
     var startVolume by remember { mutableFloatStateOf(volumePercent.toFloat()) }
 
-    var showExtraToolsPanel by remember { mutableStateOf(false) }
     var showVolumeBoostPanel by remember { mutableStateOf(false) }
     var showSpeedPicker by remember { mutableStateOf(false) }
     var showTrackDialog by remember { mutableStateOf(false) }
@@ -209,6 +205,7 @@ fun PlayerOverlay(
                 detectTapGestures(
                     onTap = {
                         showVolumeBoostPanel = false
+                        showSpeedPicker = false
                         latestOnToggleControls()
                     },
                     onDoubleTap = {
@@ -303,11 +300,11 @@ fun PlayerOverlay(
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(116.dp)
+                        .height(164.dp)
                         .align(Alignment.TopCenter)
                         .background(
                             Brush.verticalGradient(
-                                listOf(Color.Black.copy(alpha = 0.85f), Color.Transparent)
+                                listOf(Color.Black.copy(alpha = 0.88f), Color.Transparent)
                             )
                         )
                 )
@@ -361,7 +358,10 @@ fun PlayerOverlay(
                         // Sound / Extra Volume Button on Top Name Line
                         val isBoosted = volumePercent > 100 && !isMuted
                         Surface(
-                            onClick = { showVolumeBoostPanel = !showVolumeBoostPanel },
+                            onClick = {
+                                showVolumeBoostPanel = !showVolumeBoostPanel
+                                if (showVolumeBoostPanel) showSpeedPicker = false
+                            },
                             shape = RoundedCornerShape(8.dp),
                             color = when {
                                 isMuted -> Color.White.copy(alpha = 0.14f)
@@ -419,6 +419,85 @@ fun PlayerOverlay(
                         }
                     }
 
+                    // Top Action Strip: Fit/Full Screen & Rotate up front + all tools visible on the top side
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(top = 4.dp)
+                            .horizontalScroll(rememberScrollState()),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        SecondaryToolButton(
+                            icon = Icons.Default.AspectRatio,
+                            label = when (aspectMode) {
+                                PlayerAspectMode.FIT -> "Fit"
+                                PlayerAspectMode.FILL -> "Full"
+                                PlayerAspectMode.ZOOM -> "Crop"
+                            },
+                            active = aspectMode != PlayerAspectMode.FIT,
+                            onClick = onCycleAspectMode
+                        )
+                        SecondaryToolButton(
+                            icon = Icons.Default.ScreenRotation,
+                            label = "Rotate",
+                            active = false,
+                            onClick = onToggleRotation
+                        )
+                        SecondaryToolButton(
+                            icon = if (repeatMode == Player.REPEAT_MODE_ONE) {
+                                Icons.Default.RepeatOne
+                            } else {
+                                Icons.Default.Repeat
+                            },
+                            label = when (repeatMode) {
+                                Player.REPEAT_MODE_ONE -> "Loop 1"
+                                Player.REPEAT_MODE_ALL -> "Loop All"
+                                else -> "Loop"
+                            },
+                            active = repeatMode != Player.REPEAT_MODE_OFF,
+                            onClick = onCycleRepeatMode
+                        )
+                        SecondaryToolButton(
+                            icon = if (isMuted) {
+                                Icons.AutoMirrored.Filled.VolumeOff
+                            } else {
+                                Icons.AutoMirrored.Filled.VolumeUp
+                            },
+                            label = if (isMuted) "Unmute" else "Mute",
+                            active = isMuted,
+                            onClick = onToggleMute
+                        )
+                        SecondaryToolButton(
+                            icon = Icons.Default.Bedtime,
+                            label = sleepMinutesRemaining?.let { "${it}m" } ?: "Sleep",
+                            active = sleepMinutesRemaining != null,
+                            activeTint = AmberBoost,
+                            onClick = { showSleepDialog = true }
+                        )
+                        SecondaryToolButton(
+                            icon = Icons.Default.Speed,
+                            label = "${playbackSpeed}x",
+                            active = abs(playbackSpeed - 1.0f) > 0.01f || showSpeedPicker,
+                            onClick = {
+                                showSpeedPicker = !showSpeedPicker
+                                if (showSpeedPicker) showVolumeBoostPanel = false
+                            }
+                        )
+                        SecondaryToolButton(
+                            icon = Icons.Default.Headphones,
+                            label = "BG Play",
+                            active = isBackgroundPlayEnabled,
+                            onClick = onToggleBackgroundPlay
+                        )
+                        SecondaryToolButton(
+                            icon = Icons.Default.Subtitles,
+                            label = "Tracks",
+                            active = !subtitlesDisabled && subtitleTracks.any { it.isSelected },
+                            onClick = { showTrackDialog = true }
+                        )
+                    }
+
                     // Expandable Extra Volume Boost Control (0% - 200%)
                     AnimatedVisibility(visible = showVolumeBoostPanel) {
                         Surface(
@@ -469,24 +548,15 @@ fun PlayerOverlay(
                             }
                         }
                     }
-                }
 
-                // Bottom Bar: Secondary Panel (on demand) + Slim Duration Bar + Primary Controls (Lock, Prev, Play/Pause, Next, PiP)
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .align(Alignment.BottomCenter)
-                        .windowInsetsPadding(WindowInsets.safeDrawing)
-                        .padding(horizontal = 14.dp, vertical = 10.dp)
-                ) {
-                    // Speed Picker Popover (opened from Speed button inside Tools panel)
-                    AnimatedVisibility(visible = showExtraToolsPanel && showSpeedPicker) {
+                    // Speed Picker Popover (opened from top Speed button)
+                    AnimatedVisibility(visible = showSpeedPicker) {
                         Surface(
                             shape = RoundedCornerShape(12.dp),
                             color = Color(0xD9111827),
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .padding(bottom = 8.dp)
+                                .padding(top = 6.dp)
                         ) {
                             Row(
                                 modifier = Modifier
@@ -515,89 +585,16 @@ fun PlayerOverlay(
                             }
                         }
                     }
+                }
 
-                    // Expandable Secondary Buttons Panel:
-                    // Rotate, Loop, Mute, Sleep Timer, Speed, Background Play (+ Tracks & Aspect)
-                    AnimatedVisibility(visible = showExtraToolsPanel) {
-                        Surface(
-                            shape = RoundedCornerShape(14.dp),
-                            color = Color(0xCC0D131C),
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(bottom = 8.dp)
-                                .border(1.dp, Color.White.copy(alpha = 0.14f), RoundedCornerShape(14.dp))
-                        ) {
-                            FlowRow(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(horizontal = 8.dp, vertical = 8.dp),
-                                horizontalArrangement = Arrangement.SpaceEvenly,
-                                verticalArrangement = Arrangement.spacedBy(6.dp)
-                            ) {
-                                SecondaryToolButton(
-                                    icon = Icons.Default.ScreenRotation,
-                                    label = "Rotate",
-                                    active = false,
-                                    onClick = onToggleRotation
-                                )
-                                SecondaryToolButton(
-                                    icon = if (repeatMode == Player.REPEAT_MODE_ONE) {
-                                        Icons.Default.RepeatOne
-                                    } else {
-                                        Icons.Default.Repeat
-                                    },
-                                    label = when (repeatMode) {
-                                        Player.REPEAT_MODE_ONE -> "Loop 1"
-                                        Player.REPEAT_MODE_ALL -> "Loop All"
-                                        else -> "Loop"
-                                    },
-                                    active = repeatMode != Player.REPEAT_MODE_OFF,
-                                    onClick = onCycleRepeatMode
-                                )
-                                SecondaryToolButton(
-                                    icon = if (isMuted) {
-                                        Icons.AutoMirrored.Filled.VolumeOff
-                                    } else {
-                                        Icons.AutoMirrored.Filled.VolumeUp
-                                    },
-                                    label = if (isMuted) "Unmute" else "Mute",
-                                    active = isMuted,
-                                    onClick = onToggleMute
-                                )
-                                SecondaryToolButton(
-                                    icon = Icons.Default.Bedtime,
-                                    label = sleepMinutesRemaining?.let { "${it}m" } ?: "Sleep",
-                                    active = sleepMinutesRemaining != null,
-                                    activeTint = AmberBoost,
-                                    onClick = { showSleepDialog = true }
-                                )
-                                SecondaryToolButton(
-                                    icon = Icons.Default.Speed,
-                                    label = "${playbackSpeed}x",
-                                    active = abs(playbackSpeed - 1.0f) > 0.01f,
-                                    onClick = { showSpeedPicker = !showSpeedPicker }
-                                )
-                                SecondaryToolButton(
-                                    icon = Icons.Default.Headphones,
-                                    label = "BG Play",
-                                    active = isBackgroundPlayEnabled,
-                                    onClick = onToggleBackgroundPlay
-                                )
-                                SecondaryToolButton(
-                                    icon = Icons.Default.Subtitles,
-                                    label = "Tracks",
-                                    active = !subtitlesDisabled && subtitleTracks.any { it.isSelected },
-                                    onClick = { showTrackDialog = true }
-                                )
-                                SecondaryToolButton(
-                                    icon = Icons.Default.AspectRatio,
-                                    label = aspectMode.label,
-                                    active = aspectMode != PlayerAspectMode.FIT,
-                                    onClick = onCycleAspectMode
-                                )
-                            }
-                        }
-                    }
+                // Bottom Bar: Slim Duration Bar + Primary Controls (Lock, Prev, Play/Pause, Next, PiP)
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .align(Alignment.BottomCenter)
+                        .windowInsetsPadding(WindowInsets.safeDrawing)
+                        .padding(horizontal = 14.dp, vertical = 10.dp)
+                ) {
 
                     // Slim, Professional Duration Bar (thin bold-bordered line, not thick/chunky)
                     val displayPos = if (isScrubbingBar) scrubPositionMs else currentPositionMs
@@ -635,42 +632,24 @@ fun PlayerOverlay(
 
                     Spacer(Modifier.height(4.dp))
 
-                    // Primary Control Line: Lock | Previous · Play/Pause · Next | More Tools & PiP
+                    // Primary Control Line: Lock | Previous · Play/Pause · Next | PiP
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        // Left: Lock & Secondary Tools Trigger
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(2.dp)
+                        // Left: Lock
+                        IconButton(
+                            onClick = onToggleLock,
+                            modifier = Modifier
+                                .minimumInteractiveComponentSize()
+                                .testTag("player_lock_button")
                         ) {
-                            IconButton(
-                                onClick = onToggleLock,
-                                modifier = Modifier
-                                    .minimumInteractiveComponentSize()
-                                    .testTag("player_lock_button")
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Default.Lock,
-                                    contentDescription = stringResource(R.string.lock_controls_desc),
-                                    tint = Color.White
-                                )
-                            }
-
-                            IconButton(
-                                onClick = { showExtraToolsPanel = !showExtraToolsPanel },
-                                modifier = Modifier
-                                    .minimumInteractiveComponentSize()
-                                    .testTag("player_more_tools_button")
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Default.Tune,
-                                    contentDescription = "More Player Tools",
-                                    tint = if (showExtraToolsPanel) ElectricTeal else Color.White
-                                )
-                            }
+                            Icon(
+                                imageVector = Icons.Default.Lock,
+                                contentDescription = stringResource(R.string.lock_controls_desc),
+                                tint = Color.White
+                            )
                         }
 
                         // Center: Previous, Play/Pause, Next

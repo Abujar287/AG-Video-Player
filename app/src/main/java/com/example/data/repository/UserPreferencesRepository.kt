@@ -23,7 +23,8 @@ data class UserPreferences(
     val defaultSoftwareDecoder: Boolean = false,
     val githubRepoSlug: String = DEFAULT_GITHUB_REPO,
     val favoriteUris: Set<String> = emptySet(),
-    val playlists: Map<String, List<String>> = emptyMap()
+    val playlists: Map<String, List<String>> = emptyMap(),
+    val playedVideoUris: Set<String> = emptySet()
 ) {
     companion object {
         val DEFAULT_GITHUB_REPO: String
@@ -40,6 +41,7 @@ class UserPreferencesRepository(private val context: Context) {
         val GITHUB_REPO_SLUG = stringPreferencesKey("github_repo_slug")
         val FAVORITE_URIS = stringSetPreferencesKey("favorite_uris")
         val PLAYLISTS_JSON = stringPreferencesKey("playlists_json")
+        val PLAYED_VIDEO_URIS = stringSetPreferencesKey("played_video_uris")
     }
 
     val preferences: Flow<UserPreferences> = context.dataStore.data.map { prefs ->
@@ -52,7 +54,8 @@ class UserPreferencesRepository(private val context: Context) {
             defaultSoftwareDecoder = prefs[Keys.DEFAULT_SW_DECODER] ?: false,
             githubRepoSlug = savedSlug ?: UserPreferences.DEFAULT_GITHUB_REPO,
             favoriteUris = prefs[Keys.FAVORITE_URIS] ?: emptySet(),
-            playlists = parsePlaylists(prefs[Keys.PLAYLISTS_JSON])
+            playlists = parsePlaylists(prefs[Keys.PLAYLISTS_JSON]),
+            playedVideoUris = prefs[Keys.PLAYED_VIDEO_URIS] ?: emptySet()
         )
     }
 
@@ -97,6 +100,16 @@ class UserPreferencesRepository(private val context: Context) {
             val current = prefs[Keys.FAVORITE_URIS]?.toMutableSet() ?: return@edit
             if (current.remove(videoUri)) {
                 prefs[Keys.FAVORITE_URIS] = current
+            }
+        }
+    }
+
+    suspend fun markVideoPlayed(videoUri: String) {
+        if (videoUri.isBlank()) return
+        context.dataStore.edit { prefs ->
+            val current = prefs[Keys.PLAYED_VIDEO_URIS]?.toMutableSet() ?: mutableSetOf()
+            if (current.add(videoUri)) {
+                prefs[Keys.PLAYED_VIDEO_URIS] = current
             }
         }
     }

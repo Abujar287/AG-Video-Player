@@ -194,6 +194,13 @@ class PlayerActivity : ComponentActivity() {
                 }
             }
 
+            LaunchedEffect(activeUri) {
+                val uriNow = activeUri
+                if (!uriNow.isNullOrBlank()) {
+                    prefsRepository.markVideoPlayed(uriNow)
+                }
+            }
+
             // Prepare playlist & restore exact saved timestamp
             LaunchedEffect(playlistEntries, startPlaylistIndex) {
                 val target = playlistEntries.getOrNull(startPlaylistIndex) ?: return@LaunchedEffect

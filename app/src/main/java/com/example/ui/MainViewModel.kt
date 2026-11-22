@@ -168,6 +168,15 @@ data class MainUiState(
             val availableUris = allVideos.map { it.uriString }.toHashSet()
             return preferences.favoriteUris.count { availableUris.contains(it) }
         }
+
+    fun isVideoNew(video: VideoItem): Boolean {
+        return !historyByUri.containsKey(video.uriString) &&
+            !preferences.playedVideoUris.contains(video.uriString)
+    }
+
+    fun unplayedCountForFolder(bucketId: Long): Int {
+        return videosByFolder[bucketId].orEmpty().count { isVideoNew(it) }
+    }
 }
 
 class MainViewModel(application: Application) : AndroidViewModel(application) {

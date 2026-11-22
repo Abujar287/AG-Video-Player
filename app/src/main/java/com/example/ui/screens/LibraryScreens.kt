@@ -35,7 +35,9 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.DriveFileMove
 import androidx.compose.material.icons.automirrored.filled.PlaylistAdd
+import androidx.compose.material.icons.automirrored.filled.PlaylistPlay
 import androidx.compose.material.icons.automirrored.filled.Sort
 import androidx.compose.material.icons.automirrored.filled.ViewList
 import androidx.compose.material.icons.filled.Add
@@ -43,7 +45,6 @@ import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.DarkMode
 import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.DriveFileMove
 import androidx.compose.material.icons.filled.DriveFileRenameOutline
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.FavoriteBorder
@@ -54,9 +55,7 @@ import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.LightMode
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.PlayArrow
-import androidx.compose.material.icons.filled.PlaylistPlay
 import androidx.compose.material.icons.filled.RadioButtonUnchecked
-import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.SelectAll
 import androidx.compose.material.icons.filled.Share
@@ -91,6 +90,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.minimumInteractiveComponentSize
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -244,7 +244,7 @@ fun VeloMainScreen(
                                 }
                             }
                         ) {
-                            Icon(Icons.Default.DriveFileMove, contentDescription = "Move selected")
+                            Icon(Icons.AutoMirrored.Filled.DriveFileMove, contentDescription = "Move selected")
                         }
                         IconButton(
                             onClick = {
@@ -283,7 +283,7 @@ fun VeloMainScreen(
                     },
                     title = {
                         val titleText = when (val dest = uiState.destination) {
-                            BrowserDestination.Folders -> stringResource(R.string.app_name)
+                            BrowserDestination.Folders -> "AG Video Player"
                             is BrowserDestination.Folder -> activeFolder?.name ?: "Folder"
                             BrowserDestination.Favorites -> "Favourites"
                             is BrowserDestination.Playlist -> dest.name
@@ -326,31 +326,6 @@ fun VeloMainScreen(
                         }
                     },
                     actions = {
-                        // Show Grid / List toggle button right on main interface
-                        if (hasStoragePermission) {
-                            IconButton(
-                                onClick = onToggleGridView,
-                                modifier = Modifier
-                                    .minimumInteractiveComponentSize()
-                                    .testTag("grid_toggle_button")
-                            ) {
-                                Icon(
-                                    imageVector = if (uiState.preferences.isGridView) {
-                                        Icons.AutoMirrored.Filled.ViewList
-                                    } else {
-                                        Icons.Default.GridView
-                                    },
-                                    contentDescription = if (uiState.preferences.isGridView) {
-                                        "Switch to List View"
-                                    } else {
-                                        "Show Grid"
-                                    },
-                                    tint = MaterialTheme.colorScheme.primary,
-                                    modifier = Modifier.size(20.dp)
-                                )
-                            }
-                        }
-
                         IconButton(
                             onClick = onToggleTheme,
                             modifier = Modifier
@@ -392,14 +367,37 @@ fun VeloMainScreen(
 
                         if (hasStoragePermission) {
                             IconButton(
-                                onClick = onRefresh,
+                                onClick = onToggleGridView,
                                 modifier = Modifier
                                     .minimumInteractiveComponentSize()
-                                    .testTag("refresh_library_button")
+                                    .testTag("grid_toggle_button")
                             ) {
                                 Icon(
-                                    imageVector = Icons.Default.Refresh,
-                                    contentDescription = stringResource(R.string.refresh_library_desc),
+                                    imageVector = if (uiState.preferences.isGridView) {
+                                        Icons.AutoMirrored.Filled.ViewList
+                                    } else {
+                                        Icons.Default.GridView
+                                    },
+                                    contentDescription = if (uiState.preferences.isGridView) {
+                                        "Switch to List View"
+                                    } else {
+                                        "Show Grid"
+                                    },
+                                    tint = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                            }
+
+                            IconButton(
+                                onClick = { showSortDialog = true },
+                                modifier = Modifier
+                                    .minimumInteractiveComponentSize()
+                                    .testTag("sort_menu_button")
+                            ) {
+                                Icon(
+                                    imageVector = Icons.AutoMirrored.Filled.Sort,
+                                    contentDescription = "Sort Videos",
+                                    tint = MaterialTheme.colorScheme.primary,
                                     modifier = Modifier.size(20.dp)
                                 )
                             }
@@ -425,69 +423,66 @@ fun VeloMainScreen(
                     CircularProgressIndicator()
                 }
             } else {
-                AnimatedContent(
-                    targetState = uiState.destination,
-                    label = "folder_video_transition"
-                ) { dest ->
-                    if (dest == BrowserDestination.Folders) {
-                        FolderBrowserContent(
-                            uiState = uiState,
-                            onSearchQueryChange = onSearchQueryChange,
-                            onOpenSortPopup = { showSortDialog = true },
-                            onToggleGridView = onToggleGridView,
-                            onFolderClick = onFolderClick,
-                            onOpenFavorites = onOpenFavorites,
-                            onOpenPlaylist = onOpenPlaylist,
-                            onDeletePlaylist = onDeletePlaylist,
-                            onResumeLastVideo = { video ->
-                                val folderVideos = uiState.videosByFolder[video.bucketId].orEmpty()
-                                onVideoClick(video, folderVideos.ifEmpty { listOf(video) })
-                            },
-                            onOpenSingleFile = onOpenSingleFile
-                        )
-                    } else {
-                        val videos = uiState.currentVideos
-                        val activePlaylistName = (dest as? BrowserDestination.Playlist)?.name
-                        VideoListContent(
-                            videos = videos,
-                            isGridView = uiState.preferences.isGridView,
-                            isSelectionMode = uiState.isSelectionMode,
-                            selectedUris = uiState.selectedVideoUris,
-                            favoriteUris = uiState.preferences.favoriteUris,
-                            historyByUri = uiState.historyByUri,
-                            searchQuery = uiState.searchQuery,
-                            sortField = uiState.sortField,
-                            sortDirection = uiState.sortDirection,
-                            activePlaylistName = activePlaylistName,
-                            onSearchQueryChange = onSearchQueryChange,
-                            onOpenSortPopup = { showSortDialog = true },
-                            onToggleGridView = onToggleGridView,
-                            onVideoClick = { video ->
-                                if (uiState.isSelectionMode) {
-                                    onToggleSelection(video.uriString)
-                                } else {
-                                    onVideoClick(video, videos)
-                                }
-                            },
-                            onVideoLongClick = { video ->
-                                if (uiState.isSelectionMode) {
-                                    onToggleSelection(video.uriString)
-                                } else {
-                                    onStartSelection(video.uriString)
-                                }
-                            },
-                            onToggleFavorite = onToggleFavorite,
-                            onAddToPlaylist = { playlistTargetVideo = it },
-                            onRemoveFromPlaylist = { name, video ->
-                                onRemoveFromPlaylist(name, video)
-                            },
-                            onShareVideo = onShareVideo,
-                            onRenameVideo = { renameTargetVideo = it },
-                            onMoveVideo = { moveTargetVideos = listOf(it) },
-                            onShowVideoDetails = { detailVideo = it },
-                            onDeleteVideo = { deleteTargetVideos = listOf(it) },
-                            loadThumbnail = loadThumbnail
-                        )
+                PullToRefreshBox(
+                    isRefreshing = uiState.isLoadingLibrary,
+                    onRefresh = onRefresh,
+                    modifier = Modifier.fillMaxSize()
+                ) {
+                    AnimatedContent(
+                        targetState = uiState.destination,
+                        label = "folder_video_transition"
+                    ) { dest ->
+                        if (dest == BrowserDestination.Folders) {
+                            FolderBrowserContent(
+                                uiState = uiState,
+                                onSearchQueryChange = onSearchQueryChange,
+                                onFolderClick = onFolderClick,
+                                onOpenFavorites = onOpenFavorites,
+                                onOpenPlaylist = onOpenPlaylist,
+                                onDeletePlaylist = onDeletePlaylist,
+                                onOpenSingleFile = onOpenSingleFile
+                            )
+                        } else {
+                            val videos = uiState.currentVideos
+                            val activePlaylistName = (dest as? BrowserDestination.Playlist)?.name
+                            VideoListContent(
+                                videos = videos,
+                                isGridView = uiState.preferences.isGridView,
+                                isSelectionMode = uiState.isSelectionMode,
+                                selectedUris = uiState.selectedVideoUris,
+                                favoriteUris = uiState.preferences.favoriteUris,
+                                historyByUri = uiState.historyByUri,
+                                isVideoNew = { uiState.isVideoNew(it) },
+                                searchQuery = uiState.searchQuery,
+                                activePlaylistName = activePlaylistName,
+                                onSearchQueryChange = onSearchQueryChange,
+                                onVideoClick = { video ->
+                                    if (uiState.isSelectionMode) {
+                                        onToggleSelection(video.uriString)
+                                    } else {
+                                        onVideoClick(video, videos)
+                                    }
+                                },
+                                onVideoLongClick = { video ->
+                                    if (uiState.isSelectionMode) {
+                                        onToggleSelection(video.uriString)
+                                    } else {
+                                        onStartSelection(video.uriString)
+                                    }
+                                },
+                                onToggleFavorite = onToggleFavorite,
+                                onAddToPlaylist = { playlistTargetVideo = it },
+                                onRemoveFromPlaylist = { name, video ->
+                                    onRemoveFromPlaylist(name, video)
+                                },
+                                onShareVideo = onShareVideo,
+                                onRenameVideo = { renameTargetVideo = it },
+                                onMoveVideo = { moveTargetVideos = listOf(it) },
+                                onShowVideoDetails = { detailVideo = it },
+                                onDeleteVideo = { deleteTargetVideos = listOf(it) },
+                                loadThumbnail = loadThumbnail
+                            )
+                        }
                     }
                 }
             }
@@ -619,7 +614,7 @@ fun VeloMainScreen(
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
                                     Icon(
-                                        imageVector = Icons.Default.PlaylistPlay,
+                                        imageVector = Icons.AutoMirrored.Filled.PlaylistPlay,
                                         contentDescription = null,
                                         tint = MaterialTheme.colorScheme.primary
                                     )
@@ -958,13 +953,10 @@ private fun PermissionPromptView(
 private fun FolderBrowserContent(
     uiState: MainUiState,
     onSearchQueryChange: (String) -> Unit,
-    onOpenSortPopup: () -> Unit,
-    onToggleGridView: () -> Unit,
     onFolderClick: (VideoFolder) -> Unit,
     onOpenFavorites: () -> Unit,
     onOpenPlaylist: (String) -> Unit,
     onDeletePlaylist: (String) -> Unit,
-    onResumeLastVideo: (VideoItem) -> Unit,
     onOpenSingleFile: () -> Unit
 ) {
     if (uiState.folders.isEmpty()) {
@@ -1026,14 +1018,9 @@ private fun FolderBrowserContent(
             modifier = Modifier.fillMaxSize()
         ) {
             item(span = { GridItemSpan(columns) }) {
-                SearchAndSortRow(
+                SearchInputBar(
                     query = uiState.searchQuery,
-                    sortField = uiState.sortField,
-                    sortDirection = uiState.sortDirection,
-                    isGridView = isGrid,
-                    onQueryChange = onSearchQueryChange,
-                    onOpenSortPopup = onOpenSortPopup,
-                    onToggleGridView = onToggleGridView
+                    onQueryChange = onSearchQueryChange
                 )
             }
 
@@ -1086,7 +1073,7 @@ private fun FolderBrowserContent(
                                     horizontalArrangement = Arrangement.spacedBy(6.dp)
                                 ) {
                                     Icon(
-                                        imageVector = Icons.Default.PlaylistPlay,
+                                        imageVector = Icons.AutoMirrored.Filled.PlaylistPlay,
                                         contentDescription = null,
                                         tint = MaterialTheme.colorScheme.primary,
                                         modifier = Modifier.size(18.dp)
@@ -1112,59 +1099,18 @@ private fun FolderBrowserContent(
                 }
             }
 
-            val lastPlayed = uiState.recentVideos.firstOrNull()
-            if (lastPlayed != null && uiState.searchQuery.isBlank()) {
-                item(span = { GridItemSpan(columns) }) {
-                    val (video, history) = lastPlayed
-                    Surface(
-                        onClick = { onResumeLastVideo(video) },
-                        shape = RoundedCornerShape(10.dp),
-                        color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f),
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .testTag("quick_resume_banner")
-                    ) {
-                        Row(
-                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.PlayArrow,
-                                contentDescription = null,
-                                tint = MaterialTheme.colorScheme.primary,
-                                modifier = Modifier.size(16.dp)
-                            )
-                            Spacer(Modifier.width(6.dp))
-                            Text(
-                                text = "Resume: ${video.title}",
-                                style = MaterialTheme.typography.bodyMedium.copy(
-                                    fontSize = 11.5.sp,
-                                    fontWeight = FontWeight.Medium
-                                ),
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
-                                modifier = Modifier.weight(1f)
-                            )
-                            Spacer(Modifier.width(8.dp))
-                            Text(
-                                text = FormatUtils.formatDuration(history.positionMs),
-                                style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp),
-                                color = MaterialTheme.colorScheme.secondary
-                            )
-                        }
-                    }
-                }
-            }
-
             items(uiState.filteredFolders, key = { it.bucketId }) { folder ->
+                val newCount = uiState.unplayedCountForFolder(folder.bucketId)
                 if (isGrid) {
                     GridFolderCard(
                         folder = folder,
+                        newCount = newCount,
                         onClick = { onFolderClick(folder) }
                     )
                 } else {
                     CompactFolderRow(
                         folder = folder,
+                        newCount = newCount,
                         onClick = { onFolderClick(folder) }
                     )
                 }
@@ -1181,13 +1127,10 @@ private fun VideoListContent(
     selectedUris: Set<String>,
     favoriteUris: Set<String>,
     historyByUri: Map<String, PlaybackHistoryEntity>,
+    isVideoNew: (VideoItem) -> Boolean,
     searchQuery: String,
-    sortField: SortField,
-    sortDirection: SortDirection,
     activePlaylistName: String?,
     onSearchQueryChange: (String) -> Unit,
-    onOpenSortPopup: () -> Unit,
-    onToggleGridView: () -> Unit,
     onVideoClick: (VideoItem) -> Unit,
     onVideoLongClick: (VideoItem) -> Unit,
     onToggleFavorite: (VideoItem) -> Unit,
@@ -1216,14 +1159,9 @@ private fun VideoListContent(
                 modifier = Modifier.fillMaxSize()
             ) {
                 item(span = { GridItemSpan(gridColumns) }) {
-                    SearchAndSortRow(
+                    SearchInputBar(
                         query = searchQuery,
-                        sortField = sortField,
-                        sortDirection = sortDirection,
-                        isGridView = isGridView,
-                        onQueryChange = onSearchQueryChange,
-                        onOpenSortPopup = onOpenSortPopup,
-                        onToggleGridView = onToggleGridView
+                        onQueryChange = onSearchQueryChange
                     )
                 }
 
@@ -1233,6 +1171,7 @@ private fun VideoListContent(
                         isSelected = selectedUris.contains(video.uriString),
                         isSelectionMode = isSelectionMode,
                         isFavorite = favoriteUris.contains(video.uriString),
+                        isNew = isVideoNew(video),
                         history = historyByUri[video.uriString],
                         activePlaylistName = activePlaylistName,
                         onClick = { onVideoClick(video) },
@@ -1256,14 +1195,9 @@ private fun VideoListContent(
                 modifier = Modifier.fillMaxSize()
             ) {
                 item {
-                    SearchAndSortRow(
+                    SearchInputBar(
                         query = searchQuery,
-                        sortField = sortField,
-                        sortDirection = sortDirection,
-                        isGridView = isGridView,
-                        onQueryChange = onSearchQueryChange,
-                        onOpenSortPopup = onOpenSortPopup,
-                        onToggleGridView = onToggleGridView
+                        onQueryChange = onSearchQueryChange
                     )
                 }
 
@@ -1273,6 +1207,7 @@ private fun VideoListContent(
                         isSelected = selectedUris.contains(video.uriString),
                         isSelectionMode = isSelectionMode,
                         isFavorite = favoriteUris.contains(video.uriString),
+                        isNew = isVideoNew(video),
                         history = historyByUri[video.uriString],
                         activePlaylistName = activePlaylistName,
                         onClick = { onVideoClick(video) },
@@ -1294,102 +1229,40 @@ private fun VideoListContent(
 }
 
 @Composable
-private fun SearchAndSortRow(
+private fun SearchInputBar(
     query: String,
-    sortField: SortField,
-    sortDirection: SortDirection,
-    isGridView: Boolean,
-    onQueryChange: (String) -> Unit,
-    onOpenSortPopup: () -> Unit,
-    onToggleGridView: () -> Unit
+    onQueryChange: (String) -> Unit
 ) {
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        OutlinedTextField(
-            value = query,
-            onValueChange = onQueryChange,
-            placeholder = {
-                Text(
-                    text = stringResource(R.string.search_videos_hint),
-                    style = MaterialTheme.typography.bodyMedium.copy(fontSize = 12.sp)
-                )
-            },
-            textStyle = MaterialTheme.typography.bodyMedium.copy(fontSize = 12.5.sp),
-            leadingIcon = { Icon(Icons.Default.Search, contentDescription = null, modifier = Modifier.size(18.dp)) },
-            trailingIcon = {
-                if (query.isNotEmpty()) {
-                    IconButton(onClick = { onQueryChange("") }) {
-                        Icon(Icons.Default.Close, contentDescription = "Clear search", modifier = Modifier.size(16.dp))
-                    }
+    OutlinedTextField(
+        value = query,
+        onValueChange = onQueryChange,
+        placeholder = {
+            Text(
+                text = stringResource(R.string.search_videos_hint),
+                style = MaterialTheme.typography.bodyMedium.copy(fontSize = 12.sp)
+            )
+        },
+        textStyle = MaterialTheme.typography.bodyMedium.copy(fontSize = 12.5.sp),
+        leadingIcon = { Icon(Icons.Default.Search, contentDescription = null, modifier = Modifier.size(18.dp)) },
+        trailingIcon = {
+            if (query.isNotEmpty()) {
+                IconButton(onClick = { onQueryChange("") }) {
+                    Icon(Icons.Default.Close, contentDescription = "Clear search", modifier = Modifier.size(16.dp))
                 }
-            },
-            singleLine = true,
-            shape = RoundedCornerShape(12.dp),
-            modifier = Modifier
-                .weight(1f)
-                .testTag("library_search_input")
-        )
-
-        Surface(
-            onClick = onOpenSortPopup,
-            shape = RoundedCornerShape(10.dp),
-            color = MaterialTheme.colorScheme.surfaceVariant,
-            modifier = Modifier
-                .minimumInteractiveComponentSize()
-                .testTag("sort_chip_button")
-        ) {
-            Row(
-                modifier = Modifier.padding(horizontal = 10.dp, vertical = 10.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(4.dp)
-            ) {
-                Icon(
-                    imageVector = Icons.AutoMirrored.Filled.Sort,
-                    contentDescription = "Sort",
-                    tint = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.size(16.dp)
-                )
-                Text(
-                    text = "${sortField.label} ${sortDirection.label}",
-                    style = MaterialTheme.typography.labelSmall.copy(fontSize = 11.sp),
-                    color = MaterialTheme.colorScheme.onSurface
-                )
             }
-        }
-
-        Surface(
-            onClick = onToggleGridView,
-            shape = RoundedCornerShape(10.dp),
-            color = MaterialTheme.colorScheme.surfaceVariant,
-            modifier = Modifier
-                .minimumInteractiveComponentSize()
-                .testTag("toolbar_grid_button")
-        ) {
-            Box(
-                modifier = Modifier.padding(10.dp),
-                contentAlignment = Alignment.Center
-            ) {
-                Icon(
-                    imageVector = if (isGridView) {
-                        Icons.AutoMirrored.Filled.ViewList
-                    } else {
-                        Icons.Default.GridView
-                    },
-                    contentDescription = "Show Grid",
-                    tint = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.size(18.dp)
-                )
-            }
-        }
-    }
+        },
+        singleLine = true,
+        shape = RoundedCornerShape(12.dp),
+        modifier = Modifier
+            .fillMaxWidth()
+            .testTag("library_search_input")
+    )
 }
 
 @Composable
 private fun CompactFolderRow(
     folder: VideoFolder,
+    newCount: Int,
     onClick: () -> Unit
 ) {
     val unit = if (folder.videoCount == 1) {
@@ -1463,6 +1336,26 @@ private fun CompactFolderRow(
                     )
                 }
             }
+            if (newCount > 0) {
+                Spacer(Modifier.width(8.dp))
+                Box(
+                    modifier = Modifier
+                        .clip(CircleShape)
+                        .background(Color(0xFFE53935))
+                        .padding(horizontal = 7.dp, vertical = 3.dp)
+                        .testTag("folder_new_badge_${folder.bucketId}"),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        text = "$newCount",
+                        style = MaterialTheme.typography.labelSmall.copy(
+                            fontSize = 10.5.sp,
+                            fontWeight = FontWeight.Bold
+                        ),
+                        color = Color.White
+                    )
+                }
+            }
         }
     }
 }
@@ -1470,6 +1363,7 @@ private fun CompactFolderRow(
 @Composable
 private fun GridFolderCard(
     folder: VideoFolder,
+    newCount: Int,
     onClick: () -> Unit
 ) {
     val unit = if (folder.videoCount == 1) {
@@ -1487,41 +1381,65 @@ private fun GridFolderCard(
             .clickable(onClick = onClick)
             .testTag("folder_grid_card_${folder.bucketId}")
     ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(12.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(6.dp)
-        ) {
-            Box(
+        Box(modifier = Modifier.fillMaxWidth()) {
+            Column(
                 modifier = Modifier
-                    .size(50.dp)
-                    .clip(RoundedCornerShape(14.dp))
-                    .background(MaterialTheme.colorScheme.primaryContainer),
-                contentAlignment = Alignment.Center
+                    .fillMaxWidth()
+                    .padding(12.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(6.dp)
             ) {
-                Icon(
-                    imageVector = Icons.Default.Folder,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.size(28.dp)
+                Box(
+                    modifier = Modifier
+                        .size(50.dp)
+                        .clip(RoundedCornerShape(14.dp))
+                        .background(MaterialTheme.colorScheme.primaryContainer),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Folder,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(28.dp)
+                    )
+                }
+                Text(
+                    text = folder.name,
+                    style = MaterialTheme.typography.titleSmall,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    textAlign = TextAlign.Center
+                )
+                Text(
+                    text = "${folder.videoCount} $unit · ${FormatUtils.formatFileSize(folder.totalSizeBytes)}",
+                    style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
                 )
             }
-            Text(
-                text = folder.name,
-                style = MaterialTheme.typography.titleSmall,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                textAlign = TextAlign.Center
-            )
-            Text(
-                text = "${folder.videoCount} $unit · ${FormatUtils.formatFileSize(folder.totalSizeBytes)}",
-                style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp),
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-            )
+
+            if (newCount > 0) {
+                Box(
+                    modifier = Modifier
+                        .align(Alignment.TopEnd)
+                        .padding(8.dp)
+                        .clip(CircleShape)
+                        .background(Color(0xFFE53935))
+                        .padding(horizontal = 6.dp, vertical = 2.dp)
+                        .testTag("folder_grid_new_badge_${folder.bucketId}"),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        text = "$newCount",
+                        style = MaterialTheme.typography.labelSmall.copy(
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.Bold
+                        ),
+                        color = Color.White
+                    )
+                }
+            }
         }
     }
 }
@@ -1533,6 +1451,7 @@ private fun CompactVideoRow(
     isSelected: Boolean,
     isSelectionMode: Boolean,
     isFavorite: Boolean,
+    isNew: Boolean,
     history: PlaybackHistoryEntity?,
     activePlaylistName: String?,
     onClick: () -> Unit,
@@ -1618,6 +1537,26 @@ private fun CompactVideoRow(
                     modifier = Modifier.fillMaxSize()
                 )
 
+                if (isNew) {
+                    Surface(
+                        shape = RoundedCornerShape(4.dp),
+                        color = Color(0xFFE53935),
+                        modifier = Modifier
+                            .align(Alignment.TopStart)
+                            .padding(3.dp)
+                    ) {
+                        Text(
+                            text = "NEW",
+                            style = MaterialTheme.typography.labelSmall.copy(
+                                fontSize = 8.sp,
+                                fontWeight = FontWeight.Bold
+                            ),
+                            color = Color.White,
+                            modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
+                        )
+                    }
+                }
+
                 Surface(
                     shape = RoundedCornerShape(4.dp),
                     color = Color.Black.copy(alpha = 0.8f),
@@ -1652,15 +1591,37 @@ private fun CompactVideoRow(
                 modifier = Modifier.weight(1f),
                 verticalArrangement = Arrangement.spacedBy(2.dp)
             ) {
-                Text(
-                    text = video.title,
-                    style = MaterialTheme.typography.titleSmall.copy(
-                        fontSize = 12.5.sp,
-                        lineHeight = 16.sp
-                    ),
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis
-                )
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    Text(
+                        text = video.title,
+                        style = MaterialTheme.typography.titleSmall.copy(
+                            fontSize = 12.5.sp,
+                            lineHeight = 16.sp
+                        ),
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f, fill = false)
+                    )
+                    if (isNew) {
+                        Surface(
+                            shape = RoundedCornerShape(4.dp),
+                            color = Color(0xFFE53935)
+                        ) {
+                            Text(
+                                text = "NEW",
+                                style = MaterialTheme.typography.labelSmall.copy(
+                                    fontSize = 8.5.sp,
+                                    fontWeight = FontWeight.Bold
+                                ),
+                                color = Color.White,
+                                modifier = Modifier.padding(horizontal = 5.dp, vertical = 1.dp)
+                            )
+                        }
+                    }
+                }
 
                 val resTag = FormatUtils.formatResolution(video.width, video.height)
                     .substringBefore(" ·")
@@ -1728,6 +1689,7 @@ private fun GridVideoCard(
     isSelected: Boolean,
     isSelectionMode: Boolean,
     isFavorite: Boolean,
+    isNew: Boolean,
     history: PlaybackHistoryEntity?,
     activePlaylistName: String?,
     onClick: () -> Unit,
@@ -1800,6 +1762,24 @@ private fun GridVideoCard(
                             .padding(6.dp)
                             .size(22.dp)
                     )
+                } else if (isNew) {
+                    Surface(
+                        shape = RoundedCornerShape(4.dp),
+                        color = Color(0xFFE53935),
+                        modifier = Modifier
+                            .align(Alignment.TopStart)
+                            .padding(5.dp)
+                    ) {
+                        Text(
+                            text = "NEW",
+                            style = MaterialTheme.typography.labelSmall.copy(
+                                fontSize = 8.5.sp,
+                                fontWeight = FontWeight.Bold
+                            ),
+                            color = Color.White,
+                            modifier = Modifier.padding(horizontal = 5.dp, vertical = 1.dp)
+                        )
+                    }
                 }
 
                 Surface(
@@ -1961,7 +1941,7 @@ private fun VideoFileDropdownMenu(
         DropdownMenuItem(
             text = { Text("Move") },
             leadingIcon = {
-                Icon(Icons.Default.DriveFileMove, contentDescription = null)
+                Icon(Icons.AutoMirrored.Filled.DriveFileMove, contentDescription = null)
             },
             onClick = {
                 onDismiss()
