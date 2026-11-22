@@ -1,4 +1,4 @@
-name: Build AG Video Player APK
+name: Build Video Player APK
 
 on:
   push:
@@ -72,24 +72,7 @@ jobs:
           fi
           echo "version_name=${NEXT_VERSION}" >> "$GITHUB_OUTPUT"
           echo "version_code=${NEXT_CODE}" >> "$GITHUB_OUTPUT"
-          echo "Building AG Video Player v${NEXT_VERSION} (versionCode=${NEXT_CODE})"
-
-      - name: Prepare debug keystore
-        run: |
-          if [ -f debug.keystore.base64 ]; then
-            base64 -d debug.keystore.base64 > debug.keystore
-          fi
-          if [ ! -f debug.keystore ]; then
-            keytool -genkeypair -noprompt \
-              -keystore debug.keystore \
-              -alias androiddebugkey \
-              -keyalg RSA \
-              -keysize 2048 \
-              -validity 10000 \
-              -storepass android \
-              -keypass android \
-              -dname "CN=Android Debug,O=Android,C=US"
-          fi
+          echo "Building Video Player v${NEXT_VERSION} (versionCode=${NEXT_CODE})"
 
       - name: Restore cached release keystore if no secret is set
         if: env.HAS_SIGNING_SECRET != 'true'
@@ -115,7 +98,7 @@ jobs:
                 -validity 10000 \
                 -storepass android123 \
                 -keypass android123 \
-                -dname "CN=AG Video Player, OU=Mobile, O=AG, L=Dhaka, C=BD"
+                -dname "CN=Video Player, OU=Mobile, O=AG, L=Dhaka, C=BD"
             fi
             echo "STORE_PASSWORD=android123" >> "$GITHUB_ENV"
             echo "KEY_PASSWORD=android123" >> "$GITHUB_ENV"
@@ -137,37 +120,26 @@ jobs:
           -PappVersionName=${{ steps.version.outputs.version_name }}
           -PgithubRepoSlug=${{ github.repository }}
 
-      - name: Build Debug APK
-        run: >
-          gradle :app:assembleDebug
-          --no-parallel
-          --no-configuration-cache
-          -PappVersionCode=${{ steps.version.outputs.version_code }}
-          -PappVersionName=${{ steps.version.outputs.version_name }}
-          -PgithubRepoSlug=${{ github.repository }}
-
       - name: Package Release APK
         run: |
           RELEASE_APK=$(find app/build/outputs/apk/release -name "*.apk" | head -n 1)
-          cp "$RELEASE_APK" "AG-Video-Player-v${{ steps.version.outputs.version_name }}.apk"
-          ls -lh "AG-Video-Player-v${{ steps.version.outputs.version_name }}.apk"
+          cp "$RELEASE_APK" "Video-Player-v${{ steps.version.outputs.version_name }}.apk"
+          ls -lh "Video-Player-v${{ steps.version.outputs.version_name }}.apk"
 
       - name: Upload APK Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: AG-Video-Player-APK
-          path: |
-            AG-Video-Player-v*.apk
-            app/build/outputs/apk/debug/app-debug.apk
+          name: Video-Player-APK
+          path: Video-Player-v*.apk
 
       - name: Publish GitHub Release with APK
         uses: softprops/action-gh-release@v2
         with:
           tag_name: v${{ steps.version.outputs.version_name }}
-          name: "AG Video Player v${{ steps.version.outputs.version_name }}"
+          name: "Video Player v${{ steps.version.outputs.version_name }}"
           body: |
-            Automated R8-minified APK build for **AG Video Player v${{ steps.version.outputs.version_name }}**.
+            Automated R8-minified APK build for **Video Player v${{ steps.version.outputs.version_name }}**.
             versionCode: ${{ steps.version.outputs.version_code }}
-          files: AG-Video-Player-v*.apk
+          files: Video-Player-v*.apk
           make_latest: true
           generate_release_notes: true

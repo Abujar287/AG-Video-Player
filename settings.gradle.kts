@@ -22,6 +22,6 @@ dependencyResolutionManagement {
   }
 }
 
-rootProject.name = "AG Video Player"
+rootProject.name = "Video Player"
 
 include(":app")

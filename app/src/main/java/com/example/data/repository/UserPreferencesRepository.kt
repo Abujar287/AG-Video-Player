@@ -34,12 +34,13 @@ class UserPreferencesRepository(private val context: Context) {
     }
 
     val preferences: Flow<UserPreferences> = context.dataStore.data.map { prefs ->
+        val savedSlug = prefs[Keys.GITHUB_REPO_SLUG]
+            ?.takeIf { it.isNotBlank() && it != "owner/ag-video-player" }
         UserPreferences(
             isDarkMode = prefs[Keys.IS_DARK_MODE] ?: true,
             autoPipOnHome = prefs[Keys.AUTO_PIP_ON_HOME] ?: true,
             defaultSoftwareDecoder = prefs[Keys.DEFAULT_SW_DECODER] ?: false,
-            githubRepoSlug = prefs[Keys.GITHUB_REPO_SLUG]?.takeIf { it.isNotBlank() }
-                ?: UserPreferences.DEFAULT_GITHUB_REPO
+            githubRepoSlug = savedSlug ?: UserPreferences.DEFAULT_GITHUB_REPO
         )
     }
 

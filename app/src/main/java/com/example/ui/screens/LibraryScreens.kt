@@ -34,7 +34,6 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.Sort
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.DarkMode
-import androidx.compose.material.icons.filled.FileOpen
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.FolderOpen
 import androidx.compose.material.icons.filled.Info
@@ -172,19 +171,6 @@ fun VeloMainScreen(
                     }
                 },
                 actions = {
-                    IconButton(
-                        onClick = onOpenSingleFile,
-                        modifier = Modifier
-                            .minimumInteractiveComponentSize()
-                            .testTag("open_file_button")
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.FileOpen,
-                            contentDescription = stringResource(R.string.open_file_desc),
-                            modifier = Modifier.size(20.dp)
-                        )
-                    }
-
                     IconButton(
                         onClick = onToggleTheme,
                         modifier = Modifier

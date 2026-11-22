@@ -60,42 +60,29 @@ class GitHubUpdateManager(private val context: Context) {
 
     suspend fun checkForUpdate(repoSlug: String): UpdateCheckResult = withContext(Dispatchers.IO) {
         val cleanedSlug = repoSlug.trim().removePrefix("https://github.com/").trim('/')
-        if (!cleanedSlug.contains('/')) {
+        if (!cleanedSlug.contains('/') || cleanedSlug.equals("owner/ag-video-player", ignoreCase = true)) {
             return@withContext UpdateCheckResult.Error(
-                "Enter a valid GitHub repository in owner/repo format."
+                "GitHub repository not linked in this build. Please install the APK from your GitHub Releases once."
             )
         }
-        val apiUrl = "https://api.github.com/repos/$cleanedSlug/releases/latest"
-        var connection: HttpURLConnection? = null
+
         try {
-            connection = (URL(apiUrl).openConnection() as HttpURLConnection).apply {
-                requestMethod = "GET"
-                connectTimeout = 12_000
-                readTimeout = 15_000
-                setRequestProperty("Accept", "application/vnd.github+json")
-                setRequestProperty("User-Agent", "AGVideoPlayer/${BuildConfig.VERSION_NAME}")
-            }
+            val latestJson = fetchReleaseJson("https://api.github.com/repos/$cleanedSlug/releases/latest")
+                ?: fetchLatestFromReleasesList("https://api.github.com/repos/$cleanedSlug/releases?per_page=10")
+                ?: return@withContext UpdateCheckResult.Error(
+                    "No published APK release found on GitHub ($cleanedSlug) yet."
+                )
 
-            val code = connection.responseCode
-            if (code == 404) {
-                return@withContext UpdateCheckResult.UpToDate(BuildConfig.VERSION_NAME)
-            }
-            if (code !in 200..299) {
-                return@withContext UpdateCheckResult.Error("GitHub API returned HTTP $code.")
-            }
-
-            val bodyText = connection.inputStream.bufferedReader().use { it.readText() }
-            val json = JSONObject(bodyText)
-            val tagName = json.optString("tag_name", "").trim()
+            val tagName = latestJson.optString("tag_name", "").trim()
             val remoteVersionName = tagName.removePrefix("v").removePrefix("V").ifBlank { "0.0.0" }
-            val releaseTitle = json.optString("name", tagName).ifBlank { tagName }
-            val releaseNotes = json.optString("body", "No release notes provided.")
-            val htmlUrl = json.optString("html_url", "https://github.com/$cleanedSlug/releases")
+            val releaseTitle = latestJson.optString("name", tagName).ifBlank { tagName }
+            val releaseNotes = latestJson.optString("body", "No release notes provided.")
+            val htmlUrl = latestJson.optString("html_url", "https://github.com/$cleanedSlug/releases")
             val parsedVersionCode = parseOptionalVersionCode(releaseNotes)
 
-            val assets = json.optJSONArray("assets")
+            val assets = latestJson.optJSONArray("assets")
             var apkUrl = ""
-            var apkName = "AG-Video-Player-$remoteVersionName.apk"
+            var apkName = "Video-Player-$remoteVersionName.apk"
             var apkSize = 0L
 
             if (assets != null) {
@@ -113,7 +100,7 @@ class GitHubUpdateManager(private val context: Context) {
 
             if (apkUrl.isBlank()) {
                 return@withContext UpdateCheckResult.Error(
-                    "Latest release ($tagName) has no .apk asset attached."
+                    "Latest release ($tagName) has no .apk file attached yet."
                 )
             }
 
@@ -142,6 +129,64 @@ class GitHubUpdateManager(private val context: Context) {
             }
         } catch (e: Exception) {
             UpdateCheckResult.Error(e.localizedMessage ?: "Failed to check GitHub updates.")
+        }
+    }
+
+    private fun fetchReleaseJson(apiUrl: String): JSONObject? {
+        var connection: HttpURLConnection? = null
+        return try {
+            connection = (URL(apiUrl).openConnection() as HttpURLConnection).apply {
+                requestMethod = "GET"
+                useCaches = false
+                connectTimeout = 12_000
+                readTimeout = 15_000
+                setRequestProperty("Accept", "application/vnd.github+json")
+                setRequestProperty("Cache-Control", "no-cache")
+                setRequestProperty("User-Agent", "VideoPlayer/${BuildConfig.VERSION_NAME}")
+            }
+            val code = connection.responseCode
+            if (code == 404) return null
+            if (code !in 200..299) {
+                throw IllegalStateException("GitHub API returned HTTP $code.")
+            }
+            val bodyText = connection.inputStream.bufferedReader().use { it.readText() }
+            JSONObject(bodyText)
+        } finally {
+            connection?.disconnect()
+        }
+    }
+
+    private fun fetchLatestFromReleasesList(apiUrl: String): JSONObject? {
+        var connection: HttpURLConnection? = null
+        return try {
+            connection = (URL(apiUrl).openConnection() as HttpURLConnection).apply {
+                requestMethod = "GET"
+                useCaches = false
+                connectTimeout = 12_000
+                readTimeout = 15_000
+                setRequestProperty("Accept", "application/vnd.github+json")
+                setRequestProperty("Cache-Control", "no-cache")
+                setRequestProperty("User-Agent", "VideoPlayer/${BuildConfig.VERSION_NAME}")
+            }
+            val code = connection.responseCode
+            if (code == 404) return null
+            if (code !in 200..299) {
+                throw IllegalStateException("GitHub API returned HTTP $code.")
+            }
+            val bodyText = connection.inputStream.bufferedReader().use { it.readText() }
+            val array = org.json.JSONArray(bodyText)
+            for (i in 0 until array.length()) {
+                val release = array.optJSONObject(i) ?: continue
+                if (release.optBoolean("draft", false)) continue
+                val assets = release.optJSONArray("assets") ?: continue
+                for (j in 0 until assets.length()) {
+                    val asset = assets.optJSONObject(j) ?: continue
+                    if (asset.optString("name", "").endsWith(".apk", ignoreCase = true)) {
+                        return release
+                    }
+                }
+            }
+            null
         } finally {
             connection?.disconnect()
         }
@@ -152,7 +197,7 @@ class GitHubUpdateManager(private val context: Context) {
         // Remove stale APK files before saving new update
         updatesDir.listFiles()?.forEach { if (it.name.endsWith(".apk")) it.delete() }
 
-        val fileName = release.apkFileName.ifBlank { "AG-Video-Player-v${release.versionName}.apk" }
+        val fileName = release.apkFileName.ifBlank { "Video-Player-v${release.versionName}.apk" }
         val targetFile = File(updatesDir, fileName)
         val tempFile = File(updatesDir, "${targetFile.name}.part")
         var connection: HttpURLConnection? = null
@@ -293,7 +338,7 @@ class GitHubUpdateManager(private val context: Context) {
                     "App Updates",
                     NotificationManager.IMPORTANCE_LOW
                 ).apply {
-                    description = "Shows progress when downloading AG Video Player updates"
+                    description = "Shows progress when downloading Video Player updates"
                 }
                 nm.createNotificationChannel(channel)
             }
@@ -305,7 +350,7 @@ class GitHubUpdateManager(private val context: Context) {
             val nm = context.getSystemService(Context.NOTIFICATION_SERVICE) as? NotificationManager ?: return
             val notification = NotificationCompat.Builder(context, UPDATE_CHANNEL_ID)
                 .setSmallIcon(android.R.drawable.stat_sys_download)
-                .setContentTitle("Downloading AG Video Player v$versionName")
+                .setContentTitle("Downloading Video Player v$versionName")
                 .setContentText(if (indeterminate) "Downloading update…" else "$percent% completed")
                 .setOnlyAlertOnce(true)
                 .setOngoing(true)
@@ -336,7 +381,7 @@ class GitHubUpdateManager(private val context: Context) {
             )
             val notification = NotificationCompat.Builder(context, UPDATE_CHANNEL_ID)
                 .setSmallIcon(android.R.drawable.stat_sys_download_done)
-                .setContentTitle("AG Video Player v$versionName Ready")
+                .setContentTitle("Video Player v$versionName Ready")
                 .setContentText("Saved to Downloads. Tap to install update.")
                 .setContentIntent(pendingIntent)
                 .setAutoCancel(true)
