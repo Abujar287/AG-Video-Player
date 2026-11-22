@@ -421,14 +421,21 @@ fun PlayerOverlay(
                         }
                     }
 
-                    val hasExtraTopTools = controlsVisibility.showLoopButton ||
-                        controlsVisibility.showMuteButton ||
-                        controlsVisibility.showSleepButton ||
-                        controlsVisibility.showBgPlayButton ||
-                        controlsVisibility.showTracksButton
+                    val allTopTools = buildList {
+                        if (controlsVisibility.showRotateButton) add(TopTool.ROTATE)
+                        if (controlsVisibility.showSpeedButton) add(TopTool.SPEED)
+                        if (controlsVisibility.showLoopButton) add(TopTool.LOOP)
+                        if (controlsVisibility.showMuteButton) add(TopTool.MUTE)
+                        if (controlsVisibility.showSleepButton) add(TopTool.SLEEP)
+                        if (controlsVisibility.showBgPlayButton) add(TopTool.BG_PLAY)
+                        if (controlsVisibility.showTracksButton) add(TopTool.TRACKS)
+                    }
 
-                    // Top Action Strip: Only Rotate & Speed outside by default + '>' expander button
-                    if (controlsVisibility.showRotateButton || controlsVisibility.showSpeedButton || hasExtraTopTools) {
+                    val displayTopTools = allTopTools.take(4)
+                    val overflowTopTools = allTopTools.drop(4)
+                    val hasTopOverflow = overflowTopTools.isNotEmpty()
+
+                    if (allTopTools.isNotEmpty()) {
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
@@ -437,24 +444,28 @@ fun PlayerOverlay(
                             horizontalArrangement = Arrangement.spacedBy(6.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            if (controlsVisibility.showRotateButton) {
-                                SecondaryToolButton(
-                                    icon = Icons.Default.ScreenRotation,
-                                    label = "Rotate",
-                                    active = false,
-                                    onClick = onToggleRotation
-                                )
-                            }
-                            if (controlsVisibility.showSpeedButton) {
-                                SecondaryToolButton(
-                                    icon = Icons.Default.Speed,
-                                    label = "${playbackSpeed}x",
-                                    active = abs(playbackSpeed - 1.0f) > 0.01f || showSpeedPicker,
-                                    onClick = { showSpeedPicker = !showSpeedPicker }
+                            displayTopTools.forEach { tool ->
+                                renderTopToolButton(
+                                    tool = tool,
+                                    playbackSpeed = playbackSpeed,
+                                    showSpeedPicker = showSpeedPicker,
+                                    repeatMode = repeatMode,
+                                    isMuted = isMuted,
+                                    sleepMinutesRemaining = sleepMinutesRemaining,
+                                    isBackgroundPlayEnabled = isBackgroundPlayEnabled,
+                                    subtitlesDisabled = subtitlesDisabled,
+                                    subtitleTracks = subtitleTracks,
+                                    onToggleRotation = onToggleRotation,
+                                    onToggleSpeedPicker = { showSpeedPicker = !showSpeedPicker },
+                                    onCycleRepeatMode = onCycleRepeatMode,
+                                    onToggleMute = onToggleMute,
+                                    onOpenSleepDialog = { showSleepDialog = true },
+                                    onToggleBackgroundPlay = onToggleBackgroundPlay,
+                                    onOpenTrackDialog = { showTrackDialog = true }
                                 )
                             }
 
-                            if (hasExtraTopTools) {
+                            if (hasTopOverflow) {
                                 val arrowRotation by animateFloatAsState(
                                     targetValue = if (showMoreTools) 180f else 0f,
                                     label = "more_tools_arrow_rotation"
@@ -475,7 +486,7 @@ fun PlayerOverlay(
                                     ) {
                                         Icon(
                                             imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
-                                            contentDescription = if (showMoreTools) "Hide Tools" else "More Tools",
+                                            contentDescription = if (showMoreTools) "Hide Overflow" else "More Tools",
                                             tint = if (showMoreTools) ElectricTeal else Color.White,
                                             modifier = Modifier
                                                 .size(20.dp)
@@ -486,7 +497,7 @@ fun PlayerOverlay(
                             }
 
                             AnimatedVisibility(
-                                visible = showMoreTools && hasExtraTopTools,
+                                visible = showMoreTools && hasTopOverflow,
                                 enter = fadeIn() + expandHorizontally(),
                                 exit = fadeOut() + shrinkHorizontally()
                             ) {
@@ -494,57 +505,24 @@ fun PlayerOverlay(
                                     horizontalArrangement = Arrangement.spacedBy(6.dp),
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
-                                    if (controlsVisibility.showLoopButton) {
-                                        SecondaryToolButton(
-                                            icon = if (repeatMode == Player.REPEAT_MODE_ONE) {
-                                                Icons.Default.RepeatOne
-                                            } else {
-                                                Icons.Default.Repeat
-                                            },
-                                            label = when (repeatMode) {
-                                                Player.REPEAT_MODE_ONE -> "Loop 1"
-                                                Player.REPEAT_MODE_ALL -> "Loop All"
-                                                else -> "Loop"
-                                            },
-                                            active = repeatMode != Player.REPEAT_MODE_OFF,
-                                            onClick = onCycleRepeatMode
-                                        )
-                                    }
-                                    if (controlsVisibility.showMuteButton) {
-                                        SecondaryToolButton(
-                                            icon = if (isMuted) {
-                                                Icons.AutoMirrored.Filled.VolumeOff
-                                            } else {
-                                                Icons.AutoMirrored.Filled.VolumeUp
-                                            },
-                                            label = if (isMuted) "Unmute" else "Mute",
-                                            active = isMuted,
-                                            onClick = onToggleMute
-                                        )
-                                    }
-                                    if (controlsVisibility.showSleepButton) {
-                                        SecondaryToolButton(
-                                            icon = Icons.Default.Bedtime,
-                                            label = sleepMinutesRemaining?.let { "${it}m" } ?: "Sleep",
-                                            active = sleepMinutesRemaining != null,
-                                            activeTint = AmberBoost,
-                                            onClick = { showSleepDialog = true }
-                                        )
-                                    }
-                                    if (controlsVisibility.showBgPlayButton) {
-                                        SecondaryToolButton(
-                                            icon = Icons.Default.Headphones,
-                                            label = "BG Play",
-                                            active = isBackgroundPlayEnabled,
-                                            onClick = onToggleBackgroundPlay
-                                        )
-                                    }
-                                    if (controlsVisibility.showTracksButton) {
-                                        SecondaryToolButton(
-                                            icon = Icons.Default.Subtitles,
-                                            label = "Tracks",
-                                            active = !subtitlesDisabled && subtitleTracks.any { it.isSelected },
-                                            onClick = { showTrackDialog = true }
+                                    overflowTopTools.forEach { tool ->
+                                        renderTopToolButton(
+                                            tool = tool,
+                                            playbackSpeed = playbackSpeed,
+                                            showSpeedPicker = showSpeedPicker,
+                                            repeatMode = repeatMode,
+                                            isMuted = isMuted,
+                                            sleepMinutesRemaining = sleepMinutesRemaining,
+                                            isBackgroundPlayEnabled = isBackgroundPlayEnabled,
+                                            subtitlesDisabled = subtitlesDisabled,
+                                            subtitleTracks = subtitleTracks,
+                                            onToggleRotation = onToggleRotation,
+                                            onToggleSpeedPicker = { showSpeedPicker = !showSpeedPicker },
+                                            onCycleRepeatMode = onCycleRepeatMode,
+                                            onToggleMute = onToggleMute,
+                                            onOpenSleepDialog = { showSleepDialog = true },
+                                            onToggleBackgroundPlay = onToggleBackgroundPlay,
+                                            onOpenTrackDialog = { showTrackDialog = true }
                                         )
                                     }
                                 }
@@ -1222,6 +1200,94 @@ private fun VerticalGestureMeter(
                 text = label,
                 style = MaterialTheme.typography.labelSmall,
                 color = Color.White
+            )
+        }
+    }
+}
+
+private enum class TopTool {
+    ROTATE, SPEED, LOOP, MUTE, SLEEP, BG_PLAY, TRACKS
+}
+
+@Composable
+private fun renderTopToolButton(
+    tool: TopTool,
+    playbackSpeed: Float,
+    showSpeedPicker: Boolean,
+    repeatMode: Int,
+    isMuted: Boolean,
+    sleepMinutesRemaining: Int?,
+    isBackgroundPlayEnabled: Boolean,
+    subtitlesDisabled: Boolean,
+    subtitleTracks: List<MediaTrackOption>,
+    onToggleRotation: () -> Unit,
+    onToggleSpeedPicker: () -> Unit,
+    onCycleRepeatMode: () -> Unit,
+    onToggleMute: () -> Unit,
+    onOpenSleepDialog: () -> Unit,
+    onToggleBackgroundPlay: () -> Unit,
+    onOpenTrackDialog: () -> Unit
+) {
+    when (tool) {
+        TopTool.ROTATE -> {
+            SecondaryToolButton(
+                icon = Icons.Default.ScreenRotation,
+                label = "Rotate",
+                active = false,
+                onClick = onToggleRotation
+            )
+        }
+        TopTool.SPEED -> {
+            SecondaryToolButton(
+                icon = Icons.Default.Speed,
+                label = "${playbackSpeed}x",
+                active = abs(playbackSpeed - 1.0f) > 0.01f || showSpeedPicker,
+                onClick = onToggleSpeedPicker
+            )
+        }
+        TopTool.LOOP -> {
+            SecondaryToolButton(
+                icon = if (repeatMode == Player.REPEAT_MODE_ONE) Icons.Default.RepeatOne else Icons.Default.Repeat,
+                label = when (repeatMode) {
+                    Player.REPEAT_MODE_ONE -> "Loop 1"
+                    Player.REPEAT_MODE_ALL -> "Loop All"
+                    else -> "Loop"
+                },
+                active = repeatMode != Player.REPEAT_MODE_OFF,
+                onClick = onCycleRepeatMode
+            )
+        }
+        TopTool.MUTE -> {
+            SecondaryToolButton(
+                icon = if (isMuted) Icons.AutoMirrored.Filled.VolumeOff else Icons.AutoMirrored.Filled.VolumeUp,
+                label = if (isMuted) "Unmute" else "Mute",
+                active = isMuted,
+                onClick = onToggleMute
+            )
+        }
+        TopTool.SLEEP -> {
+            SecondaryToolButton(
+                icon = Icons.Default.Bedtime,
+                label = sleepMinutesRemaining?.let { "${it}m" } ?: "Sleep",
+                active = sleepMinutesRemaining != null,
+                activeTint = AmberBoost,
+                onClick = onOpenSleepDialog
+            )
+        }
+        TopTool.BG_PLAY -> {
+            SecondaryToolButton(
+                icon = Icons.Default.Headphones,
+                label = "BG Play",
+                active = isBackgroundPlayEnabled,
+                onClick = onToggleBackgroundPlay
+            )
+        }
+        TopTool.TRACKS -> {
+            SecondaryToolButton(
+                icon = Icons.Default.Subtitles,
+                label = "Tracks",
+                active = !subtitlesDisabled && subtitleTracks.any { it.isSelected },
+                onClick = onOpenTrackDialog
             )
         }
     }

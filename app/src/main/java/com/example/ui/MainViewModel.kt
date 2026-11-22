@@ -38,7 +38,8 @@ enum class SortField(val label: String) {
     NAME("Name"),
     SIZE("Size"),
     DATE("Date"),
-    TYPE("Type")
+    TYPE("Type"),
+    PLAYS("Plays")
 }
 
 enum class SortDirection(val label: String) {
@@ -104,11 +105,16 @@ data class MainUiState(
 
     val filteredFolders: List<VideoFolder>
         get() {
-            val base = if (searchQuery.isBlank()) {
+            val baseFolders = if (preferences.showHiddenFiles) {
                 folders
             } else {
+                folders.filter { !it.name.startsWith(".") }
+            }
+            val base = if (searchQuery.isBlank()) {
+                baseFolders
+            } else {
                 val q = searchQuery.trim().lowercase()
-                folders.filter { folder ->
+                baseFolders.filter { folder ->
                     folder.name.lowercase().contains(q) ||
                         videosByFolder[folder.bucketId].orEmpty().any {
                             it.title.lowercase().contains(q) || it.displayName.lowercase().contains(q)
@@ -120,6 +126,9 @@ data class MainUiState(
                 SortField.SIZE -> compareBy<VideoFolder> { it.totalSizeBytes }
                 SortField.DATE -> compareBy<VideoFolder> { it.latestModifiedSec }
                 SortField.TYPE -> compareBy<VideoFolder> { it.videoCount }.thenBy { it.name.lowercase() }
+                SortField.PLAYS -> compareBy<VideoFolder> { folder ->
+                    videosByFolder[folder.bucketId].orEmpty().maxOfOrNull { historyByUri[it.uriString]?.lastPlayedAt ?: 0L } ?: 0L
+                }
             }
             return if (sortDirection == SortDirection.ASC) {
                 base.sortedWith(comparator)
@@ -131,7 +140,7 @@ data class MainUiState(
     val currentVideos: List<VideoItem>
         get() {
             val videoByUri = allVideos.associateBy { it.uriString }
-            val raw = when (val dest = destination) {
+            val rawDest = when (val dest = destination) {
                 BrowserDestination.Folders -> emptyList()
                 is BrowserDestination.Folder -> videosByFolder[dest.bucketId].orEmpty()
                 BrowserDestination.Favorites -> {
@@ -140,6 +149,11 @@ data class MainUiState(
                 is BrowserDestination.Playlist -> {
                     preferences.playlists[dest.name].orEmpty().mapNotNull { videoByUri[it] }
                 }
+            }
+            val raw = if (preferences.showHiddenFiles) {
+                rawDest
+            } else {
+                rawDest.filter { !it.displayName.startsWith(".") && !it.folderName.startsWith(".") }
             }
 
             val filtered = if (searchQuery.isBlank()) {
@@ -158,6 +172,7 @@ data class MainUiState(
                 SortField.TYPE -> compareBy<VideoItem> {
                     it.displayName.substringAfterLast('.', "").lowercase()
                 }.thenBy { it.title.lowercase() }
+                SortField.PLAYS -> compareBy<VideoItem> { historyByUri[it.uriString]?.lastPlayedAt ?: 0L }
             }
             return if (sortDirection == SortDirection.ASC) {
                 filtered.sortedWith(comparator)
@@ -474,6 +489,18 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             val current = prefsRepo.preferences.first().isDarkMode
             prefsRepo.setDarkMode(!current)
         }
+    }
+
+    fun setShowHiddenFiles(enabled: Boolean) {
+        viewModelScope.launch { prefsRepo.setShowHiddenFiles(enabled) }
+    }
+
+    fun setMainDisplayMode(mode: String) {
+        viewModelScope.launch { prefsRepo.setMainDisplayMode(mode) }
+    }
+
+    fun setMainViewLayout(layout: String) {
+        viewModelScope.launch { prefsRepo.setMainViewLayout(layout) }
     }
 
     fun setAutoPipEnabled(enabled: Boolean) {

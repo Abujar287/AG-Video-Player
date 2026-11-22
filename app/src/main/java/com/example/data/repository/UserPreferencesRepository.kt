@@ -116,6 +116,9 @@ data class PlayerControlsVisibility(
 data class UserPreferences(
     val isDarkMode: Boolean = true,
     val isGridView: Boolean = false,
+    val showHiddenFiles: Boolean = false,
+    val mainDisplayMode: String = "folders", // "folders" or "files"
+    val mainViewLayout: String = "grid", // "grid" or "list"
     val autoPipOnHome: Boolean = true,
     val defaultSoftwareDecoder: Boolean = false,
     val githubRepoSlug: String = DEFAULT_GITHUB_REPO,
@@ -139,6 +142,9 @@ class UserPreferencesRepository(private val context: Context) {
     private object Keys {
         val IS_DARK_MODE = booleanPreferencesKey("is_dark_mode")
         val IS_GRID_VIEW = booleanPreferencesKey("is_grid_view")
+        val SHOW_HIDDEN_FILES = booleanPreferencesKey("show_hidden_files")
+        val MAIN_DISPLAY_MODE = stringPreferencesKey("main_display_mode")
+        val MAIN_VIEW_LAYOUT = stringPreferencesKey("main_view_layout")
         val AUTO_PIP_ON_HOME = booleanPreferencesKey("auto_pip_on_home")
         val DEFAULT_SW_DECODER = booleanPreferencesKey("default_sw_decoder")
         val GITHUB_REPO_SLUG = stringPreferencesKey("github_repo_slug")
@@ -159,6 +165,9 @@ class UserPreferencesRepository(private val context: Context) {
         UserPreferences(
             isDarkMode = prefs[Keys.IS_DARK_MODE] ?: true,
             isGridView = prefs[Keys.IS_GRID_VIEW] ?: false,
+            showHiddenFiles = prefs[Keys.SHOW_HIDDEN_FILES] ?: false,
+            mainDisplayMode = prefs[Keys.MAIN_DISPLAY_MODE] ?: "folders",
+            mainViewLayout = prefs[Keys.MAIN_VIEW_LAYOUT] ?: "grid",
             autoPipOnHome = prefs[Keys.AUTO_PIP_ON_HOME] ?: true,
             defaultSoftwareDecoder = prefs[Keys.DEFAULT_SW_DECODER] ?: false,
             githubRepoSlug = savedSlug ?: UserPreferences.DEFAULT_GITHUB_REPO,
@@ -184,6 +193,18 @@ class UserPreferencesRepository(private val context: Context) {
 
     suspend fun setGridView(enabled: Boolean) {
         context.dataStore.edit { it[Keys.IS_GRID_VIEW] = enabled }
+    }
+
+    suspend fun setShowHiddenFiles(enabled: Boolean) {
+        context.dataStore.edit { it[Keys.SHOW_HIDDEN_FILES] = enabled }
+    }
+
+    suspend fun setMainDisplayMode(mode: String) {
+        context.dataStore.edit { it[Keys.MAIN_DISPLAY_MODE] = mode }
+    }
+
+    suspend fun setMainViewLayout(layout: String) {
+        context.dataStore.edit { it[Keys.MAIN_VIEW_LAYOUT] = layout }
     }
 
     suspend fun setAutoPipOnHome(enabled: Boolean) {

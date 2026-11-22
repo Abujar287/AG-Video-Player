@@ -91,6 +91,9 @@ fun ControlSettingsDialog(
     onEnableSwipeGesturesChange: (Boolean) -> Unit,
     onGestureSeekStepChange: (Int) -> Unit,
     onDefaultSoftwareDecoderChange: (Boolean) -> Unit,
+    onShowHiddenFilesChange: (Boolean) -> Unit,
+    onMainDisplayModeChange: (String) -> Unit,
+    onMainViewLayoutChange: (String) -> Unit,
     onTogglePlayerButtonVisibility: (PlayerControlButton, Boolean) -> Unit,
     onShowAllButtons: () -> Unit
 ) {
@@ -269,6 +272,49 @@ fun ControlSettingsDialog(
                                         checked = preferences.defaultSoftwareDecoder,
                                         onCheckedChange = onDefaultSoftwareDecoderChange
                                     )
+                                    SettingsRowDivider()
+                                    SettingsSwitchItem(
+                                        title = "Show Hidden Files",
+                                        subtitle = "Display hidden files and folders starting with dot (.)",
+                                        checked = preferences.showHiddenFiles,
+                                        onCheckedChange = onShowHiddenFilesChange
+                                    )
+                                }
+
+                                Spacer(Modifier.height(8.dp))
+                                SettingsGroup(title = "MAIN INTERFACE ENTRY & VIEW") {
+                                    Column(
+                                        modifier = Modifier.padding(14.dp),
+                                        verticalArrangement = Arrangement.spacedBy(10.dp)
+                                    ) {
+                                        Text(
+                                            text = "Default Entry Mode",
+                                            style = MaterialTheme.typography.labelMedium,
+                                            fontWeight = FontWeight.SemiBold,
+                                            color = MaterialTheme.colorScheme.onSurface
+                                        )
+                                        UniformTwoColumnGrid(
+                                            items = listOf("folders" to "All Folders", "files" to "Files"),
+                                            itemLabel = { it.second },
+                                            isSelected = { preferences.mainDisplayMode == it.first },
+                                            onSelect = { onMainDisplayModeChange(it.first) }
+                                        )
+
+                                        Spacer(Modifier.height(4.dp))
+
+                                        Text(
+                                            text = "View Layout",
+                                            style = MaterialTheme.typography.labelMedium,
+                                            fontWeight = FontWeight.SemiBold,
+                                            color = MaterialTheme.colorScheme.onSurface
+                                        )
+                                        UniformTwoColumnGrid(
+                                            items = listOf("grid" to "Grid", "list" to "List"),
+                                            itemLabel = { it.second },
+                                            isSelected = { preferences.mainViewLayout == it.first },
+                                            onSelect = { onMainViewLayoutChange(it.first) }
+                                        )
+                                    }
                                 }
                             }
 

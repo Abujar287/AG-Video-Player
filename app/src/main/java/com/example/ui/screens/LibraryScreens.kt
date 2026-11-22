@@ -172,6 +172,9 @@ fun VeloMainScreen(
     onEnableSwipeGesturesChange: (Boolean) -> Unit,
     onGestureSeekStepChange: (Int) -> Unit,
     onDefaultSoftwareDecoderChange: (Boolean) -> Unit,
+    onShowHiddenFilesChange: (Boolean) -> Unit,
+    onMainDisplayModeChange: (String) -> Unit,
+    onMainViewLayoutChange: (String) -> Unit,
     onTogglePlayerButtonVisibility: (PlayerControlButton, Boolean) -> Unit,
     onShowAllButtons: () -> Unit,
     loadThumbnail: suspend (Long, String) -> Bitmap?
@@ -455,21 +458,62 @@ fun VeloMainScreen(
                         label = "folder_video_transition"
                     ) { dest ->
                         if (dest == BrowserDestination.Folders) {
-                            FolderBrowserContent(
-                                uiState = uiState,
-                                onSearchQueryChange = onSearchQueryChange,
-                                onFolderClick = onFolderClick,
-                                onOpenFavorites = onOpenFavorites,
-                                onOpenPlaylist = onOpenPlaylist,
-                                onDeletePlaylist = onDeletePlaylist,
-                                onOpenSingleFile = onOpenSingleFile
-                            )
+                            if (uiState.preferences.mainDisplayMode == "files") {
+                                val videos = uiState.allVideos
+                                VideoListContent(
+                                    videos = videos,
+                                    isGridView = uiState.preferences.mainViewLayout == "grid" || uiState.preferences.isGridView,
+                                    isSelectionMode = uiState.isSelectionMode,
+                                    selectedUris = uiState.selectedVideoUris,
+                                    favoriteUris = uiState.preferences.favoriteUris,
+                                    historyByUri = uiState.historyByUri,
+                                    isVideoNew = { uiState.isVideoNew(it) },
+                                    searchQuery = uiState.searchQuery,
+                                    activePlaylistName = null,
+                                    onSearchQueryChange = onSearchQueryChange,
+                                    onVideoClick = { video ->
+                                        if (uiState.isSelectionMode) {
+                                            onToggleSelection(video.uriString)
+                                        } else {
+                                            onVideoClick(video, videos)
+                                        }
+                                    },
+                                    onVideoLongClick = { video ->
+                                        if (uiState.isSelectionMode) {
+                                            onToggleSelection(video.uriString)
+                                        } else {
+                                            onStartSelection(video.uriString)
+                                        }
+                                    },
+                                    onToggleFavorite = onToggleFavorite,
+                                    onAddToPlaylist = { playlistTargetVideo = it },
+                                    onRemoveFromPlaylist = { name, video ->
+                                        onRemoveFromPlaylist(name, video)
+                                    },
+                                    onShareVideo = onShareVideo,
+                                    onRenameVideo = { renameTargetVideo = it },
+                                    onMoveVideo = { moveTargetVideos = listOf(it) },
+                                    onShowVideoDetails = { detailVideo = it },
+                                    onDeleteVideo = { deleteTargetVideos = listOf(it) },
+                                    loadThumbnail = loadThumbnail
+                                )
+                            } else {
+                                FolderBrowserContent(
+                                    uiState = uiState,
+                                    onSearchQueryChange = onSearchQueryChange,
+                                    onFolderClick = onFolderClick,
+                                    onOpenFavorites = onOpenFavorites,
+                                    onOpenPlaylist = onOpenPlaylist,
+                                    onDeletePlaylist = onDeletePlaylist,
+                                    onOpenSingleFile = onOpenSingleFile
+                                )
+                            }
                         } else {
                             val videos = uiState.currentVideos
                             val activePlaylistName = (dest as? BrowserDestination.Playlist)?.name
                             VideoListContent(
                                 videos = videos,
-                                isGridView = uiState.preferences.isGridView,
+                                isGridView = uiState.preferences.mainViewLayout == "grid" || uiState.preferences.isGridView,
                                 isSelectionMode = uiState.isSelectionMode,
                                 selectedUris = uiState.selectedVideoUris,
                                 favoriteUris = uiState.preferences.favoriteUris,
@@ -539,6 +583,9 @@ fun VeloMainScreen(
             onEnableSwipeGesturesChange = onEnableSwipeGesturesChange,
             onGestureSeekStepChange = onGestureSeekStepChange,
             onDefaultSoftwareDecoderChange = onDefaultSoftwareDecoderChange,
+            onShowHiddenFilesChange = onShowHiddenFilesChange,
+            onMainDisplayModeChange = onMainDisplayModeChange,
+            onMainViewLayoutChange = onMainViewLayoutChange,
             onTogglePlayerButtonVisibility = onTogglePlayerButtonVisibility,
             onShowAllButtons = onShowAllButtons
         )
@@ -862,7 +909,7 @@ private fun SortOptionsDialog(
                     fontWeight = FontWeight.Bold
                 )
                 Text(
-                    text = "Organize folders & videos",
+                    text = "Name, Date, Size, Type, Plays",
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -877,6 +924,7 @@ private fun SortOptionsDialog(
                         SortField.SIZE -> Icons.Default.DataUsage
                         SortField.DATE -> Icons.Default.CalendarToday
                         SortField.TYPE -> Icons.Default.Category
+                        SortField.PLAYS -> Icons.Default.PlayArrow
                     }
                     Surface(
                         onClick = { selectedField = field },
@@ -961,7 +1009,7 @@ private fun SortOptionsDialog(
                             val subHint = when (selectedField) {
                                 SortField.NAME, SortField.TYPE -> if (dir == SortDirection.ASC) "A → Z" else "Z → A"
                                 SortField.SIZE -> if (dir == SortDirection.ASC) "Smallest" else "Largest"
-                                SortField.DATE -> if (dir == SortDirection.ASC) "Oldest" else "Newest"
+                                SortField.DATE, SortField.PLAYS -> if (dir == SortDirection.ASC) "Oldest" else "Newest"
                             }
                             Surface(
                                 onClick = { selectedDirection = dir },

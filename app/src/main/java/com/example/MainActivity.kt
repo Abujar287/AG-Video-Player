@@ -264,6 +264,9 @@ class MainActivity : ComponentActivity() {
                     onEnableSwipeGesturesChange = { viewModel.setEnableSwipeGestures(it) },
                     onGestureSeekStepChange = { viewModel.setGestureSeekStepSeconds(it) },
                     onDefaultSoftwareDecoderChange = { viewModel.setDefaultSoftwareDecoder(it) },
+                    onShowHiddenFilesChange = { viewModel.setShowHiddenFiles(it) },
+                    onMainDisplayModeChange = { viewModel.setMainDisplayMode(it) },
+                    onMainViewLayoutChange = { viewModel.setMainViewLayout(it) },
                     onTogglePlayerButtonVisibility = { btn, visible ->
                         viewModel.setPlayerButtonVisible(btn, visible)
                     },
