@@ -12,6 +12,8 @@ permissions:
 jobs:
   build-apk:
     runs-on: ubuntu-latest
+    env:
+      HAS_SIGNING_SECRET: ${{ secrets.SIGNING_KEYSTORE_BASE64 != '' }}
 
     steps:
       - name: Checkout repository
@@ -48,8 +50,8 @@ jobs:
             NEXT_VERSION="${MAJOR}.${MINOR}.${PATCH}"
             NEXT_CODE=$((PATCH + 1))
           else
-            RELEASE_TAG=$(gh api "repos/${{ github.repository }}/releases/latest" --jq '.tag_name' 2>/dev/null || echo "")
-            GIT_TAG=$(git tag -l 'v*' --sort=-v:refname | head -n 1 || echo "")
+            RELEASE_TAG=$(gh api "repos/${{ github.repository }}/releases/latest" --jq '.tag_name' 2>/dev/null) || RELEASE_TAG=""
+            GIT_TAG=$(git tag -l 'v*' --sort=-v:refname | head -n 1 2>/dev/null) || GIT_TAG=""
             LATEST_TAG="$RELEASE_TAG"
             if [ -z "$LATEST_TAG" ] || [ "$LATEST_TAG" = "null" ]; then
               LATEST_TAG="$GIT_TAG"
@@ -90,7 +92,7 @@ jobs:
           fi
 
       - name: Restore cached release keystore if no secret is set
-        if: ${{ secrets.SIGNING_KEYSTORE_BASE64 == '' }}
+        if: env.HAS_SIGNING_SECRET != 'true'
         uses: actions/cache@v4
         with:
           path: my-upload-key.jks
