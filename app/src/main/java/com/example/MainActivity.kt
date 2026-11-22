@@ -130,19 +130,25 @@ class MainActivity : ComponentActivity() {
                     onOpenSingleFile = { singleVideoLauncher.launch(arrayOf("video/*")) },
                     onRefresh = { viewModel.refreshLibrary() },
                     onToggleTheme = { viewModel.toggleDarkMode() },
+                    onCycleSort = { viewModel.cycleSortOption() },
                     onOpenUpdateSheet = { viewModel.openUpdateSheet() },
                     onSearchQueryChange = { viewModel.setSearchQuery(it) },
                     onFolderClick = { folder -> viewModel.openFolder(folder.bucketId) },
                     onBackToFolders = { viewModel.navigateBackToFolders() },
-                    onVideoClick = { video ->
+                    onVideoClick = { video, playlist ->
+                        val uris = ArrayList(playlist.map { it.uriString })
+                        val titles = ArrayList(playlist.map { it.title })
+                        val idx = playlist.indexOfFirst { it.uriString == video.uriString }.coerceAtLeast(0)
                         startActivity(
-                            PlayerActivity.createIntent(
+                            PlayerActivity.createPlaylistIntent(
                                 context = this,
-                                videoUri = video.uriString,
-                                title = video.title
+                                uris = uris,
+                                titles = titles,
+                                startIndex = idx
                             )
                         )
                     },
+                    onClearResume = { uri -> viewModel.clearResumePosition(uri) },
                     loadThumbnail = { id, uri -> viewModel.loadThumbnail(id, uri) }
                 )
 

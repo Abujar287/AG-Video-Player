@@ -22,12 +22,18 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import java.io.File
+
+enum class SortOption(val label: String) {
+    NAME_ASC("Name"),
+    DATE_DESC("Newest"),
+    SIZE_DESC("Size"),
+    DURATION_DESC("Length")
+}
 
 sealed interface UpdateUiState {
     data object Idle : UpdateUiState
@@ -52,6 +58,7 @@ data class MainUiState(
     val allVideos: List<VideoItem> = emptyList(),
     val selectedFolderId: Long? = null,
     val searchQuery: String = "",
+    val sortOption: SortOption = SortOption.NAME_ASC,
     val historyByUri: Map<String, PlaybackHistoryEntity> = emptyMap(),
     val recentVideos: List<Pair<VideoItem, PlaybackHistoryEntity>> = emptyList(),
     val preferences: UserPreferences = UserPreferences(),
@@ -63,28 +70,42 @@ data class MainUiState(
         get() = folders.firstOrNull { it.bucketId == selectedFolderId }
 
     val filteredFolders: List<VideoFolder>
-        get() = if (searchQuery.isBlank()) {
-            folders
-        } else {
-            val q = searchQuery.trim().lowercase()
-            folders.filter { folder ->
-                folder.name.lowercase().contains(q) ||
-                    videosByFolder[folder.bucketId].orEmpty().any {
-                        it.title.lowercase().contains(q) || it.displayName.lowercase().contains(q)
-                    }
+        get() {
+            val base = if (searchQuery.isBlank()) {
+                folders
+            } else {
+                val q = searchQuery.trim().lowercase()
+                folders.filter { folder ->
+                    folder.name.lowercase().contains(q) ||
+                        videosByFolder[folder.bucketId].orEmpty().any {
+                            it.title.lowercase().contains(q) || it.displayName.lowercase().contains(q)
+                        }
+                }
+            }
+            return when (sortOption) {
+                SortOption.NAME_ASC -> base.sortedBy { it.name.lowercase() }
+                SortOption.DATE_DESC -> base.sortedByDescending { it.latestModifiedSec }
+                SortOption.SIZE_DESC -> base.sortedByDescending { it.totalSizeBytes }
+                SortOption.DURATION_DESC -> base.sortedByDescending { it.videoCount }
             }
         }
 
     val currentFolderVideos: List<VideoItem>
         get() {
             val raw = selectedFolderId?.let { videosByFolder[it].orEmpty() } ?: emptyList()
-            return if (searchQuery.isBlank()) {
+            val filtered = if (searchQuery.isBlank()) {
                 raw
             } else {
                 val q = searchQuery.trim().lowercase()
                 raw.filter {
                     it.title.lowercase().contains(q) || it.displayName.lowercase().contains(q)
                 }
+            }
+            return when (sortOption) {
+                SortOption.NAME_ASC -> filtered.sortedBy { it.title.lowercase() }
+                SortOption.DATE_DESC -> filtered.sortedByDescending { it.dateModifiedSec }
+                SortOption.SIZE_DESC -> filtered.sortedByDescending { it.sizeBytes }
+                SortOption.DURATION_DESC -> filtered.sortedByDescending { it.durationMs }
             }
         }
 }
@@ -102,6 +123,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val _isLoadingLibrary = MutableStateFlow(false)
     private val _selectedFolderId = MutableStateFlow<Long?>(null)
     private val _searchQuery = MutableStateFlow("")
+    private val _sortOption = MutableStateFlow(SortOption.NAME_ASC)
     private val _updateState = MutableStateFlow<UpdateUiState>(UpdateUiState.Idle)
     private val _showUpdateSheet = MutableStateFlow(false)
     private val _pendingInstallApk = MutableStateFlow<File?>(null)
@@ -113,6 +135,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         _isLoadingLibrary,
         _selectedFolderId,
         _searchQuery,
+        _sortOption,
         playbackRepo.historyByUri,
         prefsRepo.preferences,
         _updateState,
@@ -124,12 +147,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         val loading = values[1] as Boolean
         val selectedFolderId = values[2] as Long?
         val query = values[3] as String
+        val sortOption = values[4] as SortOption
         @Suppress("UNCHECKED_CAST")
-        val history = values[4] as Map<String, PlaybackHistoryEntity>
-        val prefs = values[5] as UserPreferences
-        val updateState = values[6] as UpdateUiState
-        val showSheet = values[7] as Boolean
-        val pendingApk = values[8] as File?
+        val history = values[5] as Map<String, PlaybackHistoryEntity>
+        val prefs = values[6] as UserPreferences
+        val updateState = values[7] as UpdateUiState
+        val showSheet = values[8] as Boolean
+        val pendingApk = values[9] as File?
 
         val videoByUri = snapshot.allVideos.associateBy { it.uriString }
         val recent = history.values
@@ -145,6 +169,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             allVideos = snapshot.allVideos,
             selectedFolderId = selectedFolderId,
             searchQuery = query,
+            sortOption = sortOption,
             historyByUri = history,
             recentVideos = recent,
             preferences = prefs,
@@ -194,6 +219,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun setSearchQuery(query: String) {
         _searchQuery.value = query
+    }
+
+    fun cycleSortOption() {
+        val all = SortOption.entries
+        _sortOption.value = all[(_sortOption.value.ordinal + 1) % all.size]
     }
 
     fun toggleDarkMode() {

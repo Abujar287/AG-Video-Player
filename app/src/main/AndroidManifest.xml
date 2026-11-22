@@ -45,10 +45,18 @@
         <activity
             android:name=".player.PlayerActivity"
             android:configChanges="orientation|screenLayout|screenSize|smallestScreenSize|keyboardHidden"
-            android:exported="false"
+            android:exported="true"
             android:launchMode="singleTask"
             android:supportsPictureInPicture="true"
-            android:theme="@style/Theme.VeloPlay" />
+            android:theme="@style/Theme.VeloPlay">
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:scheme="content" />
+                <data android:scheme="file" />
+                <data android:mimeType="video/*" />
+            </intent-filter>
+        </activity>
 
         <service
             android:name=".player.PlaybackService"

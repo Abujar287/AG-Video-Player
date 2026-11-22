@@ -19,7 +19,7 @@ data class UserPreferences(
     val githubRepoSlug: String = DEFAULT_GITHUB_REPO
 ) {
     companion object {
-        const val DEFAULT_GITHUB_REPO = "owner/veloplay-android"
+        const val DEFAULT_GITHUB_REPO = "owner/ag-video-player"
     }
 }
 

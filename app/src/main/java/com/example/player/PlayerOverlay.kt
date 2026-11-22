@@ -17,35 +17,53 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.VolumeOff
 import androidx.compose.material.icons.automirrored.filled.VolumeUp
 import androidx.compose.material.icons.filled.AspectRatio
+import androidx.compose.material.icons.filled.Audiotrack
+import androidx.compose.material.icons.filled.Bedtime
 import androidx.compose.material.icons.filled.BrightnessHigh
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.FastForward
 import androidx.compose.material.icons.filled.FastRewind
+import androidx.compose.material.icons.filled.FileOpen
 import androidx.compose.material.icons.filled.Headphones
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.LockOpen
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PictureInPictureAlt
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Repeat
+import androidx.compose.material.icons.filled.RepeatOne
 import androidx.compose.material.icons.filled.ScreenRotation
+import androidx.compose.material.icons.filled.SkipNext
+import androidx.compose.material.icons.filled.SkipPrevious
 import androidx.compose.material.icons.filled.Speed
+import androidx.compose.material.icons.filled.Subtitles
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -67,6 +85,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
+import androidx.media3.common.Player
 import com.example.R
 import com.example.ui.theme.AmberBoost
 import com.example.ui.theme.BoostGlowOrange
@@ -99,11 +118,19 @@ fun PlayerOverlay(
     useSoftwareDecoder: Boolean,
     isLocked: Boolean,
     isBackgroundPlayEnabled: Boolean,
+    hasPrevious: Boolean,
+    hasNext: Boolean,
+    repeatMode: Int,
+    sleepMinutesRemaining: Int?,
     aspectMode: PlayerAspectMode,
     controlsVisible: Boolean,
     isInPipMode: Boolean,
     brightnessPercent: Int,
     volumePercent: Int,
+    isMuted: Boolean,
+    audioTracks: List<MediaTrackOption>,
+    subtitleTracks: List<MediaTrackOption>,
+    subtitlesDisabled: Boolean,
     doubleTapFeedback: String?,
     statusBanner: String?,
     onBack: () -> Unit,
@@ -111,13 +138,21 @@ fun PlayerOverlay(
     onTogglePlayPause: () -> Unit,
     onSeekTo: (Long) -> Unit,
     onSeekBy: (Long) -> Unit,
+    onPreviousVideo: () -> Unit,
+    onNextVideo: () -> Unit,
     onToggleLock: () -> Unit,
     onToggleRotation: () -> Unit,
     onCycleSpeed: (Float) -> Unit,
     onToggleDecoder: () -> Unit,
     onEnterPip: () -> Unit,
     onToggleBackgroundPlay: () -> Unit,
+    onCycleRepeatMode: () -> Unit,
+    onSetSleepTimerMinutes: (Int?) -> Unit,
     onCycleAspectMode: () -> Unit,
+    onToggleMute: () -> Unit,
+    onSelectAudioTrack: (MediaTrackOption) -> Unit,
+    onSelectSubtitleTrack: (MediaTrackOption?) -> Unit,
+    onPickExternalSubtitle: () -> Unit,
     onBrightnessChange: (Int) -> Unit,
     onVolumeChange: (Int) -> Unit,
     onDoubleTapSeek: (Boolean) -> Unit
@@ -132,6 +167,8 @@ fun PlayerOverlay(
     var startBrightness by remember { mutableFloatStateOf(brightnessPercent.toFloat()) }
     var startVolume by remember { mutableFloatStateOf(volumePercent.toFloat()) }
     var showSpeedPicker by remember { mutableStateOf(false) }
+    var showTrackDialog by remember { mutableStateOf(false) }
+    var showSleepDialog by remember { mutableStateOf(false) }
 
     var isScrubbingBar by remember { mutableStateOf(false) }
     var sliderPositionMs by remember { mutableFloatStateOf(0f) }
@@ -222,7 +259,7 @@ fun PlayerOverlay(
                 )
             }
     ) {
-        // Controls Overlay (when unlocked and visible)
+        // Controls Overlay
         AnimatedVisibility(
             visible = controlsVisible && !isLocked,
             enter = fadeIn(),
@@ -230,7 +267,6 @@ fun PlayerOverlay(
             modifier = Modifier.fillMaxSize()
         ) {
             Box(modifier = Modifier.fillMaxSize()) {
-                // Top gradient bar
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -242,11 +278,10 @@ fun PlayerOverlay(
                             )
                         )
                 )
-                // Bottom gradient bar
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(170.dp)
+                        .height(180.dp)
                         .align(Alignment.BottomCenter)
                         .background(
                             Brush.verticalGradient(
@@ -261,7 +296,7 @@ fun PlayerOverlay(
                         .fillMaxWidth()
                         .align(Alignment.TopCenter)
                         .windowInsetsPadding(WindowInsets.safeDrawing)
-                        .padding(horizontal = 12.dp, vertical = 8.dp),
+                        .padding(horizontal = 10.dp, vertical = 8.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     IconButton(
@@ -285,8 +320,26 @@ fun PlayerOverlay(
                         overflow = TextOverflow.Ellipsis,
                         modifier = Modifier
                             .weight(1f)
-                            .padding(horizontal = 8.dp)
+                            .padding(horizontal = 6.dp)
                     )
+
+                    // Audio & Subtitle Track Picker
+                    IconButton(
+                        onClick = { showTrackDialog = true },
+                        modifier = Modifier
+                            .minimumInteractiveComponentSize()
+                            .testTag("player_tracks_button")
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Subtitles,
+                            contentDescription = "Audio and Subtitles",
+                            tint = if (!subtitlesDisabled && subtitleTracks.any { it.isSelected }) {
+                                ElectricTeal
+                            } else {
+                                Color.White
+                            }
+                        )
+                    }
 
                     // HW / SW Decoder Pill
                     Surface(
@@ -294,7 +347,7 @@ fun PlayerOverlay(
                         shape = RoundedCornerShape(8.dp),
                         color = if (useSoftwareDecoder) AmberBoost.copy(alpha = 0.25f) else ElectricTeal.copy(alpha = 0.22f),
                         modifier = Modifier
-                            .padding(horizontal = 4.dp)
+                            .padding(horizontal = 2.dp)
                             .testTag("player_decoder_toggle")
                     ) {
                         Text(
@@ -338,13 +391,31 @@ fun PlayerOverlay(
                 // Center Transport Controls
                 Row(
                     modifier = Modifier.align(Alignment.Center),
-                    horizontalArrangement = Arrangement.spacedBy(28.dp),
+                    horizontalArrangement = Arrangement.spacedBy(18.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
+                    if (hasPrevious) {
+                        IconButton(
+                            onClick = onPreviousVideo,
+                            modifier = Modifier
+                                .size(48.dp)
+                                .clip(CircleShape)
+                                .background(PlayerOverlayScrim)
+                                .testTag("player_prev_button")
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.SkipPrevious,
+                                contentDescription = "Previous Video",
+                                tint = Color.White,
+                                modifier = Modifier.size(26.dp)
+                            )
+                        }
+                    }
+
                     IconButton(
                         onClick = { onSeekBy(-10_000L) },
                         modifier = Modifier
-                            .size(56.dp)
+                            .size(54.dp)
                             .clip(CircleShape)
                             .background(PlayerOverlayScrim)
                             .testTag("player_rewind_button")
@@ -353,7 +424,7 @@ fun PlayerOverlay(
                             imageVector = Icons.Default.FastRewind,
                             contentDescription = stringResource(R.string.rewind_10_desc),
                             tint = Color.White,
-                            modifier = Modifier.size(30.dp)
+                            modifier = Modifier.size(28.dp)
                         )
                     }
 
@@ -376,7 +447,7 @@ fun PlayerOverlay(
                     IconButton(
                         onClick = { onSeekBy(10_000L) },
                         modifier = Modifier
-                            .size(56.dp)
+                            .size(54.dp)
                             .clip(CircleShape)
                             .background(PlayerOverlayScrim)
                             .testTag("player_forward_button")
@@ -385,20 +456,37 @@ fun PlayerOverlay(
                             imageVector = Icons.Default.FastForward,
                             contentDescription = stringResource(R.string.forward_10_desc),
                             tint = Color.White,
-                            modifier = Modifier.size(30.dp)
+                            modifier = Modifier.size(28.dp)
                         )
+                    }
+
+                    if (hasNext) {
+                        IconButton(
+                            onClick = onNextVideo,
+                            modifier = Modifier
+                                .size(48.dp)
+                                .clip(CircleShape)
+                                .background(PlayerOverlayScrim)
+                                .testTag("player_next_button")
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.SkipNext,
+                                contentDescription = "Next Video",
+                                tint = Color.White,
+                                modifier = Modifier.size(26.dp)
+                            )
+                        }
                     }
                 }
 
-                // Bottom Bar (Seekbar + Action Strip)
+                // Bottom Bar
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
                         .align(Alignment.BottomCenter)
                         .windowInsetsPadding(WindowInsets.safeDrawing)
-                        .padding(horizontal = 16.dp, vertical = 10.dp)
+                        .padding(horizontal = 14.dp, vertical = 10.dp)
                 ) {
-                    // Optional Speed Selector Bar
                     AnimatedVisibility(visible = showSpeedPicker) {
                         Surface(
                             shape = RoundedCornerShape(14.dp),
@@ -435,7 +523,6 @@ fun PlayerOverlay(
                         }
                     }
 
-                    // Seekbar Row
                     val displayPos = if (isScrubbingBar) sliderPositionMs.toLong() else currentPositionMs
                     val safeDuration = durationMs.coerceAtLeast(1L)
                     Row(
@@ -475,7 +562,6 @@ fun PlayerOverlay(
                         )
                     }
 
-                    // Quick Action Buttons
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween,
@@ -508,32 +594,73 @@ fun PlayerOverlay(
                                 )
                             }
 
-                            // Volume Boost Badge
-                            Surface(
-                                shape = RoundedCornerShape(8.dp),
-                                color = if (volumePercent > 100) BoostGlowOrange.copy(alpha = 0.25f) else Color.White.copy(alpha = 0.12f)
+                            IconButton(
+                                onClick = onCycleRepeatMode,
+                                modifier = Modifier
+                                    .minimumInteractiveComponentSize()
+                                    .testTag("player_repeat_button")
                             ) {
-                                Row(
-                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.AutoMirrored.Filled.VolumeUp,
-                                        contentDescription = null,
-                                        tint = if (volumePercent > 100) BoostGlowOrange else Color.White,
-                                        modifier = Modifier.size(16.dp)
-                                    )
-                                    Spacer(Modifier.width(4.dp))
-                                    Text(
-                                        text = "$volumePercent%",
-                                        style = MaterialTheme.typography.labelSmall,
-                                        color = if (volumePercent > 100) BoostGlowOrange else Color.White
-                                    )
-                                }
+                                Icon(
+                                    imageVector = if (repeatMode == Player.REPEAT_MODE_ONE) {
+                                        Icons.Default.RepeatOne
+                                    } else {
+                                        Icons.Default.Repeat
+                                    },
+                                    contentDescription = "Repeat Mode",
+                                    tint = if (repeatMode != Player.REPEAT_MODE_OFF) ElectricTeal else Color.White
+                                )
+                            }
+
+                            IconButton(
+                                onClick = { showSleepDialog = true },
+                                modifier = Modifier
+                                    .minimumInteractiveComponentSize()
+                                    .testTag("player_sleep_button")
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Bedtime,
+                                    contentDescription = "Sleep Timer",
+                                    tint = if (sleepMinutesRemaining != null) AmberBoost else Color.White
+                                )
                             }
                         }
 
                         Row(verticalAlignment = Alignment.CenterVertically) {
+                            // Mute / Volume Boost Badge
+                            Surface(
+                                onClick = onToggleMute,
+                                shape = RoundedCornerShape(8.dp),
+                                color = when {
+                                    isMuted -> Color.White.copy(alpha = 0.14f)
+                                    volumePercent > 100 -> BoostGlowOrange.copy(alpha = 0.25f)
+                                    else -> Color.White.copy(alpha = 0.12f)
+                                }
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 5.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Icon(
+                                        imageVector = if (isMuted) {
+                                            Icons.AutoMirrored.Filled.VolumeOff
+                                        } else {
+                                            Icons.AutoMirrored.Filled.VolumeUp
+                                        },
+                                        contentDescription = "Toggle Mute",
+                                        tint = if (volumePercent > 100 && !isMuted) BoostGlowOrange else Color.White,
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                    Spacer(Modifier.width(4.dp))
+                                    Text(
+                                        text = if (isMuted) "Mute" else "$volumePercent%",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = if (volumePercent > 100 && !isMuted) BoostGlowOrange else Color.White
+                                    )
+                                }
+                            }
+
+                            Spacer(Modifier.width(6.dp))
+
                             // Speed Button
                             Surface(
                                 onClick = { showSpeedPicker = !showSpeedPicker },
@@ -542,7 +669,7 @@ fun PlayerOverlay(
                                 modifier = Modifier.testTag("player_speed_button")
                             ) {
                                 Row(
-                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                                    modifier = Modifier.padding(horizontal = 9.dp, vertical = 5.dp),
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
                                     Icon(
@@ -560,9 +687,6 @@ fun PlayerOverlay(
                                 }
                             }
 
-                            Spacer(Modifier.width(6.dp))
-
-                            // Aspect Ratio Button
                             IconButton(
                                 onClick = onCycleAspectMode,
                                 modifier = Modifier
@@ -618,7 +742,7 @@ fun PlayerOverlay(
             }
         }
 
-        // Live Gesture HUDs (Seek / Brightness / Volume Boost)
+        // Gesture HUDs
         if (activeGesture == ActiveDragGesture.SEEK) {
             Surface(
                 shape = RoundedCornerShape(16.dp),
@@ -668,8 +792,10 @@ fun PlayerOverlay(
             )
         }
 
-        // Double-Tap & Status Pill Feedback
-        val feedbackText = doubleTapFeedback ?: statusBanner
+        // Feedback Pill
+        val feedbackText = doubleTapFeedback ?: statusBanner ?: sleepMinutesRemaining?.let {
+            "Sleep timer: ${it}m left"
+        }
         AnimatedVisibility(
             visible = feedbackText != null && activeGesture == ActiveDragGesture.NONE,
             enter = fadeIn(),
@@ -688,6 +814,172 @@ fun PlayerOverlay(
                     style = MaterialTheme.typography.labelMedium,
                     color = ElectricTeal,
                     modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
+                )
+            }
+        }
+
+        // Audio & Subtitle Track Picker Dialog
+        if (showTrackDialog) {
+            AlertDialog(
+                onDismissRequest = { showTrackDialog = false },
+                title = { Text("Audio & Subtitles") },
+                text = {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .heightIn(max = 360.dp)
+                            .verticalScroll(rememberScrollState()),
+                        verticalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(
+                                imageVector = Icons.Default.Audiotrack,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.size(18.dp)
+                            )
+                            Spacer(Modifier.width(6.dp))
+                            Text("Audio Tracks", style = MaterialTheme.typography.titleSmall)
+                        }
+
+                        if (audioTracks.isEmpty()) {
+                            Text(
+                                text = "Default audio track active",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        } else {
+                            audioTracks.forEach { track ->
+                                TrackOptionRow(
+                                    label = track.label,
+                                    selected = track.isSelected,
+                                    onClick = {
+                                        onSelectAudioTrack(track)
+                                        showTrackDialog = false
+                                    }
+                                )
+                            }
+                        }
+
+                        HorizontalDivider()
+
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(
+                                imageVector = Icons.Default.Subtitles,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.size(18.dp)
+                            )
+                            Spacer(Modifier.width(6.dp))
+                            Text("Subtitles", style = MaterialTheme.typography.titleSmall)
+                        }
+
+                        TrackOptionRow(
+                            label = "Off (Disable Subtitles)",
+                            selected = subtitlesDisabled || subtitleTracks.none { it.isSelected },
+                            onClick = {
+                                onSelectSubtitleTrack(null)
+                                showTrackDialog = false
+                            }
+                        )
+
+                        subtitleTracks.forEach { track ->
+                            TrackOptionRow(
+                                label = track.label,
+                                selected = !subtitlesDisabled && track.isSelected,
+                                onClick = {
+                                    onSelectSubtitleTrack(track)
+                                    showTrackDialog = false
+                                }
+                            )
+                        }
+
+                        OutlinedButton(
+                            onClick = {
+                                showTrackDialog = false
+                                onPickExternalSubtitle()
+                            },
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Icon(Icons.Default.FileOpen, contentDescription = null, modifier = Modifier.size(18.dp))
+                            Spacer(Modifier.width(8.dp))
+                            Text("Load Subtitle (.srt / .vtt / .ass)")
+                        }
+                    }
+                },
+                confirmButton = {
+                    TextButton(onClick = { showTrackDialog = false }) {
+                        Text(stringResource(R.string.close_cta))
+                    }
+                }
+            )
+        }
+
+        // Sleep Timer Dialog
+        if (showSleepDialog) {
+            AlertDialog(
+                onDismissRequest = { showSleepDialog = false },
+                title = { Text("Sleep Timer") },
+                text = {
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        listOf<Int?>(null, 15, 30, 45, 60).forEach { mins ->
+                            val label = if (mins == null) "Off" else "$mins minutes"
+                            TrackOptionRow(
+                                label = label,
+                                selected = sleepMinutesRemaining == mins,
+                                onClick = {
+                                    onSetSleepTimerMinutes(mins)
+                                    showSleepDialog = false
+                                }
+                            )
+                        }
+                    }
+                },
+                confirmButton = {
+                    TextButton(onClick = { showSleepDialog = false }) {
+                        Text(stringResource(R.string.close_cta))
+                    }
+                }
+            )
+        }
+    }
+}
+
+@Composable
+private fun TrackOptionRow(
+    label: String,
+    selected: Boolean,
+    onClick: () -> Unit
+) {
+    Surface(
+        onClick = onClick,
+        shape = RoundedCornerShape(10.dp),
+        color = if (selected) {
+            MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.6f)
+        } else {
+            MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+        },
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 12.dp, vertical = 10.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = label,
+                style = MaterialTheme.typography.bodyMedium,
+                fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
+                modifier = Modifier.weight(1f)
+            )
+            if (selected) {
+                Icon(
+                    imageVector = Icons.Default.Check,
+                    contentDescription = "Selected",
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(18.dp)
                 )
             }
         }

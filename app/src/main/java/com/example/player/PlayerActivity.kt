@@ -10,13 +10,17 @@ import android.content.IntentFilter
 import android.content.pm.ActivityInfo
 import android.content.res.Configuration
 import android.graphics.drawable.Icon
+import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.provider.OpenableColumns
 import android.util.Rational
 import android.view.WindowManager
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.annotation.OptIn
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
@@ -52,8 +56,10 @@ import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.PlayerView
 import com.example.data.local.VeloDatabase
 import com.example.data.repository.PlaybackRepository
+import com.example.data.repository.UserPreferences
 import com.example.data.repository.UserPreferencesRepository
 import com.example.ui.theme.VeloPlayTheme
+import com.example.util.FormatUtils
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
@@ -64,8 +70,8 @@ class PlayerActivity : ComponentActivity() {
     private lateinit var playbackRepository: PlaybackRepository
     private lateinit var prefsRepository: UserPreferencesRepository
 
-    private var videoUri: String = ""
-    private var videoTitle: String = "Video"
+    private var playlistEntries by mutableStateOf<List<PlaylistEntry>>(emptyList())
+    private var startPlaylistIndex by mutableIntStateOf(0)
     private var isInPipState by mutableStateOf(false)
     private var autoPipEnabled by mutableStateOf(true)
     private var pipSourceRect: android.graphics.Rect? = null
@@ -97,8 +103,6 @@ class PlayerActivity : ComponentActivity() {
         prefsRepository = UserPreferencesRepository(this)
 
         handleLaunchIntent(intent)
-
-        // Ensure PlaybackService is active for MediaSession / optional background play
         startService(Intent(this, PlaybackService::class.java))
 
         ContextCompat.registerReceiver(
@@ -130,8 +134,14 @@ class PlayerActivity : ComponentActivity() {
             val useSoftwareDecoder by PlayerSessionManager.useSoftwareDecoder.collectAsStateWithLifecycle()
             val isBackgroundPlayEnabled by PlayerSessionManager.isBackgroundPlayEnabled.collectAsStateWithLifecycle()
             val volumePercent by PlayerSessionManager.volumePercent.collectAsStateWithLifecycle()
+            val isMuted by PlayerSessionManager.isMuted.collectAsStateWithLifecycle()
+            val activeTitle by PlayerSessionManager.currentVideoTitle.collectAsStateWithLifecycle()
+            val activeUri by PlayerSessionManager.currentVideoUri.collectAsStateWithLifecycle()
+            val audioTracks by PlayerSessionManager.audioTracks.collectAsStateWithLifecycle()
+            val subtitleTracks by PlayerSessionManager.subtitleTracks.collectAsStateWithLifecycle()
+            val subtitlesDisabled by PlayerSessionManager.subtitlesDisabled.collectAsStateWithLifecycle()
             val prefs by prefsRepository.preferences.collectAsStateWithLifecycle(
-                initialValue = com.example.data.repository.UserPreferences()
+                initialValue = UserPreferences()
             )
 
             LaunchedEffect(prefs.autoPipOnHome) {
@@ -142,6 +152,8 @@ class PlayerActivity : ComponentActivity() {
             var currentPosMs by remember { mutableLongStateOf(0L) }
             var durationMs by remember { mutableLongStateOf(0L) }
             var playbackSpeed by remember { mutableFloatStateOf(1.0f) }
+            var repeatMode by remember { mutableIntStateOf(Player.REPEAT_MODE_OFF) }
+            var sleepMinutesRemaining by remember { mutableStateOf<Int?>(null) }
             var isLocked by remember { mutableStateOf(false) }
             var controlsVisible by remember { mutableStateOf(true) }
             var aspectMode by remember { mutableStateOf(PlayerAspectMode.FIT) }
@@ -149,30 +161,58 @@ class PlayerActivity : ComponentActivity() {
             var doubleTapFeedback by remember { mutableStateOf<String?>(null) }
             var statusBanner by remember { mutableStateOf<String?>(null) }
 
-            // Initialize playback & restore exact saved timestamp
-            LaunchedEffect(videoUri) {
-                if (videoUri.isBlank()) return@LaunchedEffect
-                val saved = playbackRepository.getSavedState(videoUri)
+            val subtitlePickerLauncher = rememberLauncherForActivityResult(
+                contract = ActivityResultContracts.OpenDocument()
+            ) { subUri: Uri? ->
+                if (subUri != null) {
+                    runCatching {
+                        contentResolver.takePersistableUriPermission(
+                            subUri,
+                            Intent.FLAG_GRANT_READ_URI_PERMISSION
+                        )
+                    }
+                    val subName = resolveSubtitleName(subUri) ?: "subtitle.srt"
+                    PlayerSessionManager.attachExternalSubtitle(subUri, subName)
+                    statusBanner = "Loaded subtitle: $subName"
+                }
+            }
+
+            // Prepare playlist & restore exact saved timestamp
+            LaunchedEffect(playlistEntries, startPlaylistIndex) {
+                val target = playlistEntries.getOrNull(startPlaylistIndex) ?: return@LaunchedEffect
+                val saved = playbackRepository.getSavedState(target.uriString)
                 val initialPrefs = prefsRepository.preferences.first()
                 val startPos = saved?.positionMs ?: 0L
                 val startSpeed = saved?.playbackSpeed ?: 1.0f
                 val startSw = saved?.useSoftwareDecoder ?: initialPrefs.defaultSoftwareDecoder
                 playbackSpeed = startSpeed
 
-                PlayerSessionManager.prepareMedia(
+                PlayerSessionManager.preparePlaylist(
                     context = this@PlayerActivity,
-                    uriString = videoUri,
-                    title = videoTitle,
+                    playlist = playlistEntries,
+                    startIndex = startPlaylistIndex,
                     resumePositionMs = startPos,
                     playbackSpeed = startSpeed,
                     preferSoftware = startSw
                 )
                 if (startPos > 1_500L) {
-                    statusBanner = "Resumed from ${com.example.util.FormatUtils.formatDuration(startPos)}"
+                    statusBanner = "Resumed from ${FormatUtils.formatDuration(startPos)}"
                 }
             }
 
-            // Observe player state and auto-save playback position every 3 seconds
+            // Sleep timer countdown
+            LaunchedEffect(sleepMinutesRemaining) {
+                val mins = sleepMinutesRemaining ?: return@LaunchedEffect
+                if (mins <= 0) {
+                    player?.pause()
+                    sleepMinutesRemaining = null
+                    statusBanner = "Sleep timer paused playback"
+                } else {
+                    delay(60_000L)
+                    sleepMinutesRemaining = (mins - 1).coerceAtLeast(0)
+                }
+            }
+
             DisposableEffect(player) {
                 val activePlayer = player ?: return@DisposableEffect onDispose {}
                 val listener = object : Player.Listener {
@@ -185,6 +225,10 @@ class PlayerActivity : ComponentActivity() {
                         updatePipParams(activePlayer)
                     }
 
+                    override fun onRepeatModeChanged(newRepeatMode: Int) {
+                        repeatMode = newRepeatMode
+                    }
+
                     override fun onPlaybackStateChanged(playbackState: Int) {
                         if (playbackState == Player.STATE_READY) {
                             durationMs = activePlayer.duration.coerceAtLeast(0L)
@@ -194,6 +238,7 @@ class PlayerActivity : ComponentActivity() {
                 }
                 activePlayer.addListener(listener)
                 isPlaying = activePlayer.isPlaying
+                repeatMode = activePlayer.repeatMode
                 durationMs = activePlayer.duration.coerceAtLeast(0L)
                 onDispose {
                     activePlayer.removeListener(listener)
@@ -209,10 +254,11 @@ class PlayerActivity : ComponentActivity() {
                         val dur = activePlayer.duration.coerceAtLeast(0L)
                         if (dur > 0L) durationMs = dur
                         isPlaying = activePlayer.isPlaying
-                        if (ticks % 6 == 0 && videoUri.isNotBlank() && dur > 0L) {
+                        val uriNow = activeUri.orEmpty()
+                        if (ticks % 6 == 0 && uriNow.isNotBlank() && dur > 0L) {
                             playbackRepository.savePlaybackState(
-                                videoUri = videoUri,
-                                title = videoTitle,
+                                videoUri = uriNow,
+                                title = activeTitle,
                                 positionMs = currentPosMs,
                                 durationMs = dur,
                                 playbackSpeed = playbackSpeed,
@@ -225,7 +271,6 @@ class PlayerActivity : ComponentActivity() {
                 }
             }
 
-            // Auto-hide controls after 3.5s while playing
             LaunchedEffect(controlsVisible, isPlaying, isLocked) {
                 if (controlsVisible && (isPlaying || isLocked)) {
                     delay(3_500L)
@@ -278,8 +323,11 @@ class PlayerActivity : ComponentActivity() {
                         modifier = Modifier.fillMaxSize()
                     )
 
+                    val hasPrev = (player?.hasPreviousMediaItem() == true) || playlistEntries.size > 1
+                    val hasNext = (player?.hasNextMediaItem() == true) || playlistEntries.size > 1
+
                     PlayerOverlay(
-                        title = videoTitle,
+                        title = activeTitle.ifBlank { "Video" },
                         isPlaying = isPlaying,
                         currentPositionMs = currentPosMs,
                         durationMs = durationMs,
@@ -287,11 +335,19 @@ class PlayerActivity : ComponentActivity() {
                         useSoftwareDecoder = useSoftwareDecoder,
                         isLocked = isLocked,
                         isBackgroundPlayEnabled = isBackgroundPlayEnabled,
+                        hasPrevious = hasPrev && (player?.currentMediaItemIndex ?: 0) > 0,
+                        hasNext = hasNext && (player?.currentMediaItemIndex ?: 0) < (playlistEntries.size - 1),
+                        repeatMode = repeatMode,
+                        sleepMinutesRemaining = sleepMinutesRemaining,
                         aspectMode = aspectMode,
                         controlsVisible = controlsVisible,
                         isInPipMode = isInPipState,
                         brightnessPercent = brightnessPercent,
                         volumePercent = volumePercent,
+                        isMuted = isMuted,
+                        audioTracks = audioTracks,
+                        subtitleTracks = subtitleTracks,
+                        subtitlesDisabled = subtitlesDisabled,
                         doubleTapFeedback = doubleTapFeedback,
                         statusBanner = statusBanner,
                         onBack = {
@@ -316,6 +372,14 @@ class PlayerActivity : ComponentActivity() {
                             val next = (p.currentPosition + delta).coerceIn(0L, durationMs.coerceAtLeast(0L))
                             p.seekTo(next)
                             currentPosMs = next
+                        },
+                        onPreviousVideo = {
+                            persistPositionBlocking()
+                            player?.seekToPreviousMediaItem()
+                        },
+                        onNextVideo = {
+                            persistPositionBlocking()
+                            player?.seekToNextMediaItem()
                         },
                         onToggleLock = {
                             isLocked = !isLocked
@@ -352,10 +416,42 @@ class PlayerActivity : ComponentActivity() {
                                 "Background Audio Play Disabled"
                             }
                         },
+                        onCycleRepeatMode = {
+                            val nextMode = when (repeatMode) {
+                                Player.REPEAT_MODE_OFF -> Player.REPEAT_MODE_ONE
+                                Player.REPEAT_MODE_ONE -> Player.REPEAT_MODE_ALL
+                                else -> Player.REPEAT_MODE_OFF
+                            }
+                            repeatMode = nextMode
+                            player?.repeatMode = nextMode
+                            statusBanner = when (nextMode) {
+                                Player.REPEAT_MODE_ONE -> "Repeat: Current Video"
+                                Player.REPEAT_MODE_ALL -> "Repeat: Folder Playlist"
+                                else -> "Repeat: Off"
+                            }
+                        },
+                        onSetSleepTimerMinutes = { mins ->
+                            sleepMinutesRemaining = mins
+                            statusBanner = if (mins == null) "Sleep Timer Off" else "Sleep Timer: ${mins}m"
+                        },
                         onCycleAspectMode = {
                             val modes = PlayerAspectMode.entries
                             aspectMode = modes[(aspectMode.ordinal + 1) % modes.size]
                             statusBanner = "Screen: ${aspectMode.label}"
+                        },
+                        onToggleMute = {
+                            PlayerSessionManager.toggleMute(this@PlayerActivity)
+                        },
+                        onSelectAudioTrack = { track ->
+                            PlayerSessionManager.selectAudioTrack(track)
+                            statusBanner = "Audio: ${track.label}"
+                        },
+                        onSelectSubtitleTrack = { track ->
+                            PlayerSessionManager.selectSubtitleTrack(track)
+                            statusBanner = if (track == null) "Subtitles Off" else "Subtitle: ${track.label}"
+                        },
+                        onPickExternalSubtitle = {
+                            subtitlePickerLauncher.launch(arrayOf("*/*"))
                         },
                         onBrightnessChange = { nextPercent ->
                             brightnessPercent = nextPercent
@@ -387,15 +483,43 @@ class PlayerActivity : ComponentActivity() {
     }
 
     private fun handleLaunchIntent(intent: Intent?) {
+        val uris = intent?.getStringArrayListExtra(EXTRA_PLAYLIST_URIS)
+        val titles = intent?.getStringArrayListExtra(EXTRA_PLAYLIST_TITLES)
+        val index = intent?.getIntExtra(EXTRA_PLAYLIST_INDEX, 0) ?: 0
+
+        if (!uris.isNullOrEmpty() && titles != null && uris.size == titles.size) {
+            playlistEntries = uris.zip(titles) { u, t -> PlaylistEntry(u, t) }
+            startPlaylistIndex = index.coerceIn(0, playlistEntries.lastIndex)
+            return
+        }
+
         val uriExtra = intent?.getStringExtra(EXTRA_VIDEO_URI) ?: intent?.dataString
         val titleExtra = intent?.getStringExtra(EXTRA_VIDEO_TITLE)
         if (!uriExtra.isNullOrBlank()) {
-            videoUri = uriExtra
-            videoTitle = titleExtra?.takeIf { it.isNotBlank() } ?: "Video"
-        } else if (videoUri.isBlank()) {
-            videoUri = PlayerSessionManager.currentVideoUri.value.orEmpty()
-            videoTitle = PlayerSessionManager.currentVideoTitle.value.ifBlank { "Video" }
+            playlistEntries = listOf(PlaylistEntry(uriExtra, titleExtra?.takeIf { it.isNotBlank() } ?: "Video"))
+            startPlaylistIndex = 0
+        } else if (playlistEntries.isEmpty()) {
+            val activeUri = PlayerSessionManager.currentVideoUri.value
+            if (!activeUri.isNullOrBlank()) {
+                playlistEntries = listOf(
+                    PlaylistEntry(
+                        activeUri,
+                        PlayerSessionManager.currentVideoTitle.value.ifBlank { "Video" }
+                    )
+                )
+                startPlaylistIndex = 0
+            }
         }
+    }
+
+    private fun resolveSubtitleName(uri: Uri): String? {
+        return contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)
+            ?.use { cursor ->
+                if (cursor.moveToFirst()) {
+                    val idx = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
+                    if (idx >= 0) cursor.getString(idx) else null
+                } else null
+            }
     }
 
     private fun hideSystemBars() {
@@ -424,7 +548,6 @@ class PlayerActivity : ComponentActivity() {
             val videoSize = player?.videoSize
             if (videoSize != null && videoSize != VideoSize.UNKNOWN && videoSize.width > 0 && videoSize.height > 0) {
                 val rawRatio = videoSize.width.toFloat() / videoSize.height.toFloat()
-                // Clamp strictly to Android PiP allowed bounds [1/2.39 .. 2.39]
                 val clampedRatio = rawRatio.coerceIn(1f / 2.39f, 2.39f)
                 val scaledW = (clampedRatio * 1000).toInt().coerceAtLeast(100)
                 builder.setAspectRatio(Rational(scaledW, 1000))
@@ -507,15 +630,16 @@ class PlayerActivity : ComponentActivity() {
 
     private fun persistPositionBlocking() {
         val player = PlayerSessionManager.playerFlow.value ?: return
-        if (videoUri.isBlank()) return
+        val uri = PlayerSessionManager.currentVideoUri.value ?: return
+        val title = PlayerSessionManager.currentVideoTitle.value
         val pos = player.currentPosition.coerceAtLeast(0L)
         val dur = player.duration.coerceAtLeast(0L)
         val speed = player.playbackParameters.speed
         val isSw = PlayerSessionManager.useSoftwareDecoder.value
         lifecycleScope.launch {
             playbackRepository.savePlaybackState(
-                videoUri = videoUri,
-                title = videoTitle,
+                videoUri = uri,
+                title = title,
                 positionMs = pos,
                 durationMs = dur,
                 playbackSpeed = speed,
@@ -527,6 +651,9 @@ class PlayerActivity : ComponentActivity() {
     companion object {
         const val EXTRA_VIDEO_URI = "extra_video_uri"
         const val EXTRA_VIDEO_TITLE = "extra_video_title"
+        const val EXTRA_PLAYLIST_URIS = "extra_playlist_uris"
+        const val EXTRA_PLAYLIST_TITLES = "extra_playlist_titles"
+        const val EXTRA_PLAYLIST_INDEX = "extra_playlist_index"
         private const val ACTION_PIP_PLAY_PAUSE = "com.example.player.PIP_PLAY_PAUSE"
         private const val ACTION_PIP_REWIND = "com.example.player.PIP_REWIND"
         private const val ACTION_PIP_FORWARD = "com.example.player.PIP_FORWARD"
@@ -535,6 +662,19 @@ class PlayerActivity : ComponentActivity() {
             return Intent(context, PlayerActivity::class.java).apply {
                 putExtra(EXTRA_VIDEO_URI, videoUri)
                 putExtra(EXTRA_VIDEO_TITLE, title)
+            }
+        }
+
+        fun createPlaylistIntent(
+            context: Context,
+            uris: ArrayList<String>,
+            titles: ArrayList<String>,
+            startIndex: Int
+        ): Intent {
+            return Intent(context, PlayerActivity::class.java).apply {
+                putStringArrayListExtra(EXTRA_PLAYLIST_URIS, uris)
+                putStringArrayListExtra(EXTRA_PLAYLIST_TITLES, titles)
+                putExtra(EXTRA_PLAYLIST_INDEX, startIndex)
             }
         }
     }

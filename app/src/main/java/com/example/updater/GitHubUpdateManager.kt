@@ -66,7 +66,7 @@ class GitHubUpdateManager(private val context: Context) {
                 connectTimeout = 12_000
                 readTimeout = 15_000
                 setRequestProperty("Accept", "application/vnd.github+json")
-                setRequestProperty("User-Agent", "VeloPlay/${BuildConfig.VERSION_NAME}")
+                setRequestProperty("User-Agent", "AGVideoPlayer/${BuildConfig.VERSION_NAME}")
             }
 
             val code = connection.responseCode
@@ -90,7 +90,7 @@ class GitHubUpdateManager(private val context: Context) {
 
             val assets = json.optJSONArray("assets")
             var apkUrl = ""
-            var apkName = "VeloPlay-$remoteVersionName.apk"
+            var apkName = "AG-Video-Player-$remoteVersionName.apk"
             var apkSize = 0L
 
             if (assets != null) {

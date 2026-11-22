@@ -22,7 +22,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
@@ -32,17 +31,20 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.Sort
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.DarkMode
 import androidx.compose.material.icons.filled.FileOpen
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.FolderOpen
+import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.LightMode
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.SystemUpdate
 import androidx.compose.material.icons.filled.VideoLibrary
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Badge
 import androidx.compose.material3.BadgedBox
 import androidx.compose.material3.Button
@@ -50,6 +52,7 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
@@ -59,10 +62,15 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -78,6 +86,7 @@ import com.example.data.local.PlaybackHistoryEntity
 import com.example.data.model.VideoFolder
 import com.example.data.model.VideoItem
 import com.example.ui.MainUiState
+import com.example.ui.SortOption
 import com.example.ui.UpdateUiState
 import com.example.ui.components.VideoThumbnail
 import com.example.util.FormatUtils
@@ -91,17 +100,21 @@ fun VeloMainScreen(
     onOpenSingleFile: () -> Unit,
     onRefresh: () -> Unit,
     onToggleTheme: () -> Unit,
+    onCycleSort: () -> Unit,
     onOpenUpdateSheet: () -> Unit,
     onSearchQueryChange: (String) -> Unit,
     onFolderClick: (VideoFolder) -> Unit,
     onBackToFolders: () -> Unit,
-    onVideoClick: (VideoItem) -> Unit,
+    onVideoClick: (VideoItem, List<VideoItem>) -> Unit,
+    onClearResume: (String) -> Unit,
     loadThumbnail: suspend (Long, String) -> Bitmap?
 ) {
     val activeFolder = uiState.selectedFolder
     if (activeFolder != null) {
         BackHandler(onBack = onBackToFolders)
     }
+
+    var detailVideo by remember { mutableStateOf<VideoItem?>(null) }
 
     val hasAvailableUpdate = uiState.updateState is UpdateUiState.Available ||
         uiState.updateState is UpdateUiState.ReadyToInstall
@@ -146,6 +159,12 @@ fun VeloMainScreen(
                             }
                             Text(
                                 text = "${activeFolder.videoCount} $unit · ${FormatUtils.formatFileSize(activeFolder.totalSizeBytes)}",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        } else if (hasStoragePermission && uiState.folders.isNotEmpty()) {
+                            Text(
+                                text = "${uiState.folders.size} folders · ${uiState.allVideos.size} videos",
                                 style = MaterialTheme.typography.labelSmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
@@ -243,24 +262,79 @@ fun VeloMainScreen(
                         FolderBrowserContent(
                             uiState = uiState,
                             onSearchQueryChange = onSearchQueryChange,
+                            onCycleSort = onCycleSort,
                             onFolderClick = onFolderClick,
-                            onVideoClick = onVideoClick,
-                            onOpenSingleFile = onOpenSingleFile,
-                            loadThumbnail = loadThumbnail
+                            onResumeLastVideo = { video ->
+                                val folderVideos = uiState.videosByFolder[video.bucketId].orEmpty()
+                                onVideoClick(video, folderVideos.ifEmpty { listOf(video) })
+                            },
+                            onOpenSingleFile = onOpenSingleFile
                         )
                     } else {
+                        val videos = uiState.currentFolderVideos
                         VideoListContent(
-                            videos = uiState.currentFolderVideos,
+                            videos = videos,
                             historyByUri = uiState.historyByUri,
                             searchQuery = uiState.searchQuery,
+                            sortOption = uiState.sortOption,
                             onSearchQueryChange = onSearchQueryChange,
-                            onVideoClick = onVideoClick,
+                            onCycleSort = onCycleSort,
+                            onVideoClick = { video -> onVideoClick(video, videos) },
+                            onShowVideoDetails = { detailVideo = it },
                             loadThumbnail = loadThumbnail
                         )
                     }
                 }
             }
         }
+    }
+
+    detailVideo?.let { video ->
+        val history = uiState.historyByUri[video.uriString]
+        AlertDialog(
+            onDismissRequest = { detailVideo = null },
+            title = {
+                Text(
+                    text = video.title,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis
+                )
+            },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Text("File: ${video.displayName}", style = MaterialTheme.typography.bodyMedium)
+                    Text("Folder: ${video.folderName}", style = MaterialTheme.typography.bodyMedium)
+                    Text("Resolution: ${FormatUtils.formatResolution(video.width, video.height)}", style = MaterialTheme.typography.bodyMedium)
+                    Text("Duration: ${FormatUtils.formatDuration(video.durationMs)}", style = MaterialTheme.typography.bodyMedium)
+                    Text("Size: ${FormatUtils.formatFileSize(video.sizeBytes)}", style = MaterialTheme.typography.bodyMedium)
+                    Text("Format: ${video.mimeType}", style = MaterialTheme.typography.bodyMedium)
+                    if (history != null && history.positionMs > 1_500L) {
+                        Text(
+                            text = "Saved resume: ${FormatUtils.formatDuration(history.positionMs)}",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.secondary
+                        )
+                    }
+                }
+            },
+            dismissButton = {
+                if (history != null && history.positionMs > 1_500L) {
+                    TextButton(
+                        onClick = {
+                            onClearResume(video.uriString)
+                            detailVideo = null
+                        }
+                    ) {
+                        Text("Reset Resume")
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { detailVideo = null }) {
+                    Text(stringResource(R.string.close_cta))
+                }
+            }
+        )
     }
 }
 
@@ -344,10 +418,10 @@ private fun PermissionPromptView(
 private fun FolderBrowserContent(
     uiState: MainUiState,
     onSearchQueryChange: (String) -> Unit,
+    onCycleSort: () -> Unit,
     onFolderClick: (VideoFolder) -> Unit,
-    onVideoClick: (VideoItem) -> Unit,
-    onOpenSingleFile: () -> Unit,
-    loadThumbnail: suspend (Long, String) -> Bitmap?
+    onResumeLastVideo: (VideoItem) -> Unit,
+    onOpenSingleFile: () -> Unit
 ) {
     if (uiState.folders.isEmpty()) {
         Box(
@@ -398,29 +472,48 @@ private fun FolderBrowserContent(
             modifier = Modifier.fillMaxSize()
         ) {
             item(span = { GridItemSpan(columns) }) {
-                SearchBarField(
+                SearchAndSortRow(
                     query = uiState.searchQuery,
-                    onQueryChange = onSearchQueryChange
+                    sortOption = uiState.sortOption,
+                    onQueryChange = onSearchQueryChange,
+                    onCycleSort = onCycleSort
                 )
             }
 
-            if (uiState.recentVideos.isNotEmpty() && uiState.searchQuery.isBlank()) {
+            // Compact quick-resume banner without pushing Folders down
+            val lastPlayed = uiState.recentVideos.firstOrNull()
+            if (lastPlayed != null && uiState.searchQuery.isBlank()) {
                 item(span = { GridItemSpan(columns) }) {
-                    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                        Text(
-                            text = stringResource(R.string.recent_continue_watching),
-                            style = MaterialTheme.typography.titleMedium,
-                            color = MaterialTheme.colorScheme.primary
-                        )
-                        LazyRow(
-                            horizontalArrangement = Arrangement.spacedBy(12.dp)
+                    val (video, history) = lastPlayed
+                    Surface(
+                        onClick = { onResumeLastVideo(video) },
+                        shape = RoundedCornerShape(14.dp),
+                        color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.55f),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag("quick_resume_banner")
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
+                            verticalAlignment = Alignment.CenterVertically
                         ) {
-                            items(uiState.recentVideos, key = { it.first.id }) { (video, history) ->
-                                ContinueWatchingCard(
-                                    video = video,
-                                    history = history,
-                                    onClick = { onVideoClick(video) },
-                                    loadThumbnail = loadThumbnail
+                            Icon(
+                                imageVector = Icons.Default.PlayArrow,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.primary
+                            )
+                            Spacer(Modifier.width(10.dp))
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = "Resume: ${video.title}",
+                                    style = MaterialTheme.typography.titleSmall,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                                Text(
+                                    text = "${FormatUtils.formatDuration(history.positionMs)} / ${FormatUtils.formatDuration(video.durationMs)}",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.secondary
                                 )
                             }
                         }
@@ -430,9 +523,10 @@ private fun FolderBrowserContent(
 
             item(span = { GridItemSpan(columns) }) {
                 Text(
-                    text = stringResource(R.string.folders_title),
+                    text = "${stringResource(R.string.folders_title)} (${uiState.filteredFolders.size})",
                     style = MaterialTheme.typography.titleMedium,
-                    modifier = Modifier.padding(top = 4.dp)
+                    color = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.padding(top = 2.dp)
                 )
             }
 
@@ -451,8 +545,11 @@ private fun VideoListContent(
     videos: List<VideoItem>,
     historyByUri: Map<String, PlaybackHistoryEntity>,
     searchQuery: String,
+    sortOption: SortOption,
     onSearchQueryChange: (String) -> Unit,
+    onCycleSort: () -> Unit,
     onVideoClick: (VideoItem) -> Unit,
+    onShowVideoDetails: (VideoItem) -> Unit,
     loadThumbnail: suspend (Long, String) -> Bitmap?
 ) {
     LazyColumn(
@@ -461,9 +558,11 @@ private fun VideoListContent(
         modifier = Modifier.fillMaxSize()
     ) {
         item {
-            SearchBarField(
+            SearchAndSortRow(
                 query = searchQuery,
-                onQueryChange = onSearchQueryChange
+                sortOption = sortOption,
+                onQueryChange = onSearchQueryChange,
+                onCycleSort = onCycleSort
             )
         }
 
@@ -472,6 +571,7 @@ private fun VideoListContent(
                 video = video,
                 history = historyByUri[video.uriString],
                 onClick = { onVideoClick(video) },
+                onDetailsClick = { onShowVideoDetails(video) },
                 loadThumbnail = loadThumbnail
             )
         }
@@ -479,105 +579,49 @@ private fun VideoListContent(
 }
 
 @Composable
-private fun SearchBarField(
+private fun SearchAndSortRow(
     query: String,
-    onQueryChange: (String) -> Unit
+    sortOption: SortOption,
+    onQueryChange: (String) -> Unit,
+    onCycleSort: () -> Unit
 ) {
-    OutlinedTextField(
-        value = query,
-        onValueChange = onQueryChange,
-        placeholder = { Text(stringResource(R.string.search_videos_hint)) },
-        leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
-        trailingIcon = {
-            if (query.isNotEmpty()) {
-                IconButton(onClick = { onQueryChange("") }) {
-                    Icon(Icons.Default.Close, contentDescription = "Clear search")
-                }
-            }
-        },
-        singleLine = true,
-        shape = RoundedCornerShape(14.dp),
-        modifier = Modifier
-            .fillMaxWidth()
-            .testTag("library_search_input")
-    )
-}
-
-@Composable
-private fun ContinueWatchingCard(
-    video: VideoItem,
-    history: PlaybackHistoryEntity,
-    onClick: () -> Unit,
-    loadThumbnail: suspend (Long, String) -> Bitmap?
-) {
-    val progress = if (history.durationMs > 0L) {
-        (history.positionMs.toFloat() / history.durationMs.toFloat()).coerceIn(0f, 1f)
-    } else 0f
-
-    Card(
-        shape = RoundedCornerShape(16.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
-        modifier = Modifier
-            .width(196.dp)
-            .clickable(onClick = onClick)
-            .testTag("continue_card_${video.id}")
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+        verticalAlignment = Alignment.CenterVertically
     ) {
-        Column {
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .aspectRatio(16f / 9f)
-            ) {
-                VideoThumbnail(
-                    videoId = video.id,
-                    uriString = video.uriString,
-                    contentDescription = video.title,
-                    loadThumbnail = loadThumbnail,
-                    modifier = Modifier.fillMaxSize()
-                )
-                Box(
-                    modifier = Modifier
-                        .align(Alignment.Center)
-                        .size(36.dp)
-                        .clip(CircleShape)
-                        .background(Color.Black.copy(alpha = 0.55f)),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.PlayArrow,
-                        contentDescription = null,
-                        tint = Color.White,
-                        modifier = Modifier.size(22.dp)
-                    )
+        OutlinedTextField(
+            value = query,
+            onValueChange = onQueryChange,
+            placeholder = { Text(stringResource(R.string.search_videos_hint)) },
+            leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
+            trailingIcon = {
+                if (query.isNotEmpty()) {
+                    IconButton(onClick = { onQueryChange("") }) {
+                        Icon(Icons.Default.Close, contentDescription = "Clear search")
+                    }
                 }
-                LinearProgressIndicator(
-                    progress = { progress },
-                    color = MaterialTheme.colorScheme.primary,
-                    trackColor = Color.White.copy(alpha = 0.25f),
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(3.dp)
-                        .align(Alignment.BottomCenter)
+            },
+            singleLine = true,
+            shape = RoundedCornerShape(14.dp),
+            modifier = Modifier
+                .weight(1f)
+                .testTag("library_search_input")
+        )
+
+        FilterChip(
+            selected = false,
+            onClick = onCycleSort,
+            label = { Text(sortOption.label) },
+            leadingIcon = {
+                Icon(
+                    imageVector = Icons.AutoMirrored.Filled.Sort,
+                    contentDescription = "Sort",
+                    modifier = Modifier.size(18.dp)
                 )
-            }
-            Column(modifier = Modifier.padding(10.dp)) {
-                Text(
-                    text = video.title,
-                    style = MaterialTheme.typography.titleSmall,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-                Text(
-                    text = stringResource(
-                        R.string.resume_badge_format,
-                        FormatUtils.formatDuration(history.positionMs)
-                    ),
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.secondary
-                )
-            }
-        }
+            },
+            modifier = Modifier.testTag("sort_chip_button")
+        )
     }
 }
 
@@ -672,6 +716,7 @@ private fun VideoRowCard(
     video: VideoItem,
     history: PlaybackHistoryEntity?,
     onClick: () -> Unit,
+    onDetailsClick: () -> Unit,
     loadThumbnail: suspend (Long, String) -> Bitmap?
 ) {
     val resumePos = history?.positionMs ?: 0L
@@ -782,6 +827,17 @@ private fun VideoRowCard(
                         color = MaterialTheme.colorScheme.secondary
                     )
                 }
+            }
+
+            IconButton(
+                onClick = onDetailsClick,
+                modifier = Modifier.minimumInteractiveComponentSize()
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Info,
+                    contentDescription = "Video Details",
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                )
             }
         }
     }

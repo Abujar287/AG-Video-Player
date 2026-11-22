@@ -1,5 +1,5 @@
 <resources>
-    <string name="app_name">VeloPlay</string>
+    <string name="app_name">AG Video Player</string>
     <string name="folders_title">Video Folders</string>
     <string name="recent_continue_watching">Continue Watching</string>
     <string name="toggle_theme_desc">Toggle Dark and Light Mode</string>
