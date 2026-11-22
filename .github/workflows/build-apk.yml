@@ -32,10 +32,21 @@ jobs:
             yes | "$SDK_MANAGER" --licenses > /dev/null 2>&1 || true
           fi
 
-      - name: Decode debug keystore
+      - name: Prepare debug keystore
         run: |
           if [ -f debug.keystore.base64 ]; then
             base64 -d debug.keystore.base64 > debug.keystore
+          fi
+          if [ ! -f debug.keystore ]; then
+            keytool -genkeypair -noprompt \
+              -keystore debug.keystore \
+              -alias androiddebugkey \
+              -keyalg RSA \
+              -keysize 2048 \
+              -validity 10000 \
+              -storepass android \
+              -keypass android \
+              -dname "CN=Android Debug,O=Android,C=US"
           fi
 
       - name: Prepare release signing keystore
@@ -47,7 +58,7 @@ jobs:
             echo "KEY_PASSWORD=${{ secrets.KEY_PASSWORD }}" >> "$GITHUB_ENV"
             echo "has_persistent_key=true" >> "$GITHUB_OUTPUT"
           else
-            keytool -genkeypair -v \
+            keytool -genkeypair -noprompt \
               -keystore my-upload-key.jks \
               -alias upload \
               -keyalg RSA \
