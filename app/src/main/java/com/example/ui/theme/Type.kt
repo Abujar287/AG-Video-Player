@@ -18,23 +18,15 @@ val PlusJakartaSans = FontFamily(
 val JetBrainsMono = FontFamily(
     Font(R.font.jetbrains_mono, FontWeight.Normal),
     Font(R.font.jetbrains_mono, FontWeight.Medium),
-    Font(R.font.jetbrains_mono, FontWeight.SemiBold)
+    Font(R.font.jetbrains_mono, FontWeight.Bold)
 )
 
 val VeloTypography = Typography(
-    headlineMedium = TextStyle(
-        fontFamily = PlusJakartaSans,
-        fontWeight = FontWeight.Bold,
-        fontSize = 24.sp,
-        lineHeight = 32.sp,
-        letterSpacing = (-0.3).sp
-    ),
     titleLarge = TextStyle(
         fontFamily = PlusJakartaSans,
         fontWeight = FontWeight.Bold,
         fontSize = 20.sp,
-        lineHeight = 26.sp,
-        letterSpacing = (-0.2).sp
+        lineHeight = 26.sp
     ),
     titleMedium = TextStyle(
         fontFamily = PlusJakartaSans,
@@ -57,21 +49,31 @@ val VeloTypography = Typography(
     bodyMedium = TextStyle(
         fontFamily = PlusJakartaSans,
         fontWeight = FontWeight.Normal,
+        fontSize = 13.5.sp,
+        lineHeight = 19.sp
+    ),
+    bodySmall = TextStyle(
+        fontFamily = PlusJakartaSans,
+        fontWeight = FontWeight.Normal,
+        fontSize = 12.sp,
+        lineHeight = 16.sp
+    ),
+    labelLarge = TextStyle(
+        fontFamily = PlusJakartaSans,
+        fontWeight = FontWeight.SemiBold,
         fontSize = 13.sp,
         lineHeight = 18.sp
     ),
     labelMedium = TextStyle(
-        fontFamily = JetBrainsMono,
+        fontFamily = PlusJakartaSans,
         fontWeight = FontWeight.Medium,
-        fontSize = 12.sp,
-        lineHeight = 16.sp,
-        letterSpacing = 0.2.sp
+        fontSize = 11.5.sp,
+        lineHeight = 15.sp
     ),
     labelSmall = TextStyle(
         fontFamily = JetBrainsMono,
-        fontWeight = FontWeight.Normal,
-        fontSize = 11.sp,
-        lineHeight = 14.sp,
-        letterSpacing = 0.3.sp
+        fontWeight = FontWeight.Medium,
+        fontSize = 10.5.sp,
+        lineHeight = 14.sp
     )
 )

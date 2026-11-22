@@ -1,18 +1,18 @@
 package com.example.data.repository
 
-import com.example.data.local.PlaybackHistoryDao
+import android.content.Context
 import com.example.data.local.PlaybackHistoryEntity
+import com.example.data.local.VeloDatabase
 import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.map
 
-class PlaybackRepository(private val dao: PlaybackHistoryDao) {
+class PlaybackRepository(context: Context) {
+    private val dao = VeloDatabase.getInstance(context).playbackHistoryDao()
 
-    val historyByUri: Flow<Map<String, PlaybackHistoryEntity>> =
-        dao.observeAll().map { list -> list.associateBy { it.videoUri } }
+    fun observeHistory(): Flow<List<PlaybackHistoryEntity>> = dao.observeAll()
 
-    val recentHistory: Flow<List<PlaybackHistoryEntity>> = dao.observeAll()
+    suspend fun getHistoryForUri(uri: String): PlaybackHistoryEntity? = dao.getByUri(uri)
 
-    suspend fun getSavedState(videoUri: String): PlaybackHistoryEntity? = dao.getByUri(videoUri)
+    suspend fun getLatestHistory(): PlaybackHistoryEntity? = dao.getLatest()
 
     suspend fun savePlaybackState(
         videoUri: String,
@@ -22,19 +22,15 @@ class PlaybackRepository(private val dao: PlaybackHistoryDao) {
         playbackSpeed: Float,
         useSoftwareDecoder: Boolean
     ) {
-        if (videoUri.isBlank()) return
-        // If playback is virtually complete (>97% and within final 3s), reset resume point to 0
-        val normalizedPos = if (durationMs > 10_000L && positionMs >= durationMs - 3_000L) {
-            0L
-        } else {
-            positionMs.coerceAtLeast(0L)
-        }
+        if (videoUri.isBlank() || durationMs <= 0L) return
+        val clampedPos = positionMs.coerceIn(0L, durationMs)
+        val savedPos = if (durationMs > 5000L && clampedPos >= durationMs - 1500L) 0L else clampedPos
         dao.upsert(
             PlaybackHistoryEntity(
                 videoUri = videoUri,
                 title = title,
-                positionMs = normalizedPos,
-                durationMs = durationMs.coerceAtLeast(0L),
+                positionMs = savedPos,
+                durationMs = durationMs,
                 lastPlayedAt = System.currentTimeMillis(),
                 playbackSpeed = playbackSpeed,
                 useSoftwareDecoder = useSoftwareDecoder
@@ -42,5 +38,7 @@ class PlaybackRepository(private val dao: PlaybackHistoryDao) {
         )
     }
 
-    suspend fun clearHistory(videoUri: String) = dao.deleteByUri(videoUri)
+    suspend fun clearPosition(videoUri: String) {
+        dao.deleteByUri(videoUri)
+    }
 }

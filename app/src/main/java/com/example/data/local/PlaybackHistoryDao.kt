@@ -14,6 +14,9 @@ interface PlaybackHistoryDao {
     @Query("SELECT * FROM playback_history WHERE videoUri = :videoUri LIMIT 1")
     suspend fun getByUri(videoUri: String): PlaybackHistoryEntity?
 
+    @Query("SELECT * FROM playback_history ORDER BY lastPlayedAt DESC LIMIT 1")
+    suspend fun getLatest(): PlaybackHistoryEntity?
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsert(entry: PlaybackHistoryEntity)
 

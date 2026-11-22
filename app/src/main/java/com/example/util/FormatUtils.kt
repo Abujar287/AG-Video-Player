@@ -18,7 +18,7 @@ object FormatUtils {
     }
 
     fun formatSignedDelta(deltaMs: Long): String {
-        val sign = if (deltaMs >= 0) "+" else "-"
+        val sign = if (deltaMs >= 0L) "+" else "-"
         return "$sign${formatDuration(abs(deltaMs))}"
     }
 

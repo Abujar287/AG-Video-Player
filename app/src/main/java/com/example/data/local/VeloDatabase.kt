@@ -15,18 +15,15 @@ abstract class VeloDatabase : RoomDatabase() {
 
     companion object {
         @Volatile
-        private var INSTANCE: VeloDatabase? = null
+        private var instance: VeloDatabase? = null
 
         fun getInstance(context: Context): VeloDatabase {
-            return INSTANCE ?: synchronized(this) {
-                INSTANCE ?: Room.databaseBuilder(
+            return instance ?: synchronized(this) {
+                instance ?: Room.databaseBuilder(
                     context.applicationContext,
                     VeloDatabase::class.java,
-                    "veloplay_db"
-                )
-                    .fallbackToDestructiveMigration(dropAllTables = true)
-                    .build()
-                    .also { INSTANCE = it }
+                    "ag_video_player.db"
+                ).build().also { instance = it }
             }
         }
     }

@@ -1,81 +1,68 @@
 package com.example.ui.screens
 
-import android.graphics.Bitmap
-import androidx.activity.compose.BackHandler
-import androidx.compose.animation.AnimatedContent
-import androidx.compose.foundation.BorderStroke
+import android.content.Intent
 import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.grid.GridCells
-import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.automirrored.filled.DriveFileMove
-import androidx.compose.material.icons.automirrored.filled.PlaylistAdd
-import androidx.compose.material.icons.automirrored.filled.PlaylistPlay
-import androidx.compose.material.icons.automirrored.filled.Sort
-import androidx.compose.material.icons.automirrored.filled.ViewList
-import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.ArrowDownward
-import androidx.compose.material.icons.filled.ArrowUpward
-import androidx.compose.material.icons.filled.CalendarToday
-import androidx.compose.material.icons.filled.Category
-import androidx.compose.material.icons.filled.Check
-import androidx.compose.material.icons.filled.CheckCircle
-import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.DarkMode
-import androidx.compose.material.icons.filled.DataUsage
-import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.DriveFileRenameOutline
-import androidx.compose.material.icons.filled.Favorite
-import androidx.compose.material.icons.filled.FavoriteBorder
-import androidx.compose.material.icons.filled.Folder
-import androidx.compose.material.icons.filled.FolderOpen
-import androidx.compose.material.icons.filled.GridView
-import androidx.compose.material.icons.filled.Info
-import androidx.compose.material.icons.filled.LightMode
-import androidx.compose.material.icons.filled.MoreVert
-import androidx.compose.material.icons.filled.PlayArrow
-import androidx.compose.material.icons.filled.RadioButtonUnchecked
-import androidx.compose.material.icons.filled.Search
-import androidx.compose.material.icons.filled.SelectAll
-import androidx.compose.material.icons.filled.Share
-import androidx.compose.material.icons.filled.SortByAlpha
-import androidx.compose.material.icons.filled.VideoLibrary
+import androidx.compose.material.icons.automirrored.rounded.ArrowBack
+import androidx.compose.material.icons.rounded.Add
+import androidx.compose.material.icons.rounded.ArrowDownward
+import androidx.compose.material.icons.rounded.ArrowUpward
+import androidx.compose.material.icons.rounded.CalendarToday
+import androidx.compose.material.icons.rounded.Check
+import androidx.compose.material.icons.rounded.CheckCircle
+import androidx.compose.material.icons.rounded.Close
+import androidx.compose.material.icons.rounded.DarkMode
+import androidx.compose.material.icons.rounded.Delete
+import androidx.compose.material.icons.rounded.DriveFileMove
+import androidx.compose.material.icons.rounded.Edit
+import androidx.compose.material.icons.rounded.Favorite
+import androidx.compose.material.icons.rounded.FavoriteBorder
+import androidx.compose.material.icons.rounded.Folder
+import androidx.compose.material.icons.rounded.FolderOpen
+import androidx.compose.material.icons.rounded.GridView
+import androidx.compose.material.icons.rounded.Info
+import androidx.compose.material.icons.rounded.LightMode
+import androidx.compose.material.icons.rounded.MoreVert
+import androidx.compose.material.icons.rounded.PlayArrow
+import androidx.compose.material.icons.rounded.PlaylistAdd
+import androidx.compose.material.icons.rounded.PlaylistPlay
+import androidx.compose.material.icons.rounded.RadioButtonUnchecked
+import androidx.compose.material.icons.rounded.Search
+import androidx.compose.material.icons.rounded.SelectAll
+import androidx.compose.material.icons.rounded.Share
+import androidx.compose.material.icons.rounded.SortByAlpha
+import androidx.compose.material.icons.rounded.Storage
+import androidx.compose.material.icons.rounded.SwapVert
+import androidx.compose.material.icons.rounded.ViewList
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Badge
-import androidx.compose.material3.BadgedBox
 import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -90,13 +77,10 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
-import androidx.compose.material3.minimumInteractiveComponentSize
-import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -106,46 +90,64 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.platform.testTag
-import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.example.BuildConfig
+import androidx.core.content.FileProvider
 import com.example.R
 import com.example.data.local.PlaybackHistoryEntity
+import com.example.data.model.BrowserDestination
+import com.example.data.model.SortDirection
+import com.example.data.model.SortField
+import com.example.data.model.UpdateUiState
+import com.example.data.model.UserPreferences
 import com.example.data.model.VideoFolder
 import com.example.data.model.VideoItem
-import com.example.data.repository.DoubleClickAction
-import com.example.data.repository.PlayerControlButton
-import com.example.data.repository.SingleClickAction
-import com.example.ui.BrowserDestination
-import com.example.ui.MainUiState
-import com.example.ui.SortDirection
-import com.example.ui.SortField
-import com.example.ui.UpdateUiState
+import com.example.ui.PendingMoveRequest
 import com.example.ui.components.ControlSettingsDialog
+import com.example.ui.components.UpdateDialog
 import com.example.ui.components.VideoThumbnail
+import com.example.ui.theme.BadgeNewRed
 import com.example.util.FormatUtils
+import java.io.File
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun VeloMainScreen(
-    uiState: MainUiState,
-    hasStoragePermission: Boolean,
-    onRequestPermission: () -> Unit,
-    onOpenSingleFile: () -> Unit,
+fun LibraryBrowserScreen(
+    isLoadingLibrary: Boolean,
+    folders: List<VideoFolder>,
+    allVideos: List<VideoItem>,
+    videosByFolder: Map<String, List<VideoItem>>,
+    filteredFolders: List<VideoFolder>,
+    currentVideos: List<VideoItem>,
+    sortedAllVideos: List<VideoItem>,
+    destination: BrowserDestination,
+    searchQuery: String,
+    sortField: SortField,
+    sortDirection: SortDirection,
+    selectedVideoUris: Set<String>,
+    historyByUri: Map<String, PlaybackHistoryEntity>,
+    lastHistoryEntry: PlaybackHistoryEntity?,
+    preferences: UserPreferences,
+    updateState: UpdateUiState,
+    showUpdateDialog: Boolean,
+    actionMessage: String?,
+    pendingMoveAccessPrompt: PendingMoveRequest?,
+    currentAppVersionLabel: String,
     onRefresh: () -> Unit,
+    onOpenDocumentPicker: () -> Unit,
     onToggleTheme: () -> Unit,
     onToggleGridView: () -> Unit,
     onApplySort: (SortField, SortDirection) -> Unit,
     onOpenUpdateCheck: () -> Unit,
+    onDismissUpdateDialog: () -> Unit,
     onSearchQueryChange: (String) -> Unit,
-    onFolderClick: (VideoFolder) -> Unit,
+    onFolderClick: (String) -> Unit,
     onOpenFavorites: () -> Unit,
     onOpenPlaylist: (String) -> Unit,
     onDeletePlaylist: (String) -> Unit,
@@ -159,14 +161,16 @@ fun VeloMainScreen(
     onToggleFavorite: (VideoItem) -> Unit,
     onAddToPlaylist: (String, VideoItem) -> Unit,
     onRemoveFromPlaylist: (String, VideoItem) -> Unit,
-    onShareVideo: (VideoItem) -> Unit,
     onRenameVideo: (VideoItem, String) -> Unit,
     onMoveVideos: (List<VideoItem>, String) -> Unit,
     onDeleteVideos: (List<VideoItem>) -> Unit,
     onClearResume: (String) -> Unit,
     onClearActionMessage: () -> Unit,
-    onSingleClickActionChange: (SingleClickAction) -> Unit,
-    onDoubleClickActionChange: (DoubleClickAction) -> Unit,
+    onRequestAllFilesAccess: () -> Unit,
+    onMoveToScopedMovies: (PendingMoveRequest) -> Unit,
+    onDismissMoveAccessPrompt: () -> Unit,
+    onSingleClickActionChange: (com.example.data.model.SingleClickAction) -> Unit,
+    onDoubleClickActionChange: (com.example.data.model.DoubleClickAction) -> Unit,
     onAlwaysBackgroundPlayChange: (Boolean) -> Unit,
     onAutoPipChange: (Boolean) -> Unit,
     onEnableSwipeGesturesChange: (Boolean) -> Unit,
@@ -178,74 +182,77 @@ fun VeloMainScreen(
     onOneFingerGestureChange: (String) -> Unit,
     onTwoFingerGestureChange: (String) -> Unit,
     onThreeFingerGestureChange: (String) -> Unit,
-    onTogglePlayerButtonVisibility: (PlayerControlButton, Boolean) -> Unit,
-    onShowAllButtons: () -> Unit,
-    loadThumbnail: suspend (Long, String) -> Bitmap?
+    onTogglePlayerButtonVisibility: (com.example.data.model.PlayerControlButton, Boolean) -> Unit,
+    onShowAllButtons: () -> Unit
 ) {
-    val activeFolder = uiState.selectedFolder
-    val isInVideoList = uiState.destination != BrowserDestination.Folders
-    val isGridLayoutActive = when (uiState.preferences.mainViewLayout) {
+    val context = LocalContext.current
+    val snackbarHostState = remember { SnackbarHostState() }
+    val isSelectionMode = selectedVideoUris.isNotEmpty()
+    val isInVideoList = destination != BrowserDestination.Folders
+    val isGridLayoutActive = when (preferences.mainViewLayout) {
         "list" -> false
         "grid" -> true
-        else -> uiState.preferences.isGridView
+        else -> preferences.isGridView
     }
+    val hasAvailableUpdate = updateState is UpdateUiState.Available
 
-    if (uiState.isSelectionMode) {
-        BackHandler(onBack = onClearSelection)
-    } else if (isInVideoList) {
-        BackHandler(onBack = onBackToFolders)
-    }
-
+    var showSortDialog by remember { mutableStateOf(false) }
+    var showControlSettings by remember { mutableStateOf(false) }
     var detailVideo by remember { mutableStateOf<VideoItem?>(null) }
     var renameTargetVideo by remember { mutableStateOf<VideoItem?>(null) }
     var playlistTargetVideo by remember { mutableStateOf<VideoItem?>(null) }
     var moveTargetVideos by remember { mutableStateOf<List<VideoItem>?>(null) }
     var deleteTargetVideos by remember { mutableStateOf<List<VideoItem>?>(null) }
-    var showSortDialog by remember { mutableStateOf(false) }
-    var showControlSettingsDialog by remember { mutableStateOf(false) }
 
-    val snackbarHostState = remember { SnackbarHostState() }
-    LaunchedEffect(uiState.actionMessage) {
-        val msg = uiState.actionMessage ?: return@LaunchedEffect
-        snackbarHostState.showSnackbar(msg)
-        onClearActionMessage()
+    LaunchedEffect(actionMessage) {
+        if (!actionMessage.isNullOrBlank()) {
+            snackbarHostState.showSnackbar(actionMessage)
+            onClearActionMessage()
+        }
     }
 
-    val hasAvailableUpdate = uiState.updateState is UpdateUiState.Available ||
-        uiState.updateState is UpdateUiState.ReadyToInstall
+    val displayedVideos = if (destination == BrowserDestination.Folders && preferences.mainDisplayMode == "files") {
+        sortedAllVideos
+    } else {
+        currentVideos
+    }
+
+    val selectedFolder = (destination as? BrowserDestination.Folder)?.let { dest ->
+        folders.firstOrNull { it.bucketId == dest.bucketId }
+    }
+
+    val activePlaylistName = (destination as? BrowserDestination.Playlist)?.name
+
+    val titleText = when (destination) {
+        BrowserDestination.Folders -> "AG Video Player"
+        is BrowserDestination.Folder -> selectedFolder?.name ?: "Folder"
+        BrowserDestination.Favorites -> "Favourites"
+        is BrowserDestination.Playlist -> destination.name
+    }
+
+    val subtitleText = when {
+        selectedFolder != null -> {
+            val unit = if (selectedFolder.videoCount == 1) "video" else "videos"
+            "${selectedFolder.videoCount} $unit · ${FormatUtils.formatFileSize(selectedFolder.totalSizeBytes)}"
+        }
+        destination == BrowserDestination.Favorites || destination is BrowserDestination.Playlist -> {
+            val unit = if (displayedVideos.size == 1) "video" else "videos"
+            "${displayedVideos.size} $unit"
+        }
+        folders.isNotEmpty() -> "${folders.size} folders · ${allVideos.size} videos"
+        else -> ""
+    }
+
+    val favoriteVideosCount = remember(allVideos, preferences.favoriteUris) {
+        val available = allVideos.map { it.uriString }.toSet()
+        preferences.favoriteUris.count { it in available }
+    }
 
     Scaffold(
-        contentWindowInsets = WindowInsets(0, 0, 0, 0),
         containerColor = MaterialTheme.colorScheme.background,
         snackbarHost = { SnackbarHost(snackbarHostState) },
-        floatingActionButton = {
-            if (!uiState.isSelectionMode &&
-                hasStoragePermission &&
-                (uiState.lastHistoryEntry != null || uiState.allVideos.isNotEmpty())
-            ) {
-                FloatingActionButton(
-                    onClick = onResumeLastPlayed,
-                    containerColor = MaterialTheme.colorScheme.primary,
-                    contentColor = MaterialTheme.colorScheme.onPrimary,
-                    shape = CircleShape,
-                    modifier = Modifier
-                        .navigationBarsPadding()
-                        .testTag("bottom_resume_fab")
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.PlayArrow,
-                        contentDescription = if (uiState.lastHistoryEntry != null) {
-                            "Resume Last Video"
-                        } else {
-                            "Play Video"
-                        },
-                        modifier = Modifier.size(30.dp)
-                    )
-                }
-            }
-        },
         topBar = {
-            if (uiState.isSelectionMode) {
+            if (isSelectionMode) {
                 TopAppBar(
                     colors = TopAppBarDefaults.topAppBarColors(
                         containerColor = MaterialTheme.colorScheme.primaryContainer,
@@ -253,106 +260,74 @@ fun VeloMainScreen(
                     ),
                     navigationIcon = {
                         IconButton(onClick = onClearSelection) {
-                            Icon(Icons.Default.Close, contentDescription = "Cancel selection")
+                            Icon(Icons.Rounded.Close, contentDescription = "Cancel selection")
                         }
                     },
                     title = {
                         Text(
-                            text = "${uiState.selectedVideoUris.size} selected",
-                            style = MaterialTheme.typography.titleMedium
+                            text = "${selectedVideoUris.size} selected",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.SemiBold
                         )
                     },
                     actions = {
                         IconButton(onClick = onSelectAll) {
-                            Icon(Icons.Default.SelectAll, contentDescription = "Select all")
+                            Icon(Icons.Rounded.SelectAll, contentDescription = "Select all")
                         }
-                        IconButton(
-                            onClick = {
-                                val selected = uiState.currentVideos.filter {
-                                    uiState.selectedVideoUris.contains(it.uriString)
-                                }
-                                if (selected.isNotEmpty()) {
-                                    moveTargetVideos = selected
-                                }
-                            }
-                        ) {
-                            Icon(Icons.AutoMirrored.Filled.DriveFileMove, contentDescription = "Move selected")
+                        IconButton(onClick = {
+                            val selected = displayedVideos.filter { it.uriString in selectedVideoUris }
+                            if (selected.isNotEmpty()) moveTargetVideos = selected
+                        }) {
+                            Icon(Icons.Rounded.DriveFileMove, contentDescription = "Move selected")
                         }
-                        IconButton(
-                            onClick = {
-                                val selected = uiState.currentVideos.filter {
-                                    uiState.selectedVideoUris.contains(it.uriString)
-                                }
-                                if (selected.isNotEmpty()) {
-                                    deleteTargetVideos = selected
-                                }
-                            }
-                        ) {
-                            Icon(Icons.Default.Delete, contentDescription = "Remove selected")
+                        IconButton(onClick = {
+                            val selected = displayedVideos.filter { it.uriString in selectedVideoUris }
+                            if (selected.isNotEmpty()) deleteTargetVideos = selected
+                        }) {
+                            Icon(Icons.Rounded.Delete, contentDescription = "Delete selected")
                         }
                     }
                 )
             } else {
                 TopAppBar(
                     colors = TopAppBarDefaults.topAppBarColors(
-                        containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.96f),
+                        containerColor = MaterialTheme.colorScheme.surface,
                         titleContentColor = MaterialTheme.colorScheme.onSurface
                     ),
                     navigationIcon = {
                         if (isInVideoList) {
-                            IconButton(
-                                onClick = onBackToFolders,
-                                modifier = Modifier
-                                    .minimumInteractiveComponentSize()
-                                    .testTag("back_to_folders_button")
-                            ) {
-                                Icon(
-                                    imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                                    contentDescription = stringResource(R.string.back_desc)
-                                )
+                            IconButton(onClick = onBackToFolders) {
+                                Icon(Icons.AutoMirrored.Rounded.ArrowBack, contentDescription = "Back")
                             }
+                        } else {
+                            Image(
+                                painter = painterResource(id = R.drawable.ic_launcher_foreground_art),
+                                contentDescription = "AG Video Player",
+                                contentScale = ContentScale.Crop,
+                                modifier = Modifier
+                                    .padding(start = 10.dp, end = 4.dp)
+                                    .size(34.dp)
+                                    .clip(RoundedCornerShape(8.dp))
+                            )
                         }
                     },
                     title = {
-                        val titleText = when (val dest = uiState.destination) {
-                            BrowserDestination.Folders -> "AG Video Player"
-                            is BrowserDestination.Folder -> activeFolder?.name ?: "Folder"
-                            BrowserDestination.Favorites -> "Favourites"
-                            is BrowserDestination.Playlist -> dest.name
-                        }
-                        Column {
+                        Column(modifier = Modifier.fillMaxWidth()) {
                             Text(
                                 text = titleText,
-                                style = MaterialTheme.typography.titleMedium.copy(fontSize = 16.sp),
+                                style = MaterialTheme.typography.titleMedium.copy(fontSize = 15.5.sp),
+                                fontWeight = FontWeight.Bold,
                                 maxLines = 1,
+                                softWrap = false,
                                 overflow = TextOverflow.Ellipsis
                             )
-                            if (activeFolder != null) {
-                                val unit = if (activeFolder.videoCount == 1) {
-                                    stringResource(R.string.video_singular)
-                                } else {
-                                    stringResource(R.string.video_plural)
-                                }
+                            if (subtitleText.isNotBlank()) {
                                 Text(
-                                    text = "${activeFolder.videoCount} $unit · ${FormatUtils.formatFileSize(activeFolder.totalSizeBytes)}",
+                                    text = subtitleText,
                                     style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp),
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            } else if (uiState.destination is BrowserDestination.Favorites ||
-                                uiState.destination is BrowserDestination.Playlist
-                            ) {
-                                val vids = uiState.currentVideos
-                                val unit = if (vids.size == 1) "video" else "videos"
-                                Text(
-                                    text = "${vids.size} $unit",
-                                    style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp),
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            } else if (hasStoragePermission && uiState.folders.isNotEmpty()) {
-                                Text(
-                                    text = "${uiState.folders.size} folders · ${uiState.allVideos.size} videos",
-                                    style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp),
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
                                 )
                             }
                         }
@@ -360,202 +335,275 @@ fun VeloMainScreen(
                     actions = {
                         IconButton(
                             onClick = onToggleTheme,
-                            modifier = Modifier
-                                .minimumInteractiveComponentSize()
-                                .testTag("theme_toggle_button")
+                            modifier = Modifier.size(36.dp)
                         ) {
                             Icon(
-                                imageVector = if (uiState.preferences.isDarkMode) {
-                                    Icons.Default.LightMode
-                                } else {
-                                    Icons.Default.DarkMode
-                                },
-                                contentDescription = stringResource(R.string.toggle_theme_desc),
+                                imageVector = if (preferences.isDarkMode) Icons.Rounded.LightMode else Icons.Rounded.DarkMode,
+                                contentDescription = "Toggle Theme",
                                 tint = MaterialTheme.colorScheme.primary,
                                 modifier = Modifier.size(20.dp)
                             )
                         }
-
-                        if (hasStoragePermission) {
-                            IconButton(
-                                onClick = onToggleGridView,
-                                modifier = Modifier
-                                    .minimumInteractiveComponentSize()
-                                    .testTag("grid_toggle_button")
-                            ) {
-                                Icon(
-                                    imageVector = if (isGridLayoutActive) {
-                                        Icons.AutoMirrored.Filled.ViewList
-                                    } else {
-                                        Icons.Default.GridView
-                                    },
-                                    contentDescription = if (isGridLayoutActive) {
-                                        "Switch to List View"
-                                    } else {
-                                        "Show Grid"
-                                    },
-                                    tint = MaterialTheme.colorScheme.primary,
-                                    modifier = Modifier.size(20.dp)
-                                )
-                            }
-
-                            IconButton(
-                                onClick = { showSortDialog = true },
-                                modifier = Modifier
-                                    .minimumInteractiveComponentSize()
-                                    .testTag("sort_menu_button")
-                            ) {
-                                Icon(
-                                    imageVector = Icons.AutoMirrored.Filled.Sort,
-                                    contentDescription = "Sort Videos",
-                                    tint = MaterialTheme.colorScheme.primary,
-                                    modifier = Modifier.size(20.dp)
-                                )
-                            }
-                        }
-
                         IconButton(
-                            onClick = { showControlSettingsDialog = true },
-                            modifier = Modifier
-                                .minimumInteractiveComponentSize()
-                                .testTag("header_settings_menu_button")
+                            onClick = onToggleGridView,
+                            modifier = Modifier.size(36.dp)
                         ) {
-                            BadgedBox(
-                                badge = {
-                                    if (hasAvailableUpdate) {
-                                        Badge(containerColor = MaterialTheme.colorScheme.secondary)
-                                    }
-                                }
+                            Icon(
+                                imageVector = if (isGridLayoutActive) Icons.Rounded.ViewList else Icons.Rounded.GridView,
+                                contentDescription = "Toggle Grid",
+                                tint = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.size(20.dp)
+                            )
+                        }
+                        IconButton(
+                            onClick = { showSortDialog = true },
+                            modifier = Modifier.size(36.dp)
+                        ) {
+                            Icon(
+                                Icons.Rounded.SwapVert,
+                                contentDescription = "Sort",
+                                tint = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.size(20.dp)
+                            )
+                        }
+                        Box {
+                            IconButton(
+                                onClick = { showControlSettings = true },
+                                modifier = Modifier.size(36.dp)
                             ) {
                                 Icon(
-                                    imageVector = Icons.Default.MoreVert,
-                                    contentDescription = "Player & Control Settings",
-                                    tint = MaterialTheme.colorScheme.onSurface,
+                                    Icons.Rounded.MoreVert,
+                                    contentDescription = "Settings",
                                     modifier = Modifier.size(20.dp)
+                                )
+                            }
+                            if (hasAvailableUpdate) {
+                                Box(
+                                    modifier = Modifier
+                                        .align(Alignment.TopEnd)
+                                        .padding(top = 7.dp, end = 7.dp)
+                                        .size(7.dp)
+                                        .clip(CircleShape)
+                                        .background(MaterialTheme.colorScheme.secondary)
                                 )
                             }
                         }
                     }
                 )
             }
+        },
+        floatingActionButton = {
+            if (!isSelectionMode && (lastHistoryEntry != null || allVideos.isNotEmpty())) {
+                FloatingActionButton(
+                    onClick = onResumeLastPlayed,
+                    containerColor = MaterialTheme.colorScheme.primary,
+                    contentColor = MaterialTheme.colorScheme.onPrimary,
+                    shape = CircleShape
+                ) {
+                    Icon(
+                        imageVector = Icons.Rounded.PlayArrow,
+                        contentDescription = "Resume Last Video",
+                        modifier = Modifier.size(30.dp)
+                    )
+                }
+            }
         }
     ) { innerPadding ->
-        Box(
+        Column(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(innerPadding)
-                .navigationBarsPadding()
+                .padding(horizontal = 12.dp)
         ) {
-            if (!hasStoragePermission) {
-                PermissionPromptView(
-                    onGrantPermission = onRequestPermission,
-                    onOpenSingleFile = onOpenSingleFile
-                )
-            } else if (uiState.isLoadingLibrary && uiState.folders.isEmpty()) {
-                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    CircularProgressIndicator()
-                }
-            } else {
-                PullToRefreshBox(
-                    isRefreshing = uiState.isLoadingLibrary,
-                    onRefresh = onRefresh,
-                    modifier = Modifier.fillMaxSize()
-                ) {
-                    AnimatedContent(
-                        targetState = uiState.destination,
-                        label = "folder_video_transition"
-                    ) { dest ->
-                        if (dest == BrowserDestination.Folders) {
-                            if (uiState.preferences.mainDisplayMode == "files") {
-                                val videos = uiState.allVideos
-                                VideoListContent(
-                                    videos = videos,
-                                    isGridView = isGridLayoutActive,
-                                    isSelectionMode = uiState.isSelectionMode,
-                                    selectedUris = uiState.selectedVideoUris,
-                                    favoriteUris = uiState.preferences.favoriteUris,
-                                    historyByUri = uiState.historyByUri,
-                                    isVideoNew = { uiState.isVideoNew(it) },
-                                    searchQuery = uiState.searchQuery,
-                                    activePlaylistName = null,
-                                    onSearchQueryChange = onSearchQueryChange,
-                                    onVideoClick = { video ->
-                                        if (uiState.isSelectionMode) {
-                                            onToggleSelection(video.uriString)
-                                        } else {
-                                            onVideoClick(video, videos)
-                                        }
-                                    },
-                                    onVideoLongClick = { video ->
-                                        if (uiState.isSelectionMode) {
-                                            onToggleSelection(video.uriString)
-                                        } else {
-                                            onStartSelection(video.uriString)
-                                        }
-                                    },
-                                    onToggleFavorite = onToggleFavorite,
-                                    onAddToPlaylist = { playlistTargetVideo = it },
-                                    onRemoveFromPlaylist = { name, video ->
-                                        onRemoveFromPlaylist(name, video)
-                                    },
-                                    onShareVideo = onShareVideo,
-                                    onRenameVideo = { renameTargetVideo = it },
-                                    onMoveVideo = { moveTargetVideos = listOf(it) },
-                                    onShowVideoDetails = { detailVideo = it },
-                                    onDeleteVideo = { deleteTargetVideos = listOf(it) },
-                                    loadThumbnail = loadThumbnail
+            Spacer(Modifier.height(8.dp))
+
+            // Search Bar
+            OutlinedTextField(
+                value = searchQuery,
+                onValueChange = onSearchQueryChange,
+                modifier = Modifier.fillMaxWidth(),
+                singleLine = true,
+                placeholder = { Text("Search folders or videos…", style = MaterialTheme.typography.bodyMedium) },
+                leadingIcon = {
+                    Icon(Icons.Rounded.Search, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                },
+                trailingIcon = {
+                    if (searchQuery.isNotEmpty()) {
+                        IconButton(onClick = { onSearchQueryChange("") }) {
+                            Icon(Icons.Rounded.Close, contentDescription = "Clear search")
+                        }
+                    }
+                },
+                shape = RoundedCornerShape(14.dp)
+            )
+
+            Spacer(Modifier.height(10.dp))
+
+            if (destination == BrowserDestination.Folders && preferences.mainDisplayMode == "folders") {
+                if (!searchQuery.isNotBlank() && (favoriteVideosCount > 0 || preferences.playlists.isNotEmpty())) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .horizontalScroll(rememberScrollState())
+                            .padding(bottom = 10.dp),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        if (favoriteVideosCount > 0) {
+                            Row(
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(10.dp))
+                                    .background(MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.8f))
+                                    .clickable(onClick = onOpenFavorites)
+                                    .padding(horizontal = 12.dp, vertical = 8.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Rounded.Favorite,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.secondary,
+                                    modifier = Modifier.size(16.dp)
                                 )
-                            } else {
-                                FolderBrowserContent(
-                                    uiState = uiState,
-                                    isGrid = isGridLayoutActive,
-                                    onSearchQueryChange = onSearchQueryChange,
-                                    onFolderClick = onFolderClick,
-                                    onOpenFavorites = onOpenFavorites,
-                                    onOpenPlaylist = onOpenPlaylist,
-                                    onDeletePlaylist = onDeletePlaylist,
-                                    onOpenSingleFile = onOpenSingleFile
+                                Text(
+                                    text = "Favourites ($favoriteVideosCount)",
+                                    style = MaterialTheme.typography.labelMedium,
+                                    fontWeight = FontWeight.SemiBold
                                 )
                             }
-                        } else {
-                            val videos = uiState.currentVideos
-                            val activePlaylistName = (dest as? BrowserDestination.Playlist)?.name
-                            VideoListContent(
-                                videos = videos,
-                                isGridView = isGridLayoutActive,
-                                isSelectionMode = uiState.isSelectionMode,
-                                selectedUris = uiState.selectedVideoUris,
-                                favoriteUris = uiState.preferences.favoriteUris,
-                                historyByUri = uiState.historyByUri,
-                                isVideoNew = { uiState.isVideoNew(it) },
-                                searchQuery = uiState.searchQuery,
+                        }
+                        preferences.playlists.keys.sorted().forEach { name ->
+                            val count = preferences.playlists[name]?.size ?: 0
+                            Row(
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(10.dp))
+                                    .background(MaterialTheme.colorScheme.surfaceVariant)
+                                    .clickable { onOpenPlaylist(name) }
+                                    .padding(start = 12.dp, end = 6.dp, top = 6.dp, bottom = 6.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(4.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Rounded.PlaylistPlay,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                                Text(
+                                    text = "$name ($count)",
+                                    style = MaterialTheme.typography.labelMedium,
+                                    fontWeight = FontWeight.Medium
+                                )
+                                IconButton(
+                                    onClick = { onDeletePlaylist(name) },
+                                    modifier = Modifier.size(22.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Rounded.Close,
+                                        contentDescription = "Delete playlist",
+                                        modifier = Modifier.size(14.dp),
+                                        tint = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+
+                if (folders.isEmpty() && !isLoadingLibrary) {
+                    EmptyLibraryState(onOpenDocumentPicker = onOpenDocumentPicker)
+                } else if (isGridLayoutActive) {
+                    LazyVerticalGrid(
+                        columns = GridCells.Adaptive(155.dp),
+                        contentPadding = PaddingValues(bottom = 84.dp),
+                        verticalArrangement = Arrangement.spacedBy(10.dp),
+                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        items(filteredFolders, key = { it.bucketId }) { folder ->
+                            val unplayed = videosByFolder[folder.bucketId]?.count { it.uriString !in preferences.playedVideoUris } ?: 0
+                            FolderGridCard(folder = folder, newCount = unplayed, onClick = { onFolderClick(folder.bucketId) })
+                        }
+                    }
+                } else {
+                    LazyColumn(
+                        contentPadding = PaddingValues(bottom = 84.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        items(filteredFolders, key = { it.bucketId }) { folder ->
+                            val unplayed = videosByFolder[folder.bucketId]?.count { it.uriString !in preferences.playedVideoUris } ?: 0
+                            FolderListCard(folder = folder, newCount = unplayed, onClick = { onFolderClick(folder.bucketId) })
+                        }
+                    }
+                }
+            } else {
+                if (displayedVideos.isEmpty()) {
+                    EmptyVideosState()
+                } else if (isGridLayoutActive) {
+                    LazyVerticalGrid(
+                        columns = GridCells.Adaptive(160.dp),
+                        contentPadding = PaddingValues(bottom = 84.dp),
+                        verticalArrangement = Arrangement.spacedBy(10.dp),
+                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        items(displayedVideos, key = { it.uriString }) { video ->
+                            VideoCard(
+                                video = video,
+                                isGrid = true,
+                                isSelected = video.uriString in selectedVideoUris,
+                                isSelectionMode = isSelectionMode,
+                                isFavorite = video.uriString in preferences.favoriteUris,
+                                isNew = video.uriString !in preferences.playedVideoUris,
+                                history = historyByUri[video.uriString],
                                 activePlaylistName = activePlaylistName,
-                                onSearchQueryChange = onSearchQueryChange,
-                                onVideoClick = { video ->
-                                    if (uiState.isSelectionMode) {
-                                        onToggleSelection(video.uriString)
-                                    } else {
-                                        onVideoClick(video, videos)
-                                    }
+                                onClick = {
+                                    if (isSelectionMode) onToggleSelection(video.uriString)
+                                    else onVideoClick(video, displayedVideos)
                                 },
-                                onVideoLongClick = { video ->
-                                    if (uiState.isSelectionMode) {
-                                        onToggleSelection(video.uriString)
-                                    } else {
-                                        onStartSelection(video.uriString)
-                                    }
+                                onLongClick = {
+                                    if (isSelectionMode) onToggleSelection(video.uriString)
+                                    else onStartSelection(video.uriString)
                                 },
-                                onToggleFavorite = onToggleFavorite,
-                                onAddToPlaylist = { playlistTargetVideo = it },
-                                onRemoveFromPlaylist = { name, video ->
-                                    onRemoveFromPlaylist(name, video)
+                                onToggleFavorite = { onToggleFavorite(video) },
+                                onAddToPlaylist = { playlistTargetVideo = video },
+                                onRemoveFromPlaylist = { name -> onRemoveFromPlaylist(name, video) },
+                                onShare = { shareVideoFile(context, video) },
+                                onRename = { renameTargetVideo = video },
+                                onMove = { moveTargetVideos = listOf(video) },
+                                onProperties = { detailVideo = video },
+                                onDelete = { deleteTargetVideos = listOf(video) }
+                            )
+                        }
+                    }
+                } else {
+                    LazyColumn(
+                        contentPadding = PaddingValues(bottom = 84.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        items(displayedVideos, key = { it.uriString }) { video ->
+                            VideoCard(
+                                video = video,
+                                isGrid = false,
+                                isSelected = video.uriString in selectedVideoUris,
+                                isSelectionMode = isSelectionMode,
+                                isFavorite = video.uriString in preferences.favoriteUris,
+                                isNew = video.uriString !in preferences.playedVideoUris,
+                                history = historyByUri[video.uriString],
+                                activePlaylistName = activePlaylistName,
+                                onClick = {
+                                    if (isSelectionMode) onToggleSelection(video.uriString)
+                                    else onVideoClick(video, displayedVideos)
                                 },
-                                onShareVideo = onShareVideo,
-                                onRenameVideo = { renameTargetVideo = it },
-                                onMoveVideo = { moveTargetVideos = listOf(it) },
-                                onShowVideoDetails = { detailVideo = it },
-                                onDeleteVideo = { deleteTargetVideos = listOf(it) },
-                                loadThumbnail = loadThumbnail
+                                onLongClick = {
+                                    if (isSelectionMode) onToggleSelection(video.uriString)
+                                    else onStartSelection(video.uriString)
+                                },
+                                onToggleFavorite = { onToggleFavorite(video) },
+                                onAddToPlaylist = { playlistTargetVideo = video },
+                                onRemoveFromPlaylist = { name -> onRemoveFromPlaylist(name, video) },
+                                onShare = { shareVideoFile(context, video) },
+                                onRename = { renameTargetVideo = video },
+                                onMove = { moveTargetVideos = listOf(video) },
+                                onProperties = { detailVideo = video },
+                                onDelete = { deleteTargetVideos = listOf(video) }
                             )
                         }
                     }
@@ -564,26 +612,26 @@ fun VeloMainScreen(
         }
     }
 
-    // Sort By Popup Dialog (Requirement 2)
+    // Dialogs
     if (showSortDialog) {
         SortOptionsDialog(
-            currentField = uiState.sortField,
-            currentDirection = uiState.sortDirection,
+            currentField = sortField,
+            currentDirection = sortDirection,
             onDismiss = { showSortDialog = false },
-            onApply = { field, dir ->
-                onApplySort(field, dir)
+            onApply = { f, d ->
+                onApplySort(f, d)
                 showSortDialog = false
             }
         )
     }
 
-    // 3-Dot Header Player & Control Settings Dialog
-    if (showControlSettingsDialog) {
+    if (showControlSettings) {
         ControlSettingsDialog(
-            preferences = uiState.preferences,
-            currentVersionLabel = "v${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})",
+            preferences = preferences,
+            currentVersionLabel = currentAppVersionLabel,
             hasAvailableUpdate = hasAvailableUpdate,
-            onDismiss = { showControlSettingsDialog = false },
+            onDismiss = { showControlSettings = false },
+            onRefreshLibrary = onRefresh,
             onOpenUpdateCheck = onOpenUpdateCheck,
             onSingleClickActionChange = onSingleClickActionChange,
             onDoubleClickActionChange = onDoubleClickActionChange,
@@ -603,284 +651,89 @@ fun VeloMainScreen(
         )
     }
 
-    // Properties Dialog
-    detailVideo?.let { video ->
-        val history = uiState.historyByUri[video.uriString]
+    if (showUpdateDialog) {
+        UpdateDialog(
+            currentVersionLabel = currentAppVersionLabel,
+            state = updateState,
+            onDismiss = onDismissUpdateDialog,
+            onRetryCheck = onOpenUpdateCheck
+        )
+    }
+
+    detailVideo?.let { vid ->
+        VideoPropertiesDialog(
+            video = vid,
+            history = historyByUri[vid.uriString],
+            onClearResume = onClearResume,
+            onDismiss = { detailVideo = null }
+        )
+    }
+
+    renameTargetVideo?.let { vid ->
+        RenameVideoDialog(
+            video = vid,
+            onRename = onRenameVideo,
+            onDismiss = { renameTargetVideo = null }
+        )
+    }
+
+    playlistTargetVideo?.let { vid ->
+        AddToPlaylistDialog(
+            video = vid,
+            existingPlaylists = preferences.playlists.keys.sorted(),
+            onAdd = onAddToPlaylist,
+            onDismiss = { playlistTargetVideo = null }
+        )
+    }
+
+    moveTargetVideos?.let { list ->
+        MoveVideosDialog(
+            videos = list,
+            folders = folders,
+            onMove = onMoveVideos,
+            onDismiss = { moveTargetVideos = null }
+        )
+    }
+
+    deleteTargetVideos?.let { list ->
+        DeleteConfirmDialog(
+            videos = list,
+            onConfirm = onDeleteVideos,
+            onDismiss = { deleteTargetVideos = null }
+        )
+    }
+
+    // Popup asking user cleanly for File Access when moving directly to custom directories
+    pendingMoveAccessPrompt?.let { pending ->
         AlertDialog(
-            onDismissRequest = { detailVideo = null },
+            onDismissRequest = onDismissMoveAccessPrompt,
+            icon = {
+                Icon(Icons.Rounded.Storage, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+            },
             title = {
-                Text(
-                    text = video.title,
-                    style = MaterialTheme.typography.titleSmall,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis
-                )
-            },
-            text = {
-                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    Text("File: ${video.displayName}", style = MaterialTheme.typography.bodyMedium)
-                    Text("Folder: ${video.folderName}", style = MaterialTheme.typography.bodyMedium)
-                    if (video.relativePath.isNotBlank()) {
-                        Text("Path: ${video.relativePath}", style = MaterialTheme.typography.bodyMedium)
-                    }
-                    Text("Resolution: ${FormatUtils.formatResolution(video.width, video.height)}", style = MaterialTheme.typography.bodyMedium)
-                    Text("Duration: ${FormatUtils.formatDuration(video.durationMs)}", style = MaterialTheme.typography.bodyMedium)
-                    Text("Size: ${FormatUtils.formatFileSize(video.sizeBytes)}", style = MaterialTheme.typography.bodyMedium)
-                    Text("Format: ${video.mimeType}", style = MaterialTheme.typography.bodyMedium)
-                    if (history != null && history.positionMs > 1_500L) {
-                        Text(
-                            text = "Saved resume: ${FormatUtils.formatDuration(history.positionMs)}",
-                            style = MaterialTheme.typography.labelMedium,
-                            color = MaterialTheme.colorScheme.secondary
-                        )
-                    }
-                }
-            },
-            dismissButton = {
-                if (history != null && history.positionMs > 1_500L) {
-                    TextButton(
-                        onClick = {
-                            onClearResume(video.uriString)
-                            detailVideo = null
-                        }
-                    ) {
-                        Text("Reset Resume")
-                    }
-                }
-            },
-            confirmButton = {
-                TextButton(onClick = { detailVideo = null }) {
-                    Text(stringResource(R.string.close_cta))
-                }
-            }
-        )
-    }
-
-    // Rename Dialog
-    renameTargetVideo?.let { video ->
-        var text by remember(video.uriString) { mutableStateOf(video.title) }
-        AlertDialog(
-            onDismissRequest = { renameTargetVideo = null },
-            title = { Text("Rename Video", style = MaterialTheme.typography.titleMedium) },
-            text = {
-                OutlinedTextField(
-                    value = text,
-                    onValueChange = { text = it },
-                    label = { Text("Video name") },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth()
-                )
-            },
-            dismissButton = {
-                TextButton(onClick = { renameTargetVideo = null }) {
-                    Text(stringResource(R.string.cancel_cta))
-                }
-            },
-            confirmButton = {
-                Button(
-                    onClick = {
-                        onRenameVideo(video, text)
-                        renameTargetVideo = null
-                    },
-                    enabled = text.isNotBlank()
-                ) {
-                    Text("Rename")
-                }
-            }
-        )
-    }
-
-    // Add to Playlist Dialog
-    playlistTargetVideo?.let { video ->
-        var newPlaylistName by remember { mutableStateOf("") }
-        val existingPlaylists = uiState.preferences.playlists.keys.sorted()
-        AlertDialog(
-            onDismissRequest = { playlistTargetVideo = null },
-            title = { Text("Add to Playlist", style = MaterialTheme.typography.titleMedium) },
-            text = {
-                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    if (existingPlaylists.isNotEmpty()) {
-                        existingPlaylists.forEach { name ->
-                            Surface(
-                                onClick = {
-                                    onAddToPlaylist(name, video)
-                                    playlistTargetVideo = null
-                                },
-                                shape = RoundedCornerShape(10.dp),
-                                color = MaterialTheme.colorScheme.surfaceVariant,
-                                modifier = Modifier.fillMaxWidth()
-                            ) {
-                                Row(
-                                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.AutoMirrored.Filled.PlaylistPlay,
-                                        contentDescription = null,
-                                        tint = MaterialTheme.colorScheme.primary
-                                    )
-                                    Spacer(Modifier.width(10.dp))
-                                    Text(
-                                        text = name,
-                                        style = MaterialTheme.typography.bodyMedium,
-                                        modifier = Modifier.weight(1f)
-                                    )
-                                    Text(
-                                        text = "${uiState.preferences.playlists[name]?.size ?: 0}",
-                                        style = MaterialTheme.typography.labelSmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                                    )
-                                }
-                            }
-                        }
-                        HorizontalDivider()
-                    }
-                    OutlinedTextField(
-                        value = newPlaylistName,
-                        onValueChange = { newPlaylistName = it },
-                        label = { Text("New playlist name") },
-                        singleLine = true,
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { playlistTargetVideo = null }) {
-                    Text(stringResource(R.string.cancel_cta))
-                }
-            },
-            confirmButton = {
-                Button(
-                    onClick = {
-                        onAddToPlaylist(newPlaylistName, video)
-                        playlistTargetVideo = null
-                    },
-                    enabled = newPlaylistName.isNotBlank()
-                ) {
-                    Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(16.dp))
-                    Spacer(Modifier.width(4.dp))
-                    Text("Create & Add")
-                }
-            }
-        )
-    }
-
-    // Move to Folder Dialog
-    moveTargetVideos?.let { videosToMove ->
-        var customFolder by remember { mutableStateOf("Movies/Moved") }
-        val folderSuggestions = remember(uiState.folders) {
-            uiState.folders.map { it.pathHint }.distinct().filter { it.isNotBlank() }
-        }
-        AlertDialog(
-            onDismissRequest = { moveTargetVideos = null },
-            title = {
-                Text(
-                    text = "Move ${videosToMove.size} video(s) to folder",
-                    style = MaterialTheme.typography.titleMedium
-                )
+                Text("Storage Access Needed to Move", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
             },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    OutlinedTextField(
-                        value = customFolder,
-                        onValueChange = { customFolder = it },
-                        label = { Text("Target folder (e.g. Movies/Clips)") },
-                        singleLine = true,
-                        modifier = Modifier.fillMaxWidth()
+                    Text(
+                        text = "To move files directly to \"${pending.targetPath}\" without Android folder restrictions, grant File Management access in the popup, or move directly into Movies/${pending.targetPath.substringAfterLast('/')}.",
+                        style = MaterialTheme.typography.bodyMedium
                     )
-                    if (folderSuggestions.isNotEmpty()) {
-                        Text(
-                            text = "Or pick an existing folder:",
-                            style = MaterialTheme.typography.labelMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                        LazyColumn(
-                            modifier = Modifier.height(160.dp),
-                            verticalArrangement = Arrangement.spacedBy(6.dp)
-                        ) {
-                            items(folderSuggestions) { path ->
-                                Surface(
-                                    onClick = {
-                                        onMoveVideos(videosToMove, path)
-                                        moveTargetVideos = null
-                                    },
-                                    shape = RoundedCornerShape(10.dp),
-                                    color = MaterialTheme.colorScheme.surfaceVariant,
-                                    modifier = Modifier.fillMaxWidth()
-                                ) {
-                                    Row(
-                                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
-                                        verticalAlignment = Alignment.CenterVertically
-                                    ) {
-                                        Icon(
-                                            imageVector = Icons.Default.Folder,
-                                            contentDescription = null,
-                                            tint = MaterialTheme.colorScheme.primary,
-                                            modifier = Modifier.size(18.dp)
-                                        )
-                                        Spacer(Modifier.width(10.dp))
-                                        Text(
-                                            text = path,
-                                            style = MaterialTheme.typography.bodyMedium,
-                                            maxLines = 1,
-                                            overflow = TextOverflow.Ellipsis
-                                        )
-                                    }
-                                }
-                            }
-                        }
+                }
+            },
+            confirmButton = {
+                Button(onClick = onRequestAllFilesAccess) {
+                    Text("Allow File Access")
+                }
+            },
+            dismissButton = {
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    TextButton(onClick = onDismissMoveAccessPrompt) {
+                        Text("Cancel")
                     }
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { moveTargetVideos = null }) {
-                    Text(stringResource(R.string.cancel_cta))
-                }
-            },
-            confirmButton = {
-                Button(
-                    onClick = {
-                        onMoveVideos(videosToMove, customFolder)
-                        moveTargetVideos = null
-                    },
-                    enabled = customFolder.isNotBlank()
-                ) {
-                    Text("Move")
-                }
-            }
-        )
-    }
-
-    // Delete Confirmation Dialog
-    deleteTargetVideos?.let { videosToDelete ->
-        AlertDialog(
-            onDismissRequest = { deleteTargetVideos = null },
-            title = { Text("Delete Video(s)", style = MaterialTheme.typography.titleMedium) },
-            text = {
-                val label = if (videosToDelete.size == 1) {
-                    "Remove \"${videosToDelete.first().title}\" from device storage?"
-                } else {
-                    "Remove ${videosToDelete.size} selected videos from device storage?"
-                }
-                Text(label, style = MaterialTheme.typography.bodyMedium)
-            },
-            dismissButton = {
-                TextButton(onClick = { deleteTargetVideos = null }) {
-                    Text(stringResource(R.string.cancel_cta))
-                }
-            },
-            confirmButton = {
-                Button(
-                    onClick = {
-                        onDeleteVideos(videosToDelete)
-                        deleteTargetVideos = null
-                    },
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = MaterialTheme.colorScheme.error,
-                        contentColor = MaterialTheme.colorScheme.onError
-                    )
-                ) {
-                    Text("Delete")
+                    OutlinedButton(onClick = { onMoveToScopedMovies(pending) }) {
+                        Text("Move to Movies")
+                    }
                 }
             }
         )
@@ -888,773 +741,136 @@ fun VeloMainScreen(
 }
 
 @Composable
-private fun SortOptionsDialog(
-    currentField: SortField,
-    currentDirection: SortDirection,
-    onDismiss: () -> Unit,
-    onApply: (SortField, SortDirection) -> Unit
-) {
-    var selectedField by remember(currentField) { mutableStateOf(currentField) }
-    var selectedDirection by remember(currentDirection) { mutableStateOf(currentDirection) }
-
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        icon = {
-            Surface(
-                shape = RoundedCornerShape(12.dp),
-                color = MaterialTheme.colorScheme.primary.copy(alpha = 0.14f),
-                modifier = Modifier.size(40.dp)
-            ) {
-                Icon(
-                    imageVector = Icons.AutoMirrored.Filled.Sort,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.padding(9.dp)
-                )
-            }
-        },
-        title = {
-            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                Text(
-                    text = "Sort By",
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold
-                )
-                Text(
-                    text = "Name, Date, Size, Type, Plays",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-        },
-        text = {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                SortField.entries.forEach { field ->
-                    val selected = selectedField == field
-                    val fieldIcon = when (field) {
-                        SortField.NAME -> Icons.Default.SortByAlpha
-                        SortField.SIZE -> Icons.Default.DataUsage
-                        SortField.DATE -> Icons.Default.CalendarToday
-                        SortField.TYPE -> Icons.Default.Category
-                        SortField.PLAYS -> Icons.Default.PlayArrow
-                    }
-                    Surface(
-                        onClick = { selectedField = field },
-                        shape = RoundedCornerShape(12.dp),
-                        color = if (selected) {
-                            MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.72f)
-                        } else {
-                            MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f)
-                        },
-                        border = BorderStroke(
-                            width = 1.dp,
-                            color = if (selected) {
-                                MaterialTheme.colorScheme.primary
-                            } else {
-                                Color.Transparent
-                            }
-                        ),
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(horizontal = 12.dp, vertical = 10.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Icon(
-                                imageVector = fieldIcon,
-                                contentDescription = null,
-                                tint = if (selected) {
-                                    MaterialTheme.colorScheme.primary
-                                } else {
-                                    MaterialTheme.colorScheme.onSurfaceVariant
-                                },
-                                modifier = Modifier.size(18.dp)
-                            )
-                            Spacer(Modifier.width(10.dp))
-                            Text(
-                                text = field.label,
-                                style = MaterialTheme.typography.bodyMedium,
-                                fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
-                                color = if (selected) {
-                                    MaterialTheme.colorScheme.onPrimaryContainer
-                                } else {
-                                    MaterialTheme.colorScheme.onSurface
-                                },
-                                modifier = Modifier.weight(1f)
-                            )
-                            if (selected) {
-                                Icon(
-                                    imageVector = Icons.Default.Check,
-                                    contentDescription = "Selected",
-                                    tint = MaterialTheme.colorScheme.primary,
-                                    modifier = Modifier.size(18.dp)
-                                )
-                            }
-                        }
-                    }
-                }
-
-                Spacer(Modifier.height(2.dp))
-
-                Text(
-                    text = "Order",
-                    style = MaterialTheme.typography.labelMedium,
-                    fontWeight = FontWeight.SemiBold,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-
-                Surface(
-                    shape = RoundedCornerShape(12.dp),
-                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f),
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(4.dp),
-                        horizontalArrangement = Arrangement.spacedBy(4.dp)
-                    ) {
-                        SortDirection.entries.forEach { dir ->
-                            val active = selectedDirection == dir
-                            val subHint = when (selectedField) {
-                                SortField.NAME, SortField.TYPE -> if (dir == SortDirection.ASC) "A → Z" else "Z → A"
-                                SortField.SIZE -> if (dir == SortDirection.ASC) "Smallest" else "Largest"
-                                SortField.DATE, SortField.PLAYS -> if (dir == SortDirection.ASC) "Oldest" else "Newest"
-                            }
-                            Surface(
-                                onClick = { selectedDirection = dir },
-                                shape = RoundedCornerShape(10.dp),
-                                color = if (active) {
-                                    MaterialTheme.colorScheme.primary
-                                } else {
-                                    Color.Transparent
-                                },
-                                modifier = Modifier.weight(1f)
-                            ) {
-                                Row(
-                                    modifier = Modifier.padding(vertical = 9.dp, horizontal = 8.dp),
-                                    horizontalArrangement = Arrangement.Center,
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    Icon(
-                                        imageVector = if (dir == SortDirection.ASC) {
-                                            Icons.Default.ArrowUpward
-                                        } else {
-                                            Icons.Default.ArrowDownward
-                                        },
-                                        contentDescription = null,
-                                        tint = if (active) {
-                                            MaterialTheme.colorScheme.onPrimary
-                                        } else {
-                                            MaterialTheme.colorScheme.onSurfaceVariant
-                                        },
-                                        modifier = Modifier.size(15.dp)
-                                    )
-                                    Spacer(Modifier.width(5.dp))
-                                    Text(
-                                        text = "${dir.label} ($subHint)",
-                                        style = MaterialTheme.typography.labelMedium,
-                                        fontWeight = if (active) FontWeight.Bold else FontWeight.Medium,
-                                        color = if (active) {
-                                            MaterialTheme.colorScheme.onPrimary
-                                        } else {
-                                            MaterialTheme.colorScheme.onSurfaceVariant
-                                        },
-                                        maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis
-                                    )
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) {
-                Text(stringResource(R.string.cancel_cta))
-            }
-        },
-        confirmButton = {
-            Button(onClick = { onApply(selectedField, selectedDirection) }) {
-                Text("Apply")
-            }
-        }
-    )
-}
-
-@Composable
-private fun PermissionPromptView(
-    onGrantPermission: () -> Unit,
-    onOpenSingleFile: () -> Unit
-) {
+private fun FolderGridCard(folder: VideoFolder, newCount: Int, onClick: () -> Unit) {
+    val unit = if (folder.videoCount == 1) "video" else "videos"
     Box(
         modifier = Modifier
-            .fillMaxSize()
-            .padding(24.dp),
-        contentAlignment = Alignment.Center
-    ) {
-        Card(
-            shape = RoundedCornerShape(20.dp),
-            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-            elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            Column(
-                modifier = Modifier.padding(22.dp),
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(12.dp)
-            ) {
-                Box(
-                    modifier = Modifier
-                        .size(64.dp)
-                        .clip(CircleShape)
-                        .background(
-                            Brush.linearGradient(
-                                listOf(
-                                    MaterialTheme.colorScheme.primary.copy(alpha = 0.25f),
-                                    MaterialTheme.colorScheme.secondary.copy(alpha = 0.2f)
-                                )
-                            )
-                        ),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.VideoLibrary,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.size(32.dp)
-                    )
-                }
-
-                Text(
-                    text = stringResource(R.string.permission_title),
-                    style = MaterialTheme.typography.titleMedium
-                )
-                Text(
-                    text = stringResource(R.string.permission_body),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-
-                Button(
-                    onClick = onGrantPermission,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .testTag("grant_permission_button")
-                ) {
-                    Text(stringResource(R.string.permission_grant_cta))
-                }
-
-                OutlinedButton(
-                    onClick = onOpenSingleFile,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .testTag("fallback_open_file_button")
-                ) {
-                    Text(stringResource(R.string.permission_open_file_cta))
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun FolderBrowserContent(
-    uiState: MainUiState,
-    isGrid: Boolean,
-    onSearchQueryChange: (String) -> Unit,
-    onFolderClick: (VideoFolder) -> Unit,
-    onOpenFavorites: () -> Unit,
-    onOpenPlaylist: (String) -> Unit,
-    onDeletePlaylist: (String) -> Unit,
-    onOpenSingleFile: () -> Unit
-) {
-    if (uiState.folders.isEmpty()) {
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(24.dp),
-            contentAlignment = Alignment.Center
-        ) {
-            Column(
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(10.dp)
-            ) {
-                Icon(
-                    imageVector = Icons.Default.FolderOpen,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.primary.copy(alpha = 0.7f),
-                    modifier = Modifier.size(52.dp)
-                )
-                Text(
-                    text = stringResource(R.string.empty_folders_title),
-                    style = MaterialTheme.typography.titleSmall
-                )
-                Text(
-                    text = stringResource(R.string.empty_folders_body),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                OutlinedButton(onClick = onOpenSingleFile) {
-                    Text(stringResource(R.string.open_file_desc))
-                }
-            }
-        }
-        return
-    }
-
-    BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
-        val columns = if (isGrid) {
-            when {
-                maxWidth >= 840.dp -> 4
-                maxWidth >= 560.dp -> 3
-                else -> 2
-            }
-        } else {
-            1
-        }
-
-        LazyVerticalGrid(
-            columns = GridCells.Fixed(columns),
-            contentPadding = PaddingValues(start = 10.dp, end = 10.dp, top = 8.dp, bottom = 88.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-            modifier = Modifier.fillMaxSize()
-        ) {
-            item(span = { GridItemSpan(columns) }) {
-                SearchInputBar(
-                    query = uiState.searchQuery,
-                    onQueryChange = onSearchQueryChange
-                )
-            }
-
-            // Favourites & Playlists quick chips row
-            if (uiState.searchQuery.isBlank() &&
-                (uiState.favoriteVideosCount > 0 || uiState.preferences.playlists.isNotEmpty())
-            ) {
-                item(span = { GridItemSpan(columns) }) {
-                    LazyRow(
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        if (uiState.favoriteVideosCount > 0) {
-                            item {
-                                Surface(
-                                    onClick = onOpenFavorites,
-                                    shape = RoundedCornerShape(10.dp),
-                                    color = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.7f)
-                                ) {
-                                    Row(
-                                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
-                                        verticalAlignment = Alignment.CenterVertically,
-                                        horizontalArrangement = Arrangement.spacedBy(6.dp)
-                                    ) {
-                                        Icon(
-                                            imageVector = Icons.Default.Favorite,
-                                            contentDescription = null,
-                                            tint = MaterialTheme.colorScheme.secondary,
-                                            modifier = Modifier.size(16.dp)
-                                        )
-                                        Text(
-                                            text = "Favourites (${uiState.favoriteVideosCount})",
-                                            style = MaterialTheme.typography.labelMedium
-                                        )
-                                    }
-                                }
-                            }
-                        }
-
-                        items(uiState.preferences.playlists.keys.sorted()) { name ->
-                            val count = uiState.preferences.playlists[name]?.size ?: 0
-                            Surface(
-                                onClick = { onOpenPlaylist(name) },
-                                shape = RoundedCornerShape(10.dp),
-                                color = MaterialTheme.colorScheme.surfaceVariant
-                            ) {
-                                Row(
-                                    modifier = Modifier.padding(start = 12.dp, end = 6.dp, top = 6.dp, bottom = 6.dp),
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.spacedBy(6.dp)
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.AutoMirrored.Filled.PlaylistPlay,
-                                        contentDescription = null,
-                                        tint = MaterialTheme.colorScheme.primary,
-                                        modifier = Modifier.size(18.dp)
-                                    )
-                                    Text(
-                                        text = "$name ($count)",
-                                        style = MaterialTheme.typography.labelMedium
-                                    )
-                                    IconButton(
-                                        onClick = { onDeletePlaylist(name) },
-                                        modifier = Modifier.size(22.dp)
-                                    ) {
-                                        Icon(
-                                            imageVector = Icons.Default.Close,
-                                            contentDescription = "Delete playlist",
-                                            modifier = Modifier.size(14.dp)
-                                        )
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-
-            items(uiState.filteredFolders, key = { it.bucketId }) { folder ->
-                val newCount = uiState.unplayedCountForFolder(folder.bucketId)
-                if (isGrid) {
-                    GridFolderCard(
-                        folder = folder,
-                        newCount = newCount,
-                        onClick = { onFolderClick(folder) }
-                    )
-                } else {
-                    CompactFolderRow(
-                        folder = folder,
-                        newCount = newCount,
-                        onClick = { onFolderClick(folder) }
-                    )
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun VideoListContent(
-    videos: List<VideoItem>,
-    isGridView: Boolean,
-    isSelectionMode: Boolean,
-    selectedUris: Set<String>,
-    favoriteUris: Set<String>,
-    historyByUri: Map<String, PlaybackHistoryEntity>,
-    isVideoNew: (VideoItem) -> Boolean,
-    searchQuery: String,
-    activePlaylistName: String?,
-    onSearchQueryChange: (String) -> Unit,
-    onVideoClick: (VideoItem) -> Unit,
-    onVideoLongClick: (VideoItem) -> Unit,
-    onToggleFavorite: (VideoItem) -> Unit,
-    onAddToPlaylist: (VideoItem) -> Unit,
-    onRemoveFromPlaylist: (String, VideoItem) -> Unit,
-    onShareVideo: (VideoItem) -> Unit,
-    onRenameVideo: (VideoItem) -> Unit,
-    onMoveVideo: (VideoItem) -> Unit,
-    onShowVideoDetails: (VideoItem) -> Unit,
-    onDeleteVideo: (VideoItem) -> Unit,
-    loadThumbnail: suspend (Long, String) -> Bitmap?
-) {
-    BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
-        val gridColumns = when {
-            maxWidth >= 840.dp -> 4
-            maxWidth >= 560.dp -> 3
-            else -> 2
-        }
-
-        if (isGridView) {
-            LazyVerticalGrid(
-                columns = GridCells.Fixed(gridColumns),
-                contentPadding = PaddingValues(start = 10.dp, end = 10.dp, top = 8.dp, bottom = 88.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                modifier = Modifier.fillMaxSize()
-            ) {
-                item(span = { GridItemSpan(gridColumns) }) {
-                    SearchInputBar(
-                        query = searchQuery,
-                        onQueryChange = onSearchQueryChange
-                    )
-                }
-
-                items(videos, key = { it.id }) { video ->
-                    GridVideoCard(
-                        video = video,
-                        isSelected = selectedUris.contains(video.uriString),
-                        isSelectionMode = isSelectionMode,
-                        isFavorite = favoriteUris.contains(video.uriString),
-                        isNew = isVideoNew(video),
-                        history = historyByUri[video.uriString],
-                        activePlaylistName = activePlaylistName,
-                        onClick = { onVideoClick(video) },
-                        onLongClick = { onVideoLongClick(video) },
-                        onToggleFavorite = { onToggleFavorite(video) },
-                        onAddToPlaylist = { onAddToPlaylist(video) },
-                        onRemoveFromPlaylist = { name -> onRemoveFromPlaylist(name, video) },
-                        onShare = { onShareVideo(video) },
-                        onRename = { onRenameVideo(video) },
-                        onMove = { onMoveVideo(video) },
-                        onDetailsClick = { onShowVideoDetails(video) },
-                        onDelete = { onDeleteVideo(video) },
-                        loadThumbnail = loadThumbnail
-                    )
-                }
-            }
-        } else {
-            LazyColumn(
-                contentPadding = PaddingValues(start = 10.dp, end = 10.dp, top = 8.dp, bottom = 88.dp),
-                verticalArrangement = Arrangement.spacedBy(6.dp),
-                modifier = Modifier.fillMaxSize()
-            ) {
-                item {
-                    SearchInputBar(
-                        query = searchQuery,
-                        onQueryChange = onSearchQueryChange
-                    )
-                }
-
-                items(videos, key = { it.id }) { video ->
-                    CompactVideoRow(
-                        video = video,
-                        isSelected = selectedUris.contains(video.uriString),
-                        isSelectionMode = isSelectionMode,
-                        isFavorite = favoriteUris.contains(video.uriString),
-                        isNew = isVideoNew(video),
-                        history = historyByUri[video.uriString],
-                        activePlaylistName = activePlaylistName,
-                        onClick = { onVideoClick(video) },
-                        onLongClick = { onVideoLongClick(video) },
-                        onToggleFavorite = { onToggleFavorite(video) },
-                        onAddToPlaylist = { onAddToPlaylist(video) },
-                        onRemoveFromPlaylist = { name -> onRemoveFromPlaylist(name, video) },
-                        onShare = { onShareVideo(video) },
-                        onRename = { onRenameVideo(video) },
-                        onMove = { onMoveVideo(video) },
-                        onDetailsClick = { onShowVideoDetails(video) },
-                        onDelete = { onDeleteVideo(video) },
-                        loadThumbnail = loadThumbnail
-                    )
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun SearchInputBar(
-    query: String,
-    onQueryChange: (String) -> Unit
-) {
-    OutlinedTextField(
-        value = query,
-        onValueChange = onQueryChange,
-        placeholder = {
-            Text(
-                text = stringResource(R.string.search_videos_hint),
-                style = MaterialTheme.typography.bodyMedium.copy(fontSize = 12.sp)
-            )
-        },
-        textStyle = MaterialTheme.typography.bodyMedium.copy(fontSize = 12.5.sp),
-        leadingIcon = { Icon(Icons.Default.Search, contentDescription = null, modifier = Modifier.size(18.dp)) },
-        trailingIcon = {
-            if (query.isNotEmpty()) {
-                IconButton(onClick = { onQueryChange("") }) {
-                    Icon(Icons.Default.Close, contentDescription = "Clear search", modifier = Modifier.size(16.dp))
-                }
-            }
-        },
-        singleLine = true,
-        shape = RoundedCornerShape(12.dp),
-        modifier = Modifier
             .fillMaxWidth()
-            .testTag("library_search_input")
-    )
-}
-
-@Composable
-private fun CompactFolderRow(
-    folder: VideoFolder,
-    newCount: Int,
-    onClick: () -> Unit
-) {
-    val unit = if (folder.videoCount == 1) {
-        stringResource(R.string.video_singular)
-    } else {
-        stringResource(R.string.video_plural)
-    }
-
-    Card(
-        shape = RoundedCornerShape(12.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-        elevation = CardDefaults.cardElevation(defaultElevation = 0.5.dp),
-        modifier = Modifier
-            .fillMaxWidth()
+            .clip(RoundedCornerShape(14.dp))
+            .background(MaterialTheme.colorScheme.surface)
+            .border(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.3f), RoundedCornerShape(14.dp))
             .clickable(onClick = onClick)
-            .testTag("folder_card_${folder.bucketId}")
+            .padding(14.dp)
     ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 10.dp, vertical = 8.dp),
-            verticalAlignment = Alignment.CenterVertically
+        if (newCount > 0) {
+            Text(
+                text = newCount.toString(),
+                color = Color.White,
+                fontSize = 10.sp,
+                fontWeight = FontWeight.Bold,
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .clip(CircleShape)
+                    .background(BadgeNewRed)
+                    .padding(horizontal = 6.dp, vertical = 2.dp)
+            )
+        }
+        Column(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalAlignment = Alignment.CenterHorizontally
         ) {
             Box(
                 modifier = Modifier
-                    .size(38.dp)
-                    .clip(RoundedCornerShape(10.dp))
+                    .size(50.dp)
+                    .clip(RoundedCornerShape(14.dp))
                     .background(MaterialTheme.colorScheme.primaryContainer),
                 contentAlignment = Alignment.Center
             ) {
                 Icon(
-                    imageVector = Icons.Default.Folder,
+                    imageVector = Icons.Rounded.Folder,
                     contentDescription = null,
                     tint = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.size(22.dp)
+                    modifier = Modifier.size(28.dp)
                 )
             }
-            Spacer(Modifier.width(10.dp))
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = folder.name,
-                    style = MaterialTheme.typography.titleSmall.copy(
-                        fontSize = 13.5.sp,
-                        lineHeight = 17.sp
-                    ),
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-                Spacer(Modifier.height(1.dp))
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(6.dp)
-                ) {
-                    Text(
-                        text = "${folder.videoCount} $unit",
-                        style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp),
-                        color = MaterialTheme.colorScheme.primary
-                    )
-                    Text(
-                        text = "· ${FormatUtils.formatFileSize(folder.totalSizeBytes)}",
-                        style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp),
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    Text(
-                        text = "· ${folder.pathHint}",
-                        style = MaterialTheme.typography.labelSmall.copy(fontSize = 9.5.sp),
-                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.78f),
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.weight(1f)
-                    )
-                }
-            }
-            if (newCount > 0) {
-                Spacer(Modifier.width(8.dp))
-                Box(
-                    modifier = Modifier
-                        .clip(CircleShape)
-                        .background(Color(0xFFE53935))
-                        .padding(horizontal = 7.dp, vertical = 3.dp)
-                        .testTag("folder_new_badge_${folder.bucketId}"),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Text(
-                        text = "$newCount",
-                        style = MaterialTheme.typography.labelSmall.copy(
-                            fontSize = 10.5.sp,
-                            fontWeight = FontWeight.Bold
-                        ),
-                        color = Color.White
-                    )
-                }
-            }
+            Spacer(Modifier.height(8.dp))
+            Text(
+                text = folder.name,
+                style = MaterialTheme.typography.titleSmall,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+            Text(
+                text = "${folder.videoCount} $unit · ${FormatUtils.formatFileSize(folder.totalSizeBytes)}",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
         }
     }
 }
 
 @Composable
-private fun GridFolderCard(
-    folder: VideoFolder,
-    newCount: Int,
-    onClick: () -> Unit
-) {
-    val unit = if (folder.videoCount == 1) {
-        stringResource(R.string.video_singular)
-    } else {
-        stringResource(R.string.video_plural)
-    }
-
-    Card(
-        shape = RoundedCornerShape(14.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-        elevation = CardDefaults.cardElevation(defaultElevation = 0.5.dp),
+private fun FolderListCard(folder: VideoFolder, newCount: Int, onClick: () -> Unit) {
+    val unit = if (folder.videoCount == 1) "video" else "videos"
+    Row(
         modifier = Modifier
             .fillMaxWidth()
+            .clip(RoundedCornerShape(12.dp))
+            .background(MaterialTheme.colorScheme.surface)
+            .border(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.3f), RoundedCornerShape(12.dp))
             .clickable(onClick = onClick)
-            .testTag("folder_grid_card_${folder.bucketId}")
+            .padding(horizontal = 12.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically
     ) {
-        Box(modifier = Modifier.fillMaxWidth()) {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(12.dp),
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(6.dp)
-            ) {
-                Box(
-                    modifier = Modifier
-                        .size(50.dp)
-                        .clip(RoundedCornerShape(14.dp))
-                        .background(MaterialTheme.colorScheme.primaryContainer),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.Folder,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.size(28.dp)
-                    )
-                }
+        Box(
+            modifier = Modifier
+                .size(42.dp)
+                .clip(RoundedCornerShape(10.dp))
+                .background(MaterialTheme.colorScheme.primaryContainer),
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(
+                imageVector = Icons.Rounded.Folder,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.size(24.dp)
+            )
+        }
+        Spacer(Modifier.width(12.dp))
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = folder.name,
+                style = MaterialTheme.typography.titleSmall,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+            Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                 Text(
-                    text = folder.name,
-                    style = MaterialTheme.typography.titleSmall,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    textAlign = TextAlign.Center
+                    text = "${folder.videoCount} $unit",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.primary
                 )
                 Text(
-                    text = "${folder.videoCount} $unit · ${FormatUtils.formatFileSize(folder.totalSizeBytes)}",
-                    style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp),
+                    text = "· ${FormatUtils.formatFileSize(folder.totalSizeBytes)} · ${folder.pathHint}",
+                    style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
             }
-
-            if (newCount > 0) {
-                Box(
-                    modifier = Modifier
-                        .align(Alignment.TopEnd)
-                        .padding(8.dp)
-                        .clip(CircleShape)
-                        .background(Color(0xFFE53935))
-                        .padding(horizontal = 6.dp, vertical = 2.dp)
-                        .testTag("folder_grid_new_badge_${folder.bucketId}"),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Text(
-                        text = "$newCount",
-                        style = MaterialTheme.typography.labelSmall.copy(
-                            fontSize = 10.sp,
-                            fontWeight = FontWeight.Bold
-                        ),
-                        color = Color.White
-                    )
-                }
-            }
+        }
+        if (newCount > 0) {
+            Text(
+                text = newCount.toString(),
+                color = Color.White,
+                fontSize = 10.sp,
+                fontWeight = FontWeight.Bold,
+                modifier = Modifier
+                    .clip(CircleShape)
+                    .background(BadgeNewRed)
+                    .padding(horizontal = 7.dp, vertical = 2.dp)
+            )
         }
     }
 }
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun CompactVideoRow(
+private fun VideoCard(
     video: VideoItem,
+    isGrid: Boolean,
     isSelected: Boolean,
     isSelectionMode: Boolean,
     isFavorite: Boolean,
@@ -1669,366 +885,111 @@ private fun CompactVideoRow(
     onShare: () -> Unit,
     onRename: () -> Unit,
     onMove: () -> Unit,
-    onDetailsClick: () -> Unit,
-    onDelete: () -> Unit,
-    loadThumbnail: suspend (Long, String) -> Bitmap?
+    onProperties: () -> Unit,
+    onDelete: () -> Unit
 ) {
-    val resumePos = history?.positionMs ?: 0L
-    val progress = if (history != null && history.durationMs > 0L) {
+    var menuExpanded by remember { mutableStateOf(false) }
+    val progressFraction = if (history != null && history.durationMs > 0L && history.positionMs > 0L) {
         (history.positionMs.toFloat() / history.durationMs.toFloat()).coerceIn(0f, 1f)
     } else 0f
-    val ext = video.displayName.substringAfterLast('.', "").uppercase().ifBlank { "VID" }
-    var menuExpanded by remember { mutableStateOf(false) }
 
-    Card(
-        shape = RoundedCornerShape(12.dp),
-        colors = CardDefaults.cardColors(
-            containerColor = if (isSelected) {
-                MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.45f)
-            } else {
-                MaterialTheme.colorScheme.surface
-            }
-        ),
-        elevation = CardDefaults.cardElevation(defaultElevation = 0.5.dp),
-        modifier = Modifier
-            .fillMaxWidth()
-            .then(
-                if (isSelected) {
-                    Modifier.border(1.5.dp, MaterialTheme.colorScheme.primary, RoundedCornerShape(12.dp))
-                } else {
-                    Modifier
-                }
-            )
-            .combinedClickable(
-                onClick = onClick,
-                onLongClick = onLongClick
-            )
-            .testTag("video_card_${video.id}")
-    ) {
-        Row(
+    val borderColor = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline.copy(alpha = 0.3f)
+
+    if (isGrid) {
+        Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 8.dp, vertical = 6.dp),
-            verticalAlignment = Alignment.CenterVertically
+                .clip(RoundedCornerShape(14.dp))
+                .background(if (isSelected) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.35f) else MaterialTheme.colorScheme.surface)
+                .border(if (isSelected) 2.dp else 1.dp, borderColor, RoundedCornerShape(14.dp))
+                .combinedClickable(onClick = onClick, onLongClick = onLongClick)
         ) {
-            if (isSelectionMode) {
-                Icon(
-                    imageVector = if (isSelected) {
-                        Icons.Default.CheckCircle
-                    } else {
-                        Icons.Default.RadioButtonUnchecked
-                    },
-                    contentDescription = if (isSelected) "Selected" else "Not selected",
-                    tint = if (isSelected) {
-                        MaterialTheme.colorScheme.primary
-                    } else {
-                        MaterialTheme.colorScheme.onSurfaceVariant
-                    },
-                    modifier = Modifier
-                        .padding(end = 8.dp)
-                        .size(22.dp)
-                )
-            }
-
-            Box(
-                modifier = Modifier
-                    .width(92.dp)
-                    .aspectRatio(16f / 9f)
-                    .clip(RoundedCornerShape(8.dp))
-            ) {
-                VideoThumbnail(
-                    videoId = video.id,
-                    uriString = video.uriString,
-                    contentDescription = video.title,
-                    loadThumbnail = loadThumbnail,
-                    modifier = Modifier.fillMaxSize()
-                )
-
-                if (isNew) {
-                    Surface(
-                        shape = RoundedCornerShape(4.dp),
-                        color = Color(0xFFE53935),
-                        modifier = Modifier
-                            .align(Alignment.TopStart)
-                            .padding(3.dp)
-                    ) {
-                        Text(
-                            text = "NEW",
-                            style = MaterialTheme.typography.labelSmall.copy(
-                                fontSize = 8.sp,
-                                fontWeight = FontWeight.Bold
-                            ),
-                            color = Color.White,
-                            modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
-                        )
-                    }
-                }
-
-                Surface(
-                    shape = RoundedCornerShape(4.dp),
-                    color = Color.Black.copy(alpha = 0.8f),
-                    modifier = Modifier
-                        .align(Alignment.BottomEnd)
-                        .padding(3.dp)
-                ) {
-                    Text(
-                        text = FormatUtils.formatDuration(video.durationMs),
-                        style = MaterialTheme.typography.labelSmall.copy(fontSize = 9.sp),
-                        color = Color.White,
-                        modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
-                    )
-                }
-
-                if (resumePos > 1_500L) {
-                    LinearProgressIndicator(
-                        progress = { progress },
-                        color = MaterialTheme.colorScheme.primary,
-                        trackColor = Color.White.copy(alpha = 0.25f),
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(2.5.dp)
-                            .align(Alignment.BottomCenter)
-                    )
-                }
-            }
-
-            Spacer(Modifier.width(10.dp))
-
-            Column(
-                modifier = Modifier.weight(1f),
-                verticalArrangement = Arrangement.spacedBy(2.dp)
-            ) {
-                Text(
-                    text = video.title,
-                    style = MaterialTheme.typography.titleSmall.copy(
-                        fontSize = 12.5.sp,
-                        lineHeight = 16.sp
-                    ),
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis
-                )
-
-                val resTag = FormatUtils.formatResolution(video.width, video.height)
-                    .substringBefore(" ·")
-                Text(
-                    text = "$resTag · ${FormatUtils.formatFileSize(video.sizeBytes)} · $ext",
-                    style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp),
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-
-                if (resumePos > 1_500L) {
-                    Text(
-                        text = stringResource(
-                            R.string.resume_badge_format,
-                            FormatUtils.formatDuration(resumePos)
-                        ),
-                        style = MaterialTheme.typography.labelSmall.copy(
-                            fontSize = 9.5.sp,
-                            fontWeight = FontWeight.SemiBold
-                        ),
-                        color = MaterialTheme.colorScheme.secondary
-                    )
-                }
-            }
-
-            if (!isSelectionMode) {
-                Box {
-                    IconButton(
-                        onClick = { menuExpanded = true },
-                        modifier = Modifier.minimumInteractiveComponentSize()
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.MoreVert,
-                            contentDescription = "File Options",
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.size(20.dp)
-                        )
-                    }
-
-                    VideoFileDropdownMenu(
-                        expanded = menuExpanded,
-                        isFavorite = isFavorite,
-                        activePlaylistName = activePlaylistName,
-                        onDismiss = { menuExpanded = false },
-                        onToggleFavorite = onToggleFavorite,
-                        onAddToPlaylist = onAddToPlaylist,
-                        onRemoveFromPlaylist = onRemoveFromPlaylist,
-                        onShare = onShare,
-                        onRename = onRename,
-                        onMove = onMove,
-                        onProperties = onDetailsClick,
-                        onDelete = onDelete
-                    )
-                }
-            }
-        }
-    }
-}
-
-@OptIn(ExperimentalFoundationApi::class)
-@Composable
-private fun GridVideoCard(
-    video: VideoItem,
-    isSelected: Boolean,
-    isSelectionMode: Boolean,
-    isFavorite: Boolean,
-    isNew: Boolean,
-    history: PlaybackHistoryEntity?,
-    activePlaylistName: String?,
-    onClick: () -> Unit,
-    onLongClick: () -> Unit,
-    onToggleFavorite: () -> Unit,
-    onAddToPlaylist: () -> Unit,
-    onRemoveFromPlaylist: (String) -> Unit,
-    onShare: () -> Unit,
-    onRename: () -> Unit,
-    onMove: () -> Unit,
-    onDetailsClick: () -> Unit,
-    onDelete: () -> Unit,
-    loadThumbnail: suspend (Long, String) -> Bitmap?
-) {
-    val resumePos = history?.positionMs ?: 0L
-    val progress = if (history != null && history.durationMs > 0L) {
-        (history.positionMs.toFloat() / history.durationMs.toFloat()).coerceIn(0f, 1f)
-    } else 0f
-    var menuExpanded by remember { mutableStateOf(false) }
-
-    Card(
-        shape = RoundedCornerShape(12.dp),
-        colors = CardDefaults.cardColors(
-            containerColor = if (isSelected) {
-                MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.45f)
-            } else {
-                MaterialTheme.colorScheme.surface
-            }
-        ),
-        elevation = CardDefaults.cardElevation(defaultElevation = 0.5.dp),
-        modifier = Modifier
-            .fillMaxWidth()
-            .then(
-                if (isSelected) {
-                    Modifier.border(1.5.dp, MaterialTheme.colorScheme.primary, RoundedCornerShape(12.dp))
-                } else {
-                    Modifier
-                }
-            )
-            .combinedClickable(
-                onClick = onClick,
-                onLongClick = onLongClick
-            )
-    ) {
-        Column {
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
                     .aspectRatio(16f / 9f)
             ) {
                 VideoThumbnail(
-                    videoId = video.id,
                     uriString = video.uriString,
-                    contentDescription = video.title,
-                    loadThumbnail = loadThumbnail,
+                    filePath = video.filePath,
                     modifier = Modifier.fillMaxSize()
                 )
-
-                if (isSelectionMode) {
-                    Icon(
-                        imageVector = if (isSelected) {
-                            Icons.Default.CheckCircle
-                        } else {
-                            Icons.Default.RadioButtonUnchecked
-                        },
-                        contentDescription = null,
-                        tint = if (isSelected) MaterialTheme.colorScheme.primary else Color.White,
+                if (isNew) {
+                    Text(
+                        text = "NEW",
+                        color = Color.White,
+                        fontSize = 9.sp,
+                        fontWeight = FontWeight.Bold,
                         modifier = Modifier
                             .align(Alignment.TopStart)
                             .padding(6.dp)
-                            .size(22.dp)
+                            .clip(RoundedCornerShape(4.dp))
+                            .background(BadgeNewRed)
+                            .padding(horizontal = 5.dp, vertical = 2.dp)
                     )
-                } else if (isNew) {
-                    Surface(
-                        shape = RoundedCornerShape(4.dp),
-                        color = Color(0xFFE53935),
-                        modifier = Modifier
-                            .align(Alignment.TopStart)
-                            .padding(5.dp)
-                    ) {
-                        Text(
-                            text = "NEW",
-                            style = MaterialTheme.typography.labelSmall.copy(
-                                fontSize = 8.5.sp,
-                                fontWeight = FontWeight.Bold
-                            ),
-                            color = Color.White,
-                            modifier = Modifier.padding(horizontal = 5.dp, vertical = 1.dp)
-                        )
-                    }
                 }
-
-                Surface(
-                    shape = RoundedCornerShape(4.dp),
-                    color = Color.Black.copy(alpha = 0.8f),
+                if (isSelectionMode) {
+                    Icon(
+                        imageVector = if (isSelected) Icons.Rounded.CheckCircle else Icons.Rounded.RadioButtonUnchecked,
+                        contentDescription = null,
+                        tint = if (isSelected) MaterialTheme.colorScheme.primary else Color.White,
+                        modifier = Modifier
+                            .align(Alignment.TopEnd)
+                            .padding(6.dp)
+                            .size(20.dp)
+                    )
+                }
+                Text(
+                    text = FormatUtils.formatDuration(video.durationMs),
+                    color = Color.White,
+                    fontSize = 10.sp,
                     modifier = Modifier
                         .align(Alignment.BottomEnd)
-                        .padding(4.dp)
-                ) {
-                    Text(
-                        text = FormatUtils.formatDuration(video.durationMs),
-                        style = MaterialTheme.typography.labelSmall.copy(fontSize = 9.sp),
-                        color = Color.White,
-                        modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
-                    )
-                }
-
-                if (resumePos > 1_500L) {
+                        .padding(6.dp)
+                        .clip(RoundedCornerShape(5.dp))
+                        .background(Color.Black.copy(alpha = 0.72f))
+                        .padding(horizontal = 5.dp, vertical = 2.dp)
+                )
+                if (progressFraction > 0f) {
                     LinearProgressIndicator(
-                        progress = { progress },
-                        color = MaterialTheme.colorScheme.primary,
-                        trackColor = Color.White.copy(alpha = 0.25f),
+                        progress = { progressFraction },
                         modifier = Modifier
-                            .fillMaxWidth()
-                            .height(2.5.dp)
                             .align(Alignment.BottomCenter)
+                            .fillMaxWidth()
+                            .height(3.dp),
+                        color = MaterialTheme.colorScheme.primary,
+                        trackColor = Color.White.copy(alpha = 0.25f)
                     )
                 }
             }
-
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(start = 8.dp, end = 2.dp, top = 6.dp, bottom = 6.dp),
+                    .padding(horizontal = 10.dp, vertical = 8.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
                         text = video.title,
-                        style = MaterialTheme.typography.titleSmall.copy(fontSize = 12.sp),
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontWeight = FontWeight.SemiBold,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis
                     )
                     Text(
-                        text = FormatUtils.formatFileSize(video.sizeBytes),
-                        style = MaterialTheme.typography.labelSmall.copy(fontSize = 9.5.sp),
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                        text = "${FormatUtils.formatFileSize(video.sizeBytes)} · ${FormatUtils.formatResolution(video.width, video.height)}",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
                     )
                 }
-
                 if (!isSelectionMode) {
                     Box {
-                        IconButton(
-                            onClick = { menuExpanded = true },
-                            modifier = Modifier.size(32.dp)
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.MoreVert,
-                                contentDescription = "File Options",
-                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier.size(18.dp)
-                            )
+                        IconButton(onClick = { menuExpanded = true }, modifier = Modifier.size(30.dp)) {
+                            Icon(Icons.Rounded.MoreVert, contentDescription = "More", modifier = Modifier.size(18.dp))
                         }
-                        VideoFileDropdownMenu(
+                        VideoContextMenu(
                             expanded = menuExpanded,
                             isFavorite = isFavorite,
                             activePlaylistName = activePlaylistName,
@@ -2039,10 +1000,115 @@ private fun GridVideoCard(
                             onShare = onShare,
                             onRename = onRename,
                             onMove = onMove,
-                            onProperties = onDetailsClick,
+                            onProperties = onProperties,
                             onDelete = onDelete
                         )
                     }
+                }
+            }
+        }
+    } else {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(12.dp))
+                .background(if (isSelected) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.35f) else MaterialTheme.colorScheme.surface)
+                .border(if (isSelected) 2.dp else 1.dp, borderColor, RoundedCornerShape(12.dp))
+                .combinedClickable(onClick = onClick, onLongClick = onLongClick)
+                .padding(8.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Box(
+                modifier = Modifier
+                    .width(108.dp)
+                    .height(64.dp)
+                    .clip(RoundedCornerShape(8.dp))
+            ) {
+                VideoThumbnail(
+                    uriString = video.uriString,
+                    filePath = video.filePath,
+                    modifier = Modifier.fillMaxSize()
+                )
+                if (isNew) {
+                    Text(
+                        text = "NEW",
+                        color = Color.White,
+                        fontSize = 8.5.sp,
+                        fontWeight = FontWeight.Bold,
+                        modifier = Modifier
+                            .align(Alignment.TopStart)
+                            .padding(4.dp)
+                            .clip(RoundedCornerShape(4.dp))
+                            .background(BadgeNewRed)
+                            .padding(horizontal = 4.dp, vertical = 1.dp)
+                    )
+                }
+                Text(
+                    text = FormatUtils.formatDuration(video.durationMs),
+                    color = Color.White,
+                    fontSize = 9.5.sp,
+                    modifier = Modifier
+                        .align(Alignment.BottomEnd)
+                        .padding(4.dp)
+                        .clip(RoundedCornerShape(4.dp))
+                        .background(Color.Black.copy(alpha = 0.72f))
+                        .padding(horizontal = 4.dp, vertical = 1.dp)
+                )
+                if (progressFraction > 0f) {
+                    LinearProgressIndicator(
+                        progress = { progressFraction },
+                        modifier = Modifier
+                            .align(Alignment.BottomCenter)
+                            .fillMaxWidth()
+                            .height(2.5.dp),
+                        color = MaterialTheme.colorScheme.primary,
+                        trackColor = Color.White.copy(alpha = 0.25f)
+                    )
+                }
+            }
+            Spacer(Modifier.width(10.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = video.title,
+                    style = MaterialTheme.typography.titleSmall,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis
+                )
+                Spacer(Modifier.height(2.dp))
+                Text(
+                    text = "${FormatUtils.formatFileSize(video.sizeBytes)} · ${FormatUtils.formatResolution(video.width, video.height)}",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+            if (isSelectionMode) {
+                Icon(
+                    imageVector = if (isSelected) Icons.Rounded.CheckCircle else Icons.Rounded.RadioButtonUnchecked,
+                    contentDescription = null,
+                    tint = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(end = 6.dp)
+                )
+            } else {
+                Box {
+                    IconButton(onClick = { menuExpanded = true }) {
+                        Icon(Icons.Rounded.MoreVert, contentDescription = "More options")
+                    }
+                    VideoContextMenu(
+                        expanded = menuExpanded,
+                        isFavorite = isFavorite,
+                        activePlaylistName = activePlaylistName,
+                        onDismiss = { menuExpanded = false },
+                        onToggleFavorite = onToggleFavorite,
+                        onAddToPlaylist = onAddToPlaylist,
+                        onRemoveFromPlaylist = onRemoveFromPlaylist,
+                        onShare = onShare,
+                        onRename = onRename,
+                        onMove = onMove,
+                        onProperties = onProperties,
+                        onDelete = onDelete
+                    )
                 }
             }
         }
@@ -2050,7 +1116,7 @@ private fun GridVideoCard(
 }
 
 @Composable
-private fun VideoFileDropdownMenu(
+private fun VideoContextMenu(
     expanded: Boolean,
     isFavorite: Boolean,
     activePlaylistName: String?,
@@ -2064,98 +1130,396 @@ private fun VideoFileDropdownMenu(
     onProperties: () -> Unit,
     onDelete: () -> Unit
 ) {
-    DropdownMenu(
-        expanded = expanded,
-        onDismissRequest = onDismiss
-    ) {
+    DropdownMenu(expanded = expanded, onDismissRequest = onDismiss) {
         DropdownMenuItem(
-            text = { Text(if (isFavorite) "Remove from Favourite" else "Add to Favourite") },
-            leadingIcon = {
-                Icon(
-                    imageVector = if (isFavorite) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
-                    contentDescription = null
-                )
-            },
-            onClick = {
-                onDismiss()
-                onToggleFavorite()
-            }
+            text = { Text(if (isFavorite) "Remove from Favourites" else "Add to Favourites") },
+            leadingIcon = { Icon(if (isFavorite) Icons.Rounded.Favorite else Icons.Rounded.FavoriteBorder, null) },
+            onClick = { onDismiss(); onToggleFavorite() }
         )
         DropdownMenuItem(
             text = { Text("Add to Playlist") },
-            leadingIcon = {
-                Icon(Icons.AutoMirrored.Filled.PlaylistAdd, contentDescription = null)
-            },
-            onClick = {
-                onDismiss()
-                onAddToPlaylist()
-            }
+            leadingIcon = { Icon(Icons.Rounded.PlaylistAdd, null) },
+            onClick = { onDismiss(); onAddToPlaylist() }
         )
         if (activePlaylistName != null) {
             DropdownMenuItem(
-                text = { Text("Remove from Playlist") },
-                leadingIcon = {
-                    Icon(Icons.Default.Close, contentDescription = null)
-                },
-                onClick = {
-                    onDismiss()
-                    onRemoveFromPlaylist(activePlaylistName)
-                }
+                text = { Text("Remove from \"$activePlaylistName\"") },
+                leadingIcon = { Icon(Icons.Rounded.Close, null) },
+                onClick = { onDismiss(); onRemoveFromPlaylist(activePlaylistName) }
             )
         }
         DropdownMenuItem(
-            text = { Text("Share") },
-            leadingIcon = {
-                Icon(Icons.Default.Share, contentDescription = null)
-            },
-            onClick = {
-                onDismiss()
-                onShare()
-            }
-        )
-        DropdownMenuItem(
             text = { Text("Rename") },
-            leadingIcon = {
-                Icon(Icons.Default.DriveFileRenameOutline, contentDescription = null)
-            },
-            onClick = {
-                onDismiss()
-                onRename()
-            }
+            leadingIcon = { Icon(Icons.Rounded.Edit, null) },
+            onClick = { onDismiss(); onRename() }
         )
         DropdownMenuItem(
             text = { Text("Move") },
-            leadingIcon = {
-                Icon(Icons.AutoMirrored.Filled.DriveFileMove, contentDescription = null)
-            },
-            onClick = {
-                onDismiss()
-                onMove()
-            }
+            leadingIcon = { Icon(Icons.Rounded.DriveFileMove, null) },
+            onClick = { onDismiss(); onMove() }
+        )
+        DropdownMenuItem(
+            text = { Text("Share") },
+            leadingIcon = { Icon(Icons.Rounded.Share, null) },
+            onClick = { onDismiss(); onShare() }
         )
         DropdownMenuItem(
             text = { Text("Properties") },
-            leadingIcon = {
-                Icon(Icons.Default.Info, contentDescription = null)
-            },
-            onClick = {
-                onDismiss()
-                onProperties()
-            }
+            leadingIcon = { Icon(Icons.Rounded.Info, null) },
+            onClick = { onDismiss(); onProperties() }
         )
+        HorizontalDivider()
         DropdownMenuItem(
             text = { Text("Delete", color = MaterialTheme.colorScheme.error) },
-            leadingIcon = {
-                Icon(
-                    imageVector = Icons.Default.Delete,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.error
-                )
-            },
-            onClick = {
-                onDismiss()
-                onDelete()
-            }
+            leadingIcon = { Icon(Icons.Rounded.Delete, null, tint = MaterialTheme.colorScheme.error) },
+            onClick = { onDismiss(); onDelete() }
         )
     }
+}
+
+@Composable
+private fun SortOptionsDialog(
+    currentField: SortField,
+    currentDirection: SortDirection,
+    onDismiss: () -> Unit,
+    onApply: (SortField, SortDirection) -> Unit
+) {
+    var field by remember { mutableStateOf(currentField) }
+    var direction by remember { mutableStateOf(currentDirection) }
+
+    fun hint(dir: SortDirection): String = when (field) {
+        SortField.NAME, SortField.TYPE -> if (dir == SortDirection.ASC) "A → Z" else "Z → A"
+        SortField.SIZE -> if (dir == SortDirection.ASC) "Smallest" else "Largest"
+        SortField.DATE, SortField.PLAYS -> if (dir == SortDirection.ASC) "Oldest" else "Newest"
+    }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        icon = { Icon(Icons.Rounded.SwapVert, null, tint = MaterialTheme.colorScheme.primary) },
+        title = { Text("Sort By", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                SortField.entries.forEach { f ->
+                    val selected = field == f
+                    val icon = when (f) {
+                        SortField.NAME -> Icons.Rounded.SortByAlpha
+                        SortField.SIZE -> Icons.Rounded.Storage
+                        SortField.DATE -> Icons.Rounded.CalendarToday
+                        SortField.TYPE -> Icons.Rounded.Folder
+                        SortField.PLAYS -> Icons.Rounded.PlayArrow
+                    }
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(12.dp))
+                            .background(if (selected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
+                            .clickable { field = f }
+                            .padding(horizontal = 12.dp, vertical = 10.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(icon, null, tint = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(18.dp))
+                        Spacer(Modifier.width(10.dp))
+                        Text(f.label, modifier = Modifier.weight(1f), fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal)
+                        if (selected) Icon(Icons.Rounded.Check, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(18.dp))
+                    }
+                }
+                Spacer(Modifier.height(4.dp))
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    SortDirection.entries.forEach { dir ->
+                        val selected = direction == dir
+                        Row(
+                            modifier = Modifier
+                                .weight(1f)
+                                .clip(RoundedCornerShape(10.dp))
+                                .background(if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant)
+                                .clickable { direction = dir }
+                                .padding(vertical = 8.dp, horizontal = 8.dp),
+                            horizontalArrangement = Arrangement.Center,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(
+                                imageVector = if (dir == SortDirection.ASC) Icons.Rounded.ArrowUpward else Icons.Rounded.ArrowDownward,
+                                contentDescription = null,
+                                tint = if (selected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.size(14.dp)
+                            )
+                            Spacer(Modifier.width(4.dp))
+                            Text(
+                                text = "${dir.label} (${hint(dir)})",
+                                style = MaterialTheme.typography.labelMedium,
+                                color = if (selected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            Button(onClick = { onApply(field, direction) }) { Text("Apply") }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("Cancel") }
+        }
+    )
+}
+
+@Composable
+private fun VideoPropertiesDialog(
+    video: VideoItem,
+    history: PlaybackHistoryEntity?,
+    onClearResume: (String) -> Unit,
+    onDismiss: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Video Properties", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                PropRow("File Name", video.displayName)
+                PropRow("Folder", video.relativePath.trimEnd('/').ifBlank { video.folderName })
+                PropRow("Duration", FormatUtils.formatDuration(video.durationMs))
+                PropRow("Size", FormatUtils.formatFileSize(video.sizeBytes))
+                PropRow("Resolution", FormatUtils.formatResolution(video.width, video.height))
+                PropRow("Format", video.mimeType)
+                if (history != null && history.positionMs > 0L) {
+                    Spacer(Modifier.height(6.dp))
+                    OutlinedButton(
+                        onClick = { onClearResume(video.uriString); onDismiss() },
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text("Reset Resume (${FormatUtils.formatDuration(history.positionMs)})")
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) { Text("Close") }
+        }
+    )
+}
+
+@Composable
+private fun PropRow(label: String, value: String) {
+    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+        Text(label, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Spacer(Modifier.width(12.dp))
+        Text(value, style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.Medium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+    }
+}
+
+@Composable
+private fun RenameVideoDialog(
+    video: VideoItem,
+    onRename: (VideoItem, String) -> Unit,
+    onDismiss: () -> Unit
+) {
+    var text by remember(video.uriString) { mutableStateOf(video.title) }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Rename Video", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold) },
+        text = {
+            OutlinedTextField(
+                value = text,
+                onValueChange = { text = it },
+                singleLine = true,
+                label = { Text("New name") },
+                modifier = Modifier.fillMaxWidth()
+            )
+        },
+        confirmButton = {
+            Button(
+                enabled = text.isNotBlank(),
+                onClick = { onRename(video, text); onDismiss() }
+            ) { Text("Rename") }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("Cancel") }
+        }
+    )
+}
+
+@Composable
+private fun AddToPlaylistDialog(
+    video: VideoItem,
+    existingPlaylists: List<String>,
+    onAdd: (String, VideoItem) -> Unit,
+    onDismiss: () -> Unit
+) {
+    var newName by remember { mutableStateOf("") }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Add to Playlist", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                existingPlaylists.forEach { pl ->
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(10.dp))
+                            .background(MaterialTheme.colorScheme.surfaceVariant)
+                            .clickable { onAdd(pl, video); onDismiss() }
+                            .padding(horizontal = 12.dp, vertical = 10.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Icon(Icons.Rounded.PlaylistPlay, null, tint = MaterialTheme.colorScheme.primary)
+                        Text(pl, style = MaterialTheme.typography.bodyMedium)
+                    }
+                }
+                OutlinedTextField(
+                    value = newName,
+                    onValueChange = { newName = it },
+                    singleLine = true,
+                    label = { Text("New playlist name") },
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
+        },
+        confirmButton = {
+            Button(
+                enabled = newName.isNotBlank(),
+                onClick = { onAdd(newName, video); onDismiss() }
+            ) {
+                Icon(Icons.Rounded.Add, null, modifier = Modifier.size(16.dp))
+                Spacer(Modifier.width(4.dp))
+                Text("Create & Add")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("Cancel") }
+        }
+    )
+}
+
+@Composable
+private fun MoveVideosDialog(
+    videos: List<VideoItem>,
+    folders: List<VideoFolder>,
+    onMove: (List<VideoItem>, String) -> Unit,
+    onDismiss: () -> Unit
+) {
+    var targetFolder by remember { mutableStateOf("Movies/Moved") }
+    val suggestions = remember(folders) { folders.map { it.pathHint }.filter { it.isNotBlank() }.distinct() }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Text("Move ${videos.size} video(s) to folder", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+        },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                OutlinedTextField(
+                    value = targetFolder,
+                    onValueChange = { targetFolder = it },
+                    singleLine = true,
+                    label = { Text("Target folder (e.g. Movies/Clips)") },
+                    modifier = Modifier.fillMaxWidth()
+                )
+                if (suggestions.isNotEmpty()) {
+                    Text("Or tap an existing folder:", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    suggestions.take(5).forEach { path ->
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(10.dp))
+                                .background(MaterialTheme.colorScheme.surfaceVariant)
+                                .clickable { onMove(videos, path); onDismiss() }
+                                .padding(horizontal = 12.dp, vertical = 10.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Icon(Icons.Rounded.Folder, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(18.dp))
+                            Text(path, style = MaterialTheme.typography.bodyMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            Button(
+                enabled = targetFolder.isNotBlank(),
+                onClick = { onMove(videos, targetFolder); onDismiss() }
+            ) { Text("Move") }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("Cancel") }
+        }
+    )
+}
+
+@Composable
+private fun DeleteConfirmDialog(
+    videos: List<VideoItem>,
+    onConfirm: (List<VideoItem>) -> Unit,
+    onDismiss: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Delete ${videos.size} video(s)?", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold) },
+        text = { Text("Selected video files will be permanently removed from storage.") },
+        confirmButton = {
+            Button(onClick = { onConfirm(videos); onDismiss() }) { Text("Delete") }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("Cancel") }
+        }
+    )
+}
+
+@Composable
+private fun EmptyLibraryState(onOpenDocumentPicker: () -> Unit) {
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(32.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center
+    ) {
+        Icon(Icons.Rounded.FolderOpen, null, tint = MaterialTheme.colorScheme.primary.copy(alpha = 0.7f), modifier = Modifier.size(54.dp))
+        Spacer(Modifier.height(10.dp))
+        Text("No Local Videos Found", style = MaterialTheme.typography.titleSmall)
+        Spacer(Modifier.height(4.dp))
+        Text("Add videos to storage or pick a file directly.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Spacer(Modifier.height(12.dp))
+        OutlinedButton(onClick = onOpenDocumentPicker) {
+            Text("Open Video File")
+        }
+    }
+}
+
+@Composable
+private fun EmptyVideosState() {
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(32.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center
+    ) {
+        Icon(Icons.Rounded.FolderOpen, null, tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f), modifier = Modifier.size(48.dp))
+        Spacer(Modifier.height(8.dp))
+        Text("No videos found", style = MaterialTheme.typography.titleSmall)
+    }
+}
+
+private fun shareVideoFile(context: android.content.Context, video: VideoItem) {
+    val rawUri = android.net.Uri.parse(video.uriString)
+    val shareUri = if (rawUri.scheme == "file" && !video.filePath.isNullOrBlank()) {
+        runCatching {
+            FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", File(video.filePath))
+        }.getOrDefault(rawUri)
+    } else {
+        rawUri
+    }
+    val intent = Intent(Intent.ACTION_SEND).apply {
+        type = video.mimeType
+        putExtra(Intent.EXTRA_STREAM, shareUri)
+        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+    }
+    context.startActivity(Intent.createChooser(intent, "Share ${video.title}"))
 }

@@ -1,42 +1,4 @@
+<?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">AG Video Player</string>
-    <string name="folders_title">Video Folders</string>
-    <string name="recent_continue_watching">Continue Watching</string>
-    <string name="toggle_theme_desc">Toggle Dark and Light Mode</string>
-    <string name="check_updates_desc">Check for App Updates</string>
-    <string name="open_file_desc">Open Video File</string>
-    <string name="refresh_library_desc">Refresh Video Library</string>
-    <string name="search_videos_hint">Search folders or videos…</string>
-    <string name="permission_title">Storage Access Required</string>
-    <string name="permission_body">Grant video library permission to browse folders, view resolutions, and resume playback right where you left off.</string>
-    <string name="permission_grant_cta">Grant Video Access</string>
-    <string name="permission_open_file_cta">Or Open Single Video File</string>
-    <string name="empty_folders_title">No Local Videos Found</string>
-    <string name="empty_folders_body">Add videos to your device storage or open a file directly using the file button.</string>
-    <string name="video_count_format">%1$d %2$s</string>
-    <string name="video_singular">video</string>
-    <string name="video_plural">videos</string>
-    <string name="resume_badge_format">Resume %1$s</string>
-    <string name="decoder_hw">HW</string>
-    <string name="decoder_sw">SW</string>
-    <string name="lock_controls_desc">Lock Screen Controls</string>
-    <string name="unlock_controls_desc">Unlock Screen Controls</string>
-    <string name="rotate_screen_desc">Toggle Screen Rotation</string>
-    <string name="pip_mode_desc">Picture in Picture</string>
-    <string name="background_play_desc">Background Audio Play</string>
-    <string name="playback_speed_desc">Playback Speed</string>
-    <string name="aspect_ratio_desc">Aspect Ratio</string>
-    <string name="play_pause_desc">Play or Pause</string>
-    <string name="rewind_10_desc">Rewind 10 Seconds</string>
-    <string name="forward_10_desc">Forward 10 Seconds</string>
-    <string name="back_desc">Go Back</string>
-    <string name="update_available_title">Update Available</string>
-    <string name="update_up_to_date_title">You Are Up to Date</string>
-    <string name="update_now_cta">Download Update APK</string>
-    <string name="download_idm_browser_cta">Download with IDM / Browser</string>
-    <string name="install_apk_cta">Install Update</string>
-    <string name="cancel_cta">Cancel</string>
-    <string name="close_cta">Close</string>
-    <string name="check_now_cta">Check Now</string>
-    <string name="github_repo_label">GitHub Repository (owner/repo)</string>
+    <string name="app_name">Video Player</string>
 </resources>

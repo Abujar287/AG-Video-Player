@@ -1,57 +1,46 @@
 package com.example.ui.theme
 
-import android.app.Activity
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Shapes
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.SideEffect
-import androidx.compose.ui.platform.LocalView
-import androidx.compose.ui.unit.dp
-import androidx.core.view.WindowCompat
 
-private val VeloDarkColorScheme = darkColorScheme(
-    primary = ElectricTeal,
-    onPrimary = OnTealDark,
-    primaryContainer = DeepTealContainer,
-    onPrimaryContainer = ElectricTeal,
-    secondary = AmberBoost,
-    onSecondary = OnTealDark,
-    secondaryContainer = AmberContainerDark,
-    onSecondaryContainer = AmberBoost,
-    background = ObsidianBackground,
-    onBackground = IceWhiteText,
-    surface = MidnightSurface,
-    onSurface = IceWhiteText,
-    surfaceVariant = SlateSurfaceVariant,
-    onSurfaceVariant = MutedSlateText,
-    outline = SlateOutline
+private val DarkColorScheme = darkColorScheme(
+    primary = DarkPrimary,
+    onPrimary = DarkOnPrimary,
+    primaryContainer = DarkPrimaryContainer,
+    onPrimaryContainer = DarkOnPrimaryContainer,
+    secondary = DarkSecondary,
+    onSecondary = DarkOnSecondary,
+    secondaryContainer = DarkSecondaryContainer,
+    onSecondaryContainer = DarkOnSecondaryContainer,
+    background = DarkCanvas,
+    onBackground = DarkTextPrimary,
+    surface = DarkSurface,
+    onSurface = DarkTextPrimary,
+    surfaceVariant = DarkSurfaceVariant,
+    onSurfaceVariant = DarkTextMuted,
+    outline = DarkOutline,
+    error = DarkError
 )
 
-private val VeloLightColorScheme = lightColorScheme(
-    primary = OceanTeal,
-    onPrimary = CrispWhiteSurface,
-    primaryContainer = LightTealContainer,
-    onPrimaryContainer = DeepTealText,
-    secondary = RichAmber,
-    onSecondary = CrispWhiteSurface,
-    secondaryContainer = LightAmberContainer,
-    onSecondaryContainer = CharcoalText,
-    background = AlabasterBackground,
-    onBackground = CharcoalText,
-    surface = CrispWhiteSurface,
-    onSurface = CharcoalText,
-    surfaceVariant = SoftCoolVariant,
-    onSurfaceVariant = SlateGrayText,
-    outline = LightOutline
-)
-
-private val VeloShapes = Shapes(
-    small = RoundedCornerShape(10.dp),
-    medium = RoundedCornerShape(16.dp),
-    large = RoundedCornerShape(22.dp)
+private val LightColorScheme = lightColorScheme(
+    primary = LightPrimary,
+    onPrimary = LightOnPrimary,
+    primaryContainer = LightPrimaryContainer,
+    onPrimaryContainer = LightOnPrimaryContainer,
+    secondary = LightSecondary,
+    onSecondary = LightOnSecondary,
+    secondaryContainer = LightSecondaryContainer,
+    onSecondaryContainer = LightOnSecondaryContainer,
+    background = LightCanvas,
+    onBackground = LightTextPrimary,
+    surface = LightSurface,
+    onSurface = LightTextPrimary,
+    surfaceVariant = LightSurfaceVariant,
+    onSurfaceVariant = LightTextMuted,
+    outline = LightOutline,
+    error = LightError
 )
 
 @Composable
@@ -59,24 +48,9 @@ fun VeloPlayTheme(
     darkTheme: Boolean = true,
     content: @Composable () -> Unit
 ) {
-    val colorScheme = if (darkTheme) VeloDarkColorScheme else VeloLightColorScheme
-    val view = LocalView.current
-    if (!view.isInEditMode) {
-        SideEffect {
-            val window = (view.context as? Activity)?.window
-            if (window != null) {
-                WindowCompat.getInsetsController(window, view).apply {
-                    isAppearanceLightStatusBars = !darkTheme
-                    isAppearanceLightNavigationBars = !darkTheme
-                }
-            }
-        }
-    }
-
     MaterialTheme(
-        colorScheme = colorScheme,
+        colorScheme = if (darkTheme) DarkColorScheme else LightColorScheme,
         typography = VeloTypography,
-        shapes = VeloShapes,
         content = content
     )
 }

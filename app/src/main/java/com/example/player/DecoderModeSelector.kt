@@ -1,46 +1,52 @@
 package com.example.player
 
-import android.os.Build
+import android.content.Context
 import androidx.annotation.OptIn
 import androidx.media3.common.util.UnstableApi
+import androidx.media3.exoplayer.DefaultRenderersFactory
 import androidx.media3.exoplayer.mediacodec.MediaCodecInfo
 import androidx.media3.exoplayer.mediacodec.MediaCodecSelector
 
-/**
- * Custom MediaCodecSelector that prioritizes either Hardware (HW) or Software (SW) decoders
- * while keeping fallback codecs available so playback never fails on unsupported formats.
- */
-@OptIn(UnstableApi::class)
-class DecoderModeSelector(private val preferSoftware: Boolean) : MediaCodecSelector {
+object DecoderModeSelector {
 
-    override fun getDecoderInfos(
-        mimeType: String,
-        requiresSecureDecoder: Boolean,
-        requiresTunnelingDecoder: Boolean
-    ): MutableList<MediaCodecInfo> {
-        val defaultInfos = MediaCodecSelector.DEFAULT.getDecoderInfos(
-            mimeType,
-            requiresSecureDecoder,
-            requiresTunnelingDecoder
-        )
-        if (defaultInfos.size <= 1) return defaultInfos.toMutableList()
-
-        val sorted = if (preferSoftware) {
-            defaultInfos.sortedByDescending { isSoftwareCodec(it) }
-        } else {
-            defaultInfos.sortedBy { isSoftwareCodec(it) }
+    @OptIn(UnstableApi::class)
+    fun buildRenderersFactory(
+        context: Context,
+        useSoftwareDecoder: Boolean
+    ): DefaultRenderersFactory {
+        val selector = MediaCodecSelector { mimeType, requiresSecureDecoder, requiresTunnelingDecoder ->
+            val all = MediaCodecSelector.DEFAULT.getDecoderInfos(
+                mimeType,
+                requiresSecureDecoder,
+                requiresTunnelingDecoder
+            )
+            if (useSoftwareDecoder) {
+                val sw = all.filter { isSoftwareCodec(it) }
+                if (sw.isNotEmpty()) sw else all
+            } else {
+                val hw = all.filter { !isSoftwareCodec(it) }
+                if (hw.isNotEmpty()) hw else all
+            }
         }
-        return sorted.toMutableList()
+
+        return DefaultRenderersFactory(context)
+            .setExtensionRendererMode(
+                if (useSoftwareDecoder) {
+                    DefaultRenderersFactory.EXTENSION_RENDERER_MODE_PREFER
+                } else {
+                    DefaultRenderersFactory.EXTENSION_RENDERER_MODE_ON
+                }
+            )
+            .setEnableDecoderFallback(true)
+            .setMediaCodecSelector(selector)
     }
 
+    @OptIn(UnstableApi::class)
     private fun isSoftwareCodec(info: MediaCodecInfo): Boolean {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q && info.softwareOnly) {
-            return true
-        }
         val name = info.name.lowercase()
-        return name.startsWith("omx.google.") ||
+        return info.softwareOnly ||
+            name.startsWith("omx.google.") ||
             name.startsWith("c2.android.") ||
-            name.contains(".sw.") ||
-            name.contains("ffmpeg")
+            name.contains(".sw.")
     }
 }

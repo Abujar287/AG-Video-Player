@@ -5,16 +5,12 @@ import android.content.ContentUris
 import android.content.ContentValues
 import android.content.Context
 import android.content.IntentSender
-import android.graphics.Bitmap
-import android.media.MediaMetadataRetriever
 import android.media.MediaScannerConnection
 import android.net.Uri
 import android.os.Build
 import android.os.Environment
 import android.provider.MediaStore
-import android.util.LruCache
-import android.util.Size
-import androidx.core.content.FileProvider
+import android.util.Log
 import com.example.data.model.VideoFolder
 import com.example.data.model.VideoItem
 import com.example.util.PreviewEnvironment
@@ -22,124 +18,85 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
 
-data class VideoLibrarySnapshot(
+data class LibrarySnapshot(
     val folders: List<VideoFolder>,
-    val videosByFolder: Map<Long, List<VideoItem>>,
+    val videosByFolder: Map<String, List<VideoItem>>,
     val allVideos: List<VideoItem>
 )
 
-sealed interface PendingMediaOp {
-    data class DeleteVideos(val videos: List<VideoItem>) : PendingMediaOp
-    data class RenameVideo(val video: VideoItem, val newTitle: String) : PendingMediaOp
-    data class MoveVideos(val videos: List<VideoItem>, val targetRelativePath: String) : PendingMediaOp
-}
-
-sealed interface MediaFileOpResult {
-    data class Success(val message: String, val affectedUris: List<String> = emptyList()) : MediaFileOpResult
-    data class NeedsPermission(
-        val intentSender: IntentSender,
-        val pendingOp: PendingMediaOp
-    ) : MediaFileOpResult
-    data class Error(val message: String) : MediaFileOpResult
+sealed interface MediaMutationOutcome {
+    data class Success(val affectedCount: Int, val message: String) : MediaMutationOutcome
+    data class NeedsPermission(val intentSender: IntentSender) : MediaMutationOutcome
+    data class NeedsAllFilesAccess(val targetFolder: String) : MediaMutationOutcome
+    data class Failure(val message: String) : MediaMutationOutcome
 }
 
 class VideoLibraryRepository(private val context: Context) {
 
-    private val thumbnailCache = object : LruCache<Long, Bitmap>(64) {}
+    suspend fun loadLibrary(showHiddenFiles: Boolean): LibrarySnapshot = withContext(Dispatchers.IO) {
+        val deviceVideos = queryDeviceVideos(showHiddenFiles)
+        val combined = if (deviceVideos.isNotEmpty()) {
+            deviceVideos
+        } else {
+            PreviewEnvironment.loadBundledPreviewVideos(context)
+        }
 
-    private val supportedVideoExtensions = setOf(
-        "mp4", "mkv", "avi", "mov", "wmv", "flv", "webm", "m4v",
-        "3gp", "3g2", "ts", "mts", "m2ts", "mpg", "mpeg", "vob", "ogv", "rmvb", "divx"
-    )
+        val grouped = combined.groupBy { it.bucketId }
+        val folders = grouped.map { (bucketId, items) ->
+            val first = items.first()
+            val latestMod = items.maxOf { it.dateModifiedSec }
+            val totalSize = items.sumOf { it.sizeBytes }
+            val hint = first.relativePath.trimEnd('/').ifBlank { first.folderName }
+            VideoFolder(
+                bucketId = bucketId,
+                name = first.folderName,
+                pathHint = hint,
+                videoCount = items.size,
+                totalSizeBytes = totalSize,
+                latestModifiedSec = latestMod,
+                previewVideoId = first.id,
+                previewUri = first.uriString
+            )
+        }.sortedByDescending { it.latestModifiedSec }
 
-    suspend fun scanVideos(): VideoLibrarySnapshot = withContext(Dispatchers.IO) {
-        val seenIds = HashSet<Long>()
-        val folderMetaMap = linkedMapOf<Long, MutableList<Pair<VideoItem, String>>>()
+        LibrarySnapshot(
+            folders = folders,
+            videosByFolder = grouped,
+            allVideos = combined
+        )
+    }
 
-        val videoCollection = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+    private fun queryDeviceVideos(showHiddenFiles: Boolean): List<VideoItem> {
+        val result = mutableListOf<VideoItem>()
+        val collection = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             MediaStore.Video.Media.getContentUri(MediaStore.VOLUME_EXTERNAL)
         } else {
             MediaStore.Video.Media.EXTERNAL_CONTENT_URI
         }
-        queryMediaCollection(
-            collection = videoCollection,
-            isFilesTable = false,
-            seenIds = seenIds,
-            folderMetaMap = folderMetaMap
-        )
 
-        val filesCollection = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            MediaStore.Files.getContentUri(MediaStore.VOLUME_EXTERNAL)
-        } else {
-            MediaStore.Files.getContentUri("external")
-        }
-        queryMediaCollection(
-            collection = filesCollection,
-            isFilesTable = true,
-            seenIds = seenIds,
-            folderMetaMap = folderMetaMap
-        )
-
-        if (folderMetaMap.isEmpty() && PreviewEnvironment.isEmulator()) {
-            loadPreviewLibrary(folderMetaMap)
-        }
-
-        val folders = folderMetaMap.map { (bucketId, entries) ->
-            val sortedEntries = entries.sortedByDescending { it.first.dateModifiedSec }
-            val firstItem = sortedEntries.first().first
-            val pathHint = sortedEntries.first().second
-            VideoFolder(
-                bucketId = bucketId,
-                name = firstItem.folderName,
-                pathHint = pathHint,
-                videoCount = sortedEntries.size,
-                totalSizeBytes = sortedEntries.sumOf { it.first.sizeBytes },
-                latestModifiedSec = sortedEntries.maxOf { it.first.dateModifiedSec },
-                previewVideoId = firstItem.id,
-                previewUri = firstItem.uriString
-            )
-        }.sortedBy { it.name.lowercase() }
-
-        val byFolder = folderMetaMap.mapValues { (_, entries) ->
-            entries.map { it.first }.sortedByDescending { it.dateModifiedSec }
-        }
-        val allVideos = byFolder.values.flatten()
-        VideoLibrarySnapshot(
-            folders = folders,
-            videosByFolder = byFolder,
-            allVideos = allVideos
-        )
-    }
-
-    private fun queryMediaCollection(
-        collection: Uri,
-        isFilesTable: Boolean,
-        seenIds: HashSet<Long>,
-        folderMetaMap: LinkedHashMap<Long, MutableList<Pair<VideoItem, String>>>
-    ) {
-        val pathColumn = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            MediaStore.MediaColumns.RELATIVE_PATH
+        val relPathCol = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            MediaStore.Video.Media.RELATIVE_PATH
         } else {
             @Suppress("DEPRECATION")
-            MediaStore.MediaColumns.DATA
+            MediaStore.Video.Media.DATA
         }
 
         val projection = arrayOf(
-            MediaStore.MediaColumns._ID,
-            MediaStore.MediaColumns.DISPLAY_NAME,
-            MediaStore.MediaColumns.TITLE,
-            MediaStore.MediaColumns.BUCKET_ID,
-            MediaStore.MediaColumns.BUCKET_DISPLAY_NAME,
-            MediaStore.MediaColumns.DURATION,
-            MediaStore.MediaColumns.SIZE,
-            MediaStore.MediaColumns.WIDTH,
-            MediaStore.MediaColumns.HEIGHT,
-            MediaStore.MediaColumns.DATE_MODIFIED,
-            MediaStore.MediaColumns.MIME_TYPE,
-            pathColumn
+            MediaStore.Video.Media._ID,
+            MediaStore.Video.Media.DISPLAY_NAME,
+            MediaStore.Video.Media.TITLE,
+            MediaStore.Video.Media.BUCKET_ID,
+            MediaStore.Video.Media.BUCKET_DISPLAY_NAME,
+            relPathCol,
+            @Suppress("DEPRECATION")
+            MediaStore.Video.Media.DATA,
+            MediaStore.Video.Media.DURATION,
+            MediaStore.Video.Media.SIZE,
+            MediaStore.Video.Media.WIDTH,
+            MediaStore.Video.Media.HEIGHT,
+            MediaStore.Video.Media.DATE_MODIFIED,
+            MediaStore.Video.Media.MIME_TYPE
         )
-
-        val sortOrder = "${MediaStore.MediaColumns.DATE_MODIFIED} DESC"
 
         runCatching {
             context.contentResolver.query(
@@ -147,188 +104,78 @@ class VideoLibraryRepository(private val context: Context) {
                 projection,
                 null,
                 null,
-                sortOrder
+                "${MediaStore.Video.Media.DATE_MODIFIED} DESC"
             )?.use { cursor ->
-                val idCol = cursor.getColumnIndex(MediaStore.MediaColumns._ID)
-                val displayNameCol = cursor.getColumnIndex(MediaStore.MediaColumns.DISPLAY_NAME)
-                val titleCol = cursor.getColumnIndex(MediaStore.MediaColumns.TITLE)
-                val bucketIdCol = cursor.getColumnIndex(MediaStore.MediaColumns.BUCKET_ID)
-                val bucketNameCol = cursor.getColumnIndex(MediaStore.MediaColumns.BUCKET_DISPLAY_NAME)
-                val durationCol = cursor.getColumnIndex(MediaStore.MediaColumns.DURATION)
-                val sizeCol = cursor.getColumnIndex(MediaStore.MediaColumns.SIZE)
-                val widthCol = cursor.getColumnIndex(MediaStore.MediaColumns.WIDTH)
-                val heightCol = cursor.getColumnIndex(MediaStore.MediaColumns.HEIGHT)
-                val modifiedCol = cursor.getColumnIndex(MediaStore.MediaColumns.DATE_MODIFIED)
-                val mimeCol = cursor.getColumnIndex(MediaStore.MediaColumns.MIME_TYPE)
-                val pathCol = cursor.getColumnIndex(pathColumn)
-
-                if (idCol < 0) return@use
+                val idIdx = cursor.getColumnIndexOrThrow(MediaStore.Video.Media._ID)
+                val nameIdx = cursor.getColumnIndexOrThrow(MediaStore.Video.Media.DISPLAY_NAME)
+                val titleIdx = cursor.getColumnIndexOrThrow(MediaStore.Video.Media.TITLE)
+                val bucketIdIdx = cursor.getColumnIndexOrThrow(MediaStore.Video.Media.BUCKET_ID)
+                val bucketNameIdx = cursor.getColumnIndexOrThrow(MediaStore.Video.Media.BUCKET_DISPLAY_NAME)
+                val relIdx = cursor.getColumnIndex(relPathCol)
+                @Suppress("DEPRECATION")
+                val dataIdx = cursor.getColumnIndex(MediaStore.Video.Media.DATA)
+                val durIdx = cursor.getColumnIndexOrThrow(MediaStore.Video.Media.DURATION)
+                val sizeIdx = cursor.getColumnIndexOrThrow(MediaStore.Video.Media.SIZE)
+                val widthIdx = cursor.getColumnIndexOrThrow(MediaStore.Video.Media.WIDTH)
+                val heightIdx = cursor.getColumnIndexOrThrow(MediaStore.Video.Media.HEIGHT)
+                val modIdx = cursor.getColumnIndexOrThrow(MediaStore.Video.Media.DATE_MODIFIED)
+                val mimeIdx = cursor.getColumnIndexOrThrow(MediaStore.Video.Media.MIME_TYPE)
 
                 while (cursor.moveToNext()) {
-                    val id = cursor.getLong(idCol)
-                    if (!seenIds.add(id)) continue
-
-                    val displayName = if (displayNameCol >= 0) {
-                        cursor.getString(displayNameCol) ?: "video_$id"
+                    val id = cursor.getLong(idIdx)
+                    val displayName = cursor.getString(nameIdx) ?: "Video_$id.mp4"
+                    val title = cursor.getString(titleIdx)?.takeIf { it.isNotBlank() }
+                        ?: displayName.substringBeforeLast('.')
+                    val filePath = if (dataIdx >= 0) cursor.getString(dataIdx) else null
+                    val rawRel = if (relIdx >= 0) cursor.getString(relIdx) else null
+                    val relativePath = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                        rawRel ?: "Movies/"
                     } else {
-                        "video_$id"
-                    }
-                    val mimeType = if (mimeCol >= 0) cursor.getString(mimeCol) ?: "" else ""
-                    val ext = displayName.substringAfterLast('.', "").lowercase()
-
-                    if (isFilesTable) {
-                        val isVideoMime = mimeType.startsWith("video/", ignoreCase = true)
-                        val isVideoExt = ext in supportedVideoExtensions
-                        if (!isVideoMime && !isVideoExt) {
-                            seenIds.remove(id)
-                            continue
-                        }
+                        File(filePath ?: "").parentFile?.name?.let { "$it/" } ?: "Movies/"
                     }
 
-                    val size = if (sizeCol >= 0) cursor.getLong(sizeCol).coerceAtLeast(0L) else 0L
-                    if (size == 0L && isFilesTable) continue
-
-                    val rawPath = if (pathCol >= 0) cursor.getString(pathCol) ?: "" else ""
-                    val derivedFolderName = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                        rawPath.trimEnd('/').substringAfterLast('/', "").ifBlank { "Internal Storage" }
-                    } else {
-                        rawPath.substringBeforeLast('/', "").substringAfterLast('/', "").ifBlank { "Internal Storage" }
+                    if (!showHiddenFiles && (displayName.startsWith(".") || relativePath.split('/').any { it.startsWith(".") })) {
+                        continue
                     }
 
-                    val rawBucketName = if (bucketNameCol >= 0) cursor.getString(bucketNameCol) else null
-                    val folderName = rawBucketName?.takeIf { it.isNotBlank() } ?: derivedFolderName
-
-                    val rawBucketId = if (bucketIdCol >= 0) cursor.getLong(bucketIdCol) else 0L
-                    val bucketId = if (rawBucketId != 0L) rawBucketId else folderName.lowercase().hashCode().toLong()
-
-                    val pathHint = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                        rawPath.trimEnd('/').ifBlank { folderName }
-                    } else {
-                        rawPath.substringBeforeLast('/', folderName)
-                    }
-
-                    val title = if (titleCol >= 0) {
-                        cursor.getString(titleCol)?.takeIf { it.isNotBlank() }
-                            ?: displayName.substringBeforeLast('.')
-                    } else {
-                        displayName.substringBeforeLast('.')
-                    }
-
-                    val duration = if (durationCol >= 0) cursor.getLong(durationCol).coerceAtLeast(0L) else 0L
-                    val width = if (widthCol >= 0) cursor.getInt(widthCol).coerceAtLeast(0) else 0
-                    val height = if (heightCol >= 0) cursor.getInt(heightCol).coerceAtLeast(0) else 0
-                    val modified = if (modifiedCol >= 0) cursor.getLong(modifiedCol).coerceAtLeast(0L) else 0L
+                    val bucketId = cursor.getString(bucketIdIdx) ?: relativePath
+                    val folderName = cursor.getString(bucketNameIdx)?.takeIf { it.isNotBlank() }
+                        ?: relativePath.trim('/').substringAfterLast('/').ifBlank { "Internal Storage" }
 
                     val contentUri = ContentUris.withAppendedId(
-                        if (isFilesTable && !mimeType.startsWith("video/", ignoreCase = true)) {
-                            MediaStore.Files.getContentUri("external")
-                        } else {
-                            MediaStore.Video.Media.EXTERNAL_CONTENT_URI
-                        },
+                        MediaStore.Video.Media.EXTERNAL_CONTENT_URI,
                         id
-                    ).toString()
+                    )
 
-                    val item = VideoItem(
+                    result += VideoItem(
                         id = id,
-                        uriString = contentUri,
+                        uriString = contentUri.toString(),
                         title = title,
                         displayName = displayName,
                         bucketId = bucketId,
                         folderName = folderName,
-                        relativePath = pathHint,
-                        durationMs = duration,
-                        sizeBytes = size,
-                        width = width,
-                        height = height,
-                        dateModifiedSec = modified,
-                        mimeType = mimeType.ifBlank { "video/*" }
+                        relativePath = relativePath,
+                        filePath = filePath,
+                        durationMs = cursor.getLong(durIdx),
+                        sizeBytes = cursor.getLong(sizeIdx),
+                        width = cursor.getInt(widthIdx),
+                        height = cursor.getInt(heightIdx),
+                        dateModifiedSec = cursor.getLong(modIdx),
+                        mimeType = cursor.getString(mimeIdx) ?: "video/mp4"
                     )
-                    folderMetaMap.getOrPut(bucketId) { mutableListOf() }.add(item to pathHint)
                 }
             }
-        }
+        }.onFailure { Log.w("VideoLibraryRepo", "Query MediaStore failed", it) }
+
+        return result
     }
 
-    suspend fun deleteVideos(videos: List<VideoItem>): MediaFileOpResult = withContext(Dispatchers.IO) {
-        if (videos.isEmpty()) return@withContext MediaFileOpResult.Error("No videos selected.")
-        val previewVideos = videos.filter { resolvePreviewFile(it.uriString) != null }
-        if (previewVideos.size == videos.size) {
-            val deletedUris = mutableListOf<String>()
-            previewVideos.forEach { video ->
-                val file = resolvePreviewFile(video.uriString)
-                if (file != null && file.exists() && file.delete()) {
-                    deletedUris.add(video.uriString)
-                }
-            }
-            return@withContext if (deletedUris.isNotEmpty()) {
-                MediaFileOpResult.Success("Deleted ${deletedUris.size} video(s)", deletedUris)
-            } else {
-                MediaFileOpResult.Error("Could not delete video(s).")
-            }
-        }
-        val uris = videos.mapNotNull { runCatching { Uri.parse(it.uriString) }.getOrNull() }
-        if (uris.isEmpty()) return@withContext MediaFileOpResult.Error("Invalid video URI.")
-
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-            // Try direct delete first; if any require user approval, launch system delete dialog
-            val remaining = mutableListOf<Uri>()
-            val deletedUris = mutableListOf<String>()
-            for (video in videos) {
-                val uri = Uri.parse(video.uriString)
-                val deleted = runCatching { context.contentResolver.delete(uri, null, null) }.getOrDefault(0)
-                if (deleted > 0) {
-                    deletedUris.add(video.uriString)
-                } else {
-                    remaining.add(uri)
-                }
-            }
-            if (remaining.isEmpty()) {
-                return@withContext MediaFileOpResult.Success(
-                    "Deleted ${deletedUris.size} video(s)",
-                    deletedUris
-                )
-            }
-            return@withContext runCatching {
-                val pi = MediaStore.createDeleteRequest(context.contentResolver, remaining)
-                MediaFileOpResult.NeedsPermission(pi.intentSender, PendingMediaOp.DeleteVideos(videos))
-            }.getOrElse {
-                MediaFileOpResult.Error(it.localizedMessage ?: "Failed to request delete permission.")
-            }
-        }
-
-        // API 24–29
-        try {
-            val deletedUris = mutableListOf<String>()
-            for (video in videos) {
-                val uri = Uri.parse(video.uriString)
-                val rows = context.contentResolver.delete(uri, null, null)
-                if (rows > 0) {
-                    deletedUris.add(video.uriString)
-                }
-            }
-            if (deletedUris.isNotEmpty()) {
-                MediaFileOpResult.Success("Deleted ${deletedUris.size} video(s)", deletedUris)
-            } else {
-                MediaFileOpResult.Error("Could not delete video(s).")
-            }
-        } catch (sec: SecurityException) {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q && sec is RecoverableSecurityException) {
-                MediaFileOpResult.NeedsPermission(
-                    sec.userAction.actionIntent.intentSender,
-                    PendingMediaOp.DeleteVideos(videos)
-                )
-            } else {
-                MediaFileOpResult.Error(sec.localizedMessage ?: "Storage permission denied.")
-            }
-        } catch (e: Exception) {
-            MediaFileOpResult.Error(e.localizedMessage ?: "Delete failed.")
-        }
-    }
-
-    suspend fun renameVideo(video: VideoItem, newTitleInput: String): MediaFileOpResult =
+    suspend fun renameVideo(video: VideoItem, newTitleInput: String): MediaMutationOutcome =
         withContext(Dispatchers.IO) {
             val cleanBase = newTitleInput.trim().replace(Regex("[\\\\/:*?\"<>|]"), "_")
-            if (cleanBase.isBlank()) return@withContext MediaFileOpResult.Error("Name cannot be empty.")
+            if (cleanBase.isBlank()) {
+                return@withContext MediaMutationOutcome.Failure("Name cannot be empty.")
+            }
 
             val ext = video.displayName.substringAfterLast('.', "")
             val newDisplayName = if (ext.isNotBlank() && !cleanBase.endsWith(".$ext", ignoreCase = true)) {
@@ -336,390 +183,260 @@ class VideoLibraryRepository(private val context: Context) {
             } else {
                 cleanBase
             }
-            val newTitle = newDisplayName.substringBeforeLast('.')
-            val previewFile = resolvePreviewFile(video.uriString)
-            if (previewFile != null && previewFile.exists()) {
-                val dest = File(previewFile.parentFile, newDisplayName)
-                return@withContext if (previewFile.renameTo(dest)) {
-                    MediaFileOpResult.Success("Renamed to $newDisplayName", listOf(video.uriString))
+
+            val uri = Uri.parse(video.uriString)
+            if (uri.scheme == "file" || video.bucketId.startsWith("preview_")) {
+                val srcFile = File(video.filePath ?: uri.path ?: "")
+                if (!srcFile.exists()) {
+                    return@withContext MediaMutationOutcome.Failure("Source file not found.")
+                }
+                val dstFile = File(srcFile.parentFile, newDisplayName)
+                return@withContext if (srcFile.renameTo(dstFile)) {
+                    MediaMutationOutcome.Success(1, "Renamed to $newDisplayName")
                 } else {
-                    MediaFileOpResult.Error("Unable to rename preview video.")
+                    MediaMutationOutcome.Failure("Could not rename file.")
                 }
             }
-            val uri = Uri.parse(video.uriString)
 
-            try {
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                    val values = ContentValues().apply {
-                        put(MediaStore.MediaColumns.DISPLAY_NAME, newDisplayName)
-                        put(MediaStore.MediaColumns.TITLE, newTitle)
-                    }
-                    val updated = context.contentResolver.update(uri, values, null, null)
-                    if (updated > 0) {
-                        MediaFileOpResult.Success("Renamed to $newDisplayName", listOf(video.uriString))
-                    } else {
-                        MediaFileOpResult.Error("Rename was not applied by system.")
-                    }
+            val values = ContentValues().apply {
+                put(MediaStore.Video.Media.DISPLAY_NAME, newDisplayName)
+                put(MediaStore.Video.Media.TITLE, newDisplayName.substringBeforeLast('.'))
+            }
+
+            return@withContext try {
+                val updated = context.contentResolver.update(uri, values, null, null)
+                if (updated > 0) {
+                    MediaMutationOutcome.Success(1, "Renamed to $newDisplayName")
+                } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                    val pending = MediaStore.createWriteRequest(context.contentResolver, listOf(uri))
+                    MediaMutationOutcome.NeedsPermission(pending.intentSender)
                 } else {
-                    val legacyPath = queryLegacyFilePath(uri)
-                    if (legacyPath != null) {
-                        val src = File(legacyPath)
-                        val dest = File(src.parentFile, newDisplayName)
-                        if (src.exists() && src.renameTo(dest)) {
-                            val values = ContentValues().apply {
-                                @Suppress("DEPRECATION")
-                                put(MediaStore.MediaColumns.DATA, dest.absolutePath)
-                                put(MediaStore.MediaColumns.DISPLAY_NAME, newDisplayName)
-                                put(MediaStore.MediaColumns.TITLE, newTitle)
-                            }
-                            context.contentResolver.update(uri, values, null, null)
-                            MediaScannerConnection.scanFile(context, arrayOf(dest.absolutePath), null, null)
-                            MediaFileOpResult.Success("Renamed to $newDisplayName", listOf(video.uriString))
-                        } else {
-                            MediaFileOpResult.Error("Unable to rename file on storage.")
-                        }
-                    } else {
-                        MediaFileOpResult.Error("File path unavailable.")
-                    }
+                    MediaMutationOutcome.Failure("Rename was blocked by storage permissions.")
                 }
             } catch (sec: SecurityException) {
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-                    val pi = MediaStore.createWriteRequest(context.contentResolver, listOf(uri))
-                    MediaFileOpResult.NeedsPermission(
-                        pi.intentSender,
-                        PendingMediaOp.RenameVideo(video, cleanBase)
-                    )
-                } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q && sec is RecoverableSecurityException) {
-                    MediaFileOpResult.NeedsPermission(
-                        sec.userAction.actionIntent.intentSender,
-                        PendingMediaOp.RenameVideo(video, cleanBase)
-                    )
-                } else {
-                    MediaFileOpResult.Error(sec.localizedMessage ?: "Permission required to rename.")
-                }
-            } catch (e: Exception) {
-                MediaFileOpResult.Error(e.localizedMessage ?: "Rename failed.")
+                createWritePermissionOutcome(sec, listOf(uri))
+            } catch (ex: Exception) {
+                MediaMutationOutcome.Failure(ex.message ?: "Rename failed.")
             }
         }
 
     suspend fun moveVideos(
         videos: List<VideoItem>,
         targetRelativePathInput: String
-    ): MediaFileOpResult = withContext(Dispatchers.IO) {
-        if (videos.isEmpty()) return@withContext MediaFileOpResult.Error("No videos selected.")
-        val previewVideos = videos.filter { resolvePreviewFile(it.uriString) != null }
+    ): MediaMutationOutcome = withContext(Dispatchers.IO) {
+        if (videos.isEmpty()) {
+            return@withContext MediaMutationOutcome.Failure("No videos selected.")
+        }
+
+        val cleanPath = targetRelativePathInput.trim()
+            .trim('/')
+            .replace('\\', '/')
+            .replace(Regex("[:*?\"<>|]"), "_")
+            .ifBlank { "Movies/Moved" }
+
+        val previewVideos = videos.filter { it.bucketId.startsWith("preview_") || Uri.parse(it.uriString).scheme == "file" }
         if (previewVideos.size == videos.size) {
-            val folderSeg = targetRelativePathInput.trim().trim('/').replace(Regex("[\\\\:*?\"<>|]"), "_")
-                .substringAfterLast('/')
-                .ifBlank { "Movies" }
-            val targetDir = File(previewRootDir(), folderSeg).apply { mkdirs() }
-            val movedUris = mutableListOf<String>()
-            previewVideos.forEach { video ->
-                val src = resolvePreviewFile(video.uriString)
-                if (src != null && src.exists()) {
-                    val dest = File(targetDir, src.name)
-                    if (src.absolutePath == dest.absolutePath || src.renameTo(dest) || copyFileFallback(src, dest)) {
-                        movedUris.add(video.uriString)
+            val basePreviewDir = File(context.filesDir, "preview_videos")
+            val destFolder = File(basePreviewDir, cleanPath).apply { mkdirs() }
+            var moved = 0
+            for (v in previewVideos) {
+                val src = File(v.filePath ?: Uri.parse(v.uriString).path ?: "")
+                if (src.exists()) {
+                    val dst = uniqueTargetFile(destFolder, v.displayName)
+                    if (src.renameTo(dst) || runCatching { src.copyTo(dst, overwrite = false); src.delete() }.getOrDefault(false)) {
+                        moved++
                     }
                 }
             }
-            return@withContext if (movedUris.isNotEmpty()) {
-                MediaFileOpResult.Success("Moved ${movedUris.size} video(s) to $folderSeg", movedUris)
+            return@withContext if (moved > 0) {
+                MediaMutationOutcome.Success(moved, "Moved $moved video(s) to $cleanPath")
             } else {
-                MediaFileOpResult.Error("Could not move selected video(s).")
+                MediaMutationOutcome.Failure("Could not move preview file.")
             }
         }
-        val normalizedRelPath = normalizeTargetRelativePath(targetRelativePathInput)
-        val uris = videos.map { Uri.parse(it.uriString) }
 
-        try {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                var movedCount = 0
-                val movedUris = mutableListOf<String>()
-                for (video in videos) {
-                    val uri = Uri.parse(video.uriString)
-                    val values = ContentValues().apply {
-                        put(MediaStore.MediaColumns.RELATIVE_PATH, normalizedRelPath)
-                    }
-                    val updated = context.contentResolver.update(uri, values, null, null)
-                    if (updated > 0) {
-                        movedCount++
-                        movedUris.add(video.uriString)
-                    } else {
-                        // Fallback: copy to target MediaStore relative path and delete source
-                        val copied = copyToTargetMediaStore(video, normalizedRelPath)
-                        if (copied) {
-                            context.contentResolver.delete(uri, null, null)
-                            movedCount++
-                            movedUris.add(video.uriString)
-                        }
-                    }
-                }
-                if (movedCount > 0) {
-                    MediaFileOpResult.Success(
-                        "Moved $movedCount video(s) to ${normalizedRelPath.trimEnd('/')}",
-                        movedUris
-                    )
-                } else {
-                    MediaFileOpResult.Error("Could not move selected video(s).")
-                }
-            } else {
-                // Legacy API 24–28 file move
-                @Suppress("DEPRECATION")
-                val extRoot = Environment.getExternalStorageDirectory()
-                val destDir = File(extRoot, normalizedRelPath.trim('/')).apply { mkdirs() }
-                var movedCount = 0
-                val movedUris = mutableListOf<String>()
-                val pathsToScan = mutableListOf<String>()
-
-                for (video in videos) {
-                    val uri = Uri.parse(video.uriString)
-                    val srcPath = queryLegacyFilePath(uri) ?: continue
-                    val srcFile = File(srcPath)
-                    val destFile = File(destDir, srcFile.name)
-                    if (srcFile.exists() && (srcFile.renameTo(destFile) || copyFileFallback(srcFile, destFile))) {
-                        val values = ContentValues().apply {
-                            @Suppress("DEPRECATION")
-                            put(MediaStore.MediaColumns.DATA, destFile.absolutePath)
-                        }
-                        context.contentResolver.update(uri, values, null, null)
-                        pathsToScan.add(destFile.absolutePath)
-                        movedCount++
-                        movedUris.add(video.uriString)
-                    }
-                }
-                if (pathsToScan.isNotEmpty()) {
-                    MediaScannerConnection.scanFile(context, pathsToScan.toTypedArray(), null, null)
-                }
-                if (movedCount > 0) {
-                    MediaFileOpResult.Success(
-                        "Moved $movedCount video(s) to ${normalizedRelPath.trimEnd('/')}",
-                        movedUris
-                    )
-                } else {
-                    MediaFileOpResult.Error("Move failed on storage.")
-                }
-            }
-        } catch (sec: SecurityException) {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-                val pi = MediaStore.createWriteRequest(context.contentResolver, uris)
-                MediaFileOpResult.NeedsPermission(
-                    pi.intentSender,
-                    PendingMediaOp.MoveVideos(videos, normalizedRelPath)
-                )
-            } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q && sec is RecoverableSecurityException) {
-                MediaFileOpResult.NeedsPermission(
-                    sec.userAction.actionIntent.intentSender,
-                    PendingMediaOp.MoveVideos(videos, normalizedRelPath)
-                )
-            } else {
-                MediaFileOpResult.Error(sec.localizedMessage ?: "Permission required to move.")
-            }
-        } catch (e: Exception) {
-            MediaFileOpResult.Error(e.localizedMessage ?: "Failed to move video(s).")
-        }
-    }
-
-    private fun copyToTargetMediaStore(video: VideoItem, relativePath: String): Boolean {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) return false
-        return runCatching {
-            val resolver = context.contentResolver
-            val values = ContentValues().apply {
-                put(MediaStore.Video.Media.DISPLAY_NAME, video.displayName)
-                put(MediaStore.Video.Media.TITLE, video.title)
-                put(MediaStore.Video.Media.MIME_TYPE, video.mimeType.ifBlank { "video/mp4" })
-                put(MediaStore.Video.Media.RELATIVE_PATH, relativePath)
-                put(MediaStore.Video.Media.IS_PENDING, 1)
-            }
-            val destUri = resolver.insert(MediaStore.Video.Media.EXTERNAL_CONTENT_URI, values)
-                ?: return false
-            resolver.openInputStream(Uri.parse(video.uriString))?.use { input ->
-                resolver.openOutputStream(destUri)?.use { output ->
-                    input.copyTo(output)
-                }
-            }
-            values.clear()
-            values.put(MediaStore.Video.Media.IS_PENDING, 0)
-            resolver.update(destUri, values, null, null)
-            true
-        }.getOrDefault(false)
-    }
-
-    private fun copyFileFallback(src: File, dest: File): Boolean {
-        return runCatching {
-            src.inputStream().use { input ->
-                dest.outputStream().use { output ->
-                    input.copyTo(output)
-                }
-            }
-            src.delete()
-            true
-        }.getOrDefault(false)
-    }
-
-    private fun normalizeTargetRelativePath(raw: String): String {
-        val trimmed = raw.trim().trim('/')
-        if (trimmed.isBlank()) return "${Environment.DIRECTORY_MOVIES}/"
-        val top = trimmed.substringBefore('/')
-        val allowedRoots = setOf(
-            Environment.DIRECTORY_MOVIES,
-            Environment.DIRECTORY_DCIM,
-            Environment.DIRECTORY_DOWNLOADS,
-            Environment.DIRECTORY_PICTURES
-        )
-        val finalPath = if (allowedRoots.any { it.equals(top, ignoreCase = true) }) {
-            trimmed
+        val hasAllFilesAccess = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            Environment.isExternalStorageManager()
         } else {
-            "${Environment.DIRECTORY_MOVIES}/$trimmed"
+            true
         }
-        return "$finalPath/"
+
+        // Strategy 1: When All Files Access is granted (or pre-Android 11), move directly via filesystem + MediaScanner
+        // so ANY target directory on primary storage works without SAF "primary directory not allowed" errors.
+        if (hasAllFilesAccess) {
+            val destDir = File(Environment.getExternalStorageDirectory(), cleanPath)
+            if (!destDir.exists()) destDir.mkdirs()
+
+            var movedCount = 0
+            val scannedPaths = mutableListOf<String>()
+            for (video in videos) {
+                val srcPath = video.filePath ?: queryFilePath(Uri.parse(video.uriString))
+                if (!srcPath.isNullOrBlank()) {
+                    val srcFile = File(srcPath)
+                    if (srcFile.exists()) {
+                        val dstFile = uniqueTargetFile(destDir, video.displayName)
+                        val moved = runCatching {
+                            if (srcFile.renameTo(dstFile)) {
+                                true
+                            } else {
+                                srcFile.inputStream().use { input ->
+                                    dstFile.outputStream().use { output -> input.copyTo(output) }
+                                }
+                                srcFile.delete()
+                            }
+                        }.getOrDefault(false)
+
+                        if (moved) {
+                            runCatching { context.contentResolver.delete(Uri.parse(video.uriString), null, null) }
+                            scannedPaths += dstFile.absolutePath
+                            movedCount++
+                        }
+                    }
+                }
+            }
+
+            if (scannedPaths.isNotEmpty()) {
+                MediaScannerConnection.scanFile(context, scannedPaths.toTypedArray(), null, null)
+            }
+            if (movedCount > 0) {
+                return@withContext MediaMutationOutcome.Success(
+                    movedCount,
+                    "Moved $movedCount video(s) to $cleanPath"
+                )
+            }
+        }
+
+        // Strategy 2: On Android 10+ (API 29+) without MANAGE_EXTERNAL_STORAGE, check if path is in a Scoped-Storage-allowed media root
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            val allowedRoots = listOf("Movies", "DCIM", "Download", "Downloads", "Pictures")
+            val topSeg = cleanPath.substringBefore('/').trim()
+            val isAllowedScopedRoot = allowedRoots.any { it.equals(topSeg, ignoreCase = true) }
+
+            if (!isAllowedScopedRoot && Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                // Instead of launching broken SAF primary: root (which triggers "primary directory not allowed"),
+                // prompt the user cleanly for File Management permission OR quick move to Movies/<folder>.
+                return@withContext MediaMutationOutcome.NeedsAllFilesAccess(cleanPath)
+            }
+
+            val normalizedRelPath = if (topSeg.equals("Downloads", ignoreCase = true)) {
+                "Download/" + cleanPath.substringAfter('/', "").trim('/')
+            } else {
+                cleanPath
+            }.trimEnd('/') + "/"
+
+            val uris = videos.map { Uri.parse(it.uriString) }
+            val values = ContentValues().apply {
+                put(MediaStore.Video.Media.RELATIVE_PATH, normalizedRelPath)
+            }
+
+            var movedCount = 0
+            for (uri in uris) {
+                try {
+                    val updated = context.contentResolver.update(uri, values, null, null)
+                    if (updated > 0) movedCount++
+                } catch (sec: SecurityException) {
+                    return@withContext createWritePermissionOutcome(sec, uris)
+                } catch (argEx: IllegalArgumentException) {
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                        return@withContext MediaMutationOutcome.NeedsAllFilesAccess(cleanPath)
+                    }
+                    return@withContext MediaMutationOutcome.Failure(
+                        argEx.message ?: "Cannot move directly to this folder."
+                    )
+                } catch (ex: Exception) {
+                    return@withContext MediaMutationOutcome.Failure(ex.message ?: "Move failed.")
+                }
+            }
+
+            return@withContext if (movedCount > 0) {
+                MediaMutationOutcome.Success(movedCount, "Moved $movedCount video(s) to ${cleanPath.substringAfterLast('/')}")
+            } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                MediaMutationOutcome.NeedsAllFilesAccess(cleanPath)
+            } else {
+                MediaMutationOutcome.Failure("Could not move selected video(s).")
+            }
+        }
+
+        return@withContext MediaMutationOutcome.NeedsAllFilesAccess(cleanPath)
     }
 
-    private fun queryLegacyFilePath(uri: Uri): String? {
+    suspend fun deleteVideos(videos: List<VideoItem>): MediaMutationOutcome = withContext(Dispatchers.IO) {
+        if (videos.isEmpty()) return@withContext MediaMutationOutcome.Failure("No videos selected.")
+
+        val previewVideos = videos.filter { it.bucketId.startsWith("preview_") || Uri.parse(it.uriString).scheme == "file" }
+        if (previewVideos.size == videos.size) {
+            var deleted = 0
+            for (v in previewVideos) {
+                val f = File(v.filePath ?: Uri.parse(v.uriString).path ?: "")
+                if (f.exists() && f.delete()) deleted++
+            }
+            return@withContext MediaMutationOutcome.Success(deleted, "Deleted $deleted video(s)")
+        }
+
+        val uris = videos.map { Uri.parse(it.uriString) }
+        var deletedCount = 0
+        for (uri in uris) {
+            try {
+                val count = context.contentResolver.delete(uri, null, null)
+                if (count > 0) deletedCount++
+            } catch (sec: SecurityException) {
+                return@withContext if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                    val pending = MediaStore.createDeleteRequest(context.contentResolver, uris)
+                    MediaMutationOutcome.NeedsPermission(pending.intentSender)
+                } else {
+                    createWritePermissionOutcome(sec, uris)
+                }
+            } catch (ex: Exception) {
+                return@withContext MediaMutationOutcome.Failure(ex.message ?: "Delete failed.")
+            }
+        }
+        if (deletedCount == 0 && Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            val pending = MediaStore.createDeleteRequest(context.contentResolver, uris)
+            return@withContext MediaMutationOutcome.NeedsPermission(pending.intentSender)
+        }
+        return@withContext MediaMutationOutcome.Success(deletedCount, "Deleted $deletedCount video(s)")
+    }
+
+    private fun createWritePermissionOutcome(
+        sec: SecurityException,
+        uris: List<Uri>
+    ): MediaMutationOutcome {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            val pending = MediaStore.createWriteRequest(context.contentResolver, uris)
+            return MediaMutationOutcome.NeedsPermission(pending.intentSender)
+        }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q && sec is RecoverableSecurityException) {
+            return MediaMutationOutcome.NeedsPermission(sec.userAction.actionIntent.intentSender)
+        }
+        return MediaMutationOutcome.Failure(sec.message ?: "Storage permission required.")
+    }
+
+    @Suppress("DEPRECATION")
+    private fun queryFilePath(uri: Uri): String? {
         return runCatching {
-            @Suppress("DEPRECATION")
-            val proj = arrayOf(MediaStore.MediaColumns.DATA)
-            context.contentResolver.query(uri, proj, null, null, null)?.use { c ->
+            context.contentResolver.query(
+                uri,
+                arrayOf(MediaStore.Video.Media.DATA),
+                null,
+                null,
+                null
+            )?.use { c ->
                 if (c.moveToFirst()) c.getString(0) else null
             }
         }.getOrNull()
     }
 
-    private fun previewRootDir(): File = File(context.filesDir, "preview_videos")
-
-    private fun resolvePreviewFile(uriString: String): File? {
-        val uri = runCatching { Uri.parse(uriString) }.getOrNull() ?: return null
-        if (uri.authority != "${context.packageName}.fileprovider") return null
-        val path = uri.path ?: return null
-        if (!path.startsWith("/preview_videos/")) return null
-        val rel = path.removePrefix("/preview_videos/").trimStart('/')
-        if (rel.isBlank()) return null
-        val root = previewRootDir().canonicalFile
-        val candidate = File(root, rel).canonicalFile
-        return if (candidate.path.startsWith(root.path + File.separator)) candidate else null
-    }
-
-    private fun seedPreviewAssetsIfNeeded() {
-        val root = previewRootDir()
-        val marker = File(root, ".seeded")
-        if (marker.exists()) return
-        root.mkdirs()
-        val assetFolders = runCatching { context.assets.list("preview_videos").orEmpty() }.getOrDefault(emptyArray())
-        assetFolders.forEach { folder ->
-            val files = runCatching { context.assets.list("preview_videos/$folder").orEmpty() }
-                .getOrDefault(emptyArray())
-            val targetDir = File(root, folder).apply { mkdirs() }
-            files.forEach { fileName ->
-                val outFile = File(targetDir, fileName)
-                if (!outFile.exists()) {
-                    runCatching {
-                        context.assets.open("preview_videos/$folder/$fileName").use { input ->
-                            outFile.outputStream().use { output ->
-                                input.copyTo(output)
-                            }
-                        }
-                    }
-                }
-            }
+    private fun uniqueTargetFile(dir: File, displayName: String): File {
+        var candidate = File(dir, displayName)
+        if (!candidate.exists()) return candidate
+        val base = displayName.substringBeforeLast('.')
+        val ext = displayName.substringAfterLast('.', "")
+        var idx = 1
+        while (candidate.exists()) {
+            val nextName = if (ext.isNotBlank()) "${base}_$idx.$ext" else "${base}_$idx"
+            candidate = File(dir, nextName)
+            idx++
         }
-        runCatching { marker.writeText("1") }
-    }
-
-    private fun loadPreviewLibrary(
-        folderMetaMap: LinkedHashMap<Long, MutableList<Pair<VideoItem, String>>>
-    ) {
-        seedPreviewAssetsIfNeeded()
-        val root = previewRootDir()
-        if (!root.exists()) return
-
-        val files = root.walkTopDown()
-            .filter { it.isFile && it.extension.lowercase() in supportedVideoExtensions }
-            .toList()
-
-        val authority = "${context.packageName}.fileprovider"
-        val retriever = MediaMetadataRetriever()
-        try {
-            files.forEach { file ->
-                val folderName = file.parentFile?.takeIf { it != root }?.name ?: "Preview"
-                val bucketId = folderName.lowercase().hashCode().toLong()
-                val uri = runCatching { FileProvider.getUriForFile(context, authority, file) }.getOrNull()
-                    ?: return@forEach
-
-                var durationMs = 0L
-                var width = 0
-                var height = 0
-                runCatching {
-                    retriever.setDataSource(file.absolutePath)
-                    durationMs = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)
-                        ?.toLongOrNull()?.coerceAtLeast(0L) ?: 0L
-                    width = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_WIDTH)
-                        ?.toIntOrNull()?.coerceAtLeast(0) ?: 0
-                    height = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_HEIGHT)
-                        ?.toIntOrNull()?.coerceAtLeast(0) ?: 0
-                }
-
-                val displayName = file.name
-                val title = displayName.substringBeforeLast('.').replace('_', ' ')
-                val id = (file.absolutePath.hashCode().toLong() and 0x7FFFFFFFL)
-                val pathHint = "Movies/$folderName"
-
-                val item = VideoItem(
-                    id = id,
-                    uriString = uri.toString(),
-                    title = title,
-                    displayName = displayName,
-                    bucketId = bucketId,
-                    folderName = folderName,
-                    relativePath = pathHint,
-                    durationMs = durationMs,
-                    sizeBytes = file.length().coerceAtLeast(0L),
-                    width = width,
-                    height = height,
-                    dateModifiedSec = (file.lastModified() / 1000L).coerceAtLeast(0L),
-                    mimeType = "video/mp4"
-                )
-                folderMetaMap.getOrPut(bucketId) { mutableListOf() }.add(item to pathHint)
-            }
-        } finally {
-            runCatching { retriever.release() }
-        }
-    }
-
-    suspend fun loadThumbnail(videoId: Long, uriString: String): Bitmap? {
-        thumbnailCache.get(videoId)?.let { return it }
-        return withContext(Dispatchers.IO) {
-            val previewFile = resolvePreviewFile(uriString)
-            val bitmap = runCatching {
-                if (previewFile != null && previewFile.exists()) {
-                    val retriever = MediaMetadataRetriever()
-                    try {
-                        retriever.setDataSource(previewFile.absolutePath)
-                        retriever.getFrameAtTime(1_000_000L, MediaMetadataRetriever.OPTION_CLOSEST_SYNC)
-                    } finally {
-                        retriever.release()
-                    }
-                } else {
-                    val uri = Uri.parse(uriString)
-                    val systemThumb = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                        runCatching { context.contentResolver.loadThumbnail(uri, Size(320, 180), null) }.getOrNull()
-                    } else {
-                        null
-                    }
-                    systemThumb ?: run {
-                        val retriever = MediaMetadataRetriever()
-                        try {
-                            retriever.setDataSource(context, uri)
-                            retriever.getFrameAtTime(1_000_000L, MediaMetadataRetriever.OPTION_CLOSEST_SYNC)
-                        } finally {
-                            retriever.release()
-                        }
-                    }
-                }
-            }.getOrNull()
-            if (bitmap != null) {
-                thumbnailCache.put(videoId, bitmap)
-            }
-            bitmap
-        }
+        return candidate
     }
 }

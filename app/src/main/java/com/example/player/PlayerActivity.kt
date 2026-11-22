@@ -1,353 +1,302 @@
 package com.example.player
 
-import android.app.PendingIntent
 import android.app.PictureInPictureParams
-import android.app.RemoteAction
-import android.content.BroadcastReceiver
-import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
-import android.content.IntentFilter
 import android.content.pm.ActivityInfo
-import android.content.pm.PackageManager
 import android.content.res.Configuration
-import android.graphics.drawable.Icon
+import android.media.AudioManager
+import android.media.audiofx.LoudnessEnhancer
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
-import android.provider.OpenableColumns
 import android.util.Rational
 import android.view.WindowManager
 import androidx.activity.ComponentActivity
-import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
-import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.annotation.OptIn
-import androidx.annotation.RequiresApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.toAndroidRectF
-import androidx.compose.ui.layout.boundsInWindow
-import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.viewinterop.AndroidView
-import androidx.core.content.ContextCompat
-import androidx.core.graphics.toRect
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
-import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.lifecycleScope
+import androidx.media3.common.C
+import androidx.media3.common.MediaItem
+import androidx.media3.common.MediaMetadata
+import androidx.media3.common.MimeTypes
+import androidx.media3.common.PlaybackParameters
 import androidx.media3.common.Player
-import androidx.media3.common.VideoSize
+import androidx.media3.common.TrackSelectionOverride
+import androidx.media3.common.Tracks
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.ExoPlayer
-import androidx.media3.session.MediaController
-import androidx.media3.session.SessionToken
 import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.PlayerView
-import com.example.data.local.VeloDatabase
+import com.example.data.model.MediaTrackOption
+import com.example.data.model.PlayerAspectMode
+import com.example.data.model.PlaylistEntry
+import com.example.data.model.UserPreferences
 import com.example.data.repository.PlaybackRepository
-import com.example.data.repository.UserPreferences
 import com.example.data.repository.UserPreferencesRepository
 import com.example.ui.theme.VeloPlayTheme
 import com.example.util.FormatUtils
-import com.google.common.util.concurrent.ListenableFuture
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 
-@OptIn(UnstableApi::class)
 class PlayerActivity : ComponentActivity() {
 
-    private lateinit var playbackRepository: PlaybackRepository
-    private lateinit var prefsRepository: UserPreferencesRepository
-    private val persistScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private lateinit var playbackRepo: PlaybackRepository
+    private lateinit var prefsRepo: UserPreferencesRepository
 
-    private var playlistEntries by mutableStateOf<List<PlaylistEntry>>(emptyList())
-    private var startPlaylistIndex by mutableIntStateOf(0)
-    private var isInPipState by mutableStateOf(false)
-    private var autoPipEnabled by mutableStateOf(true)
-    private var pipSourceRect: android.graphics.Rect? = null
-    private var hasPipFeature: Boolean = false
-    private var mediaControllerFuture: ListenableFuture<MediaController>? = null
+    private var exoPlayer: ExoPlayer? = null
+    private var loudnessEnhancer: LoudnessEnhancer? = null
 
-    private val pipActionReceiver = object : BroadcastReceiver() {
-        override fun onReceive(context: Context?, intent: Intent?) {
-            val player = PlayerSessionManager.playerFlow.value ?: return
-            when (intent?.action) {
-                ACTION_PIP_REWIND -> player.seekTo((player.currentPosition - 10_000L).coerceAtLeast(0L))
-                ACTION_PIP_FORWARD -> {
-                    val dur = player.duration.takeIf { it > 0L } ?: Long.MAX_VALUE
-                    player.seekTo((player.currentPosition + 10_000L).coerceAtMost(dur))
-                }
-                ACTION_PIP_PLAY_PAUSE -> {
-                    if (player.isPlaying) player.pause() else player.play()
-                    updatePipParams(player)
-                }
+    private var playlist: List<PlaylistEntry> = emptyList()
+    private var currentIndex: Int = 0
+    private var useSoftwareDecoderState by mutableStateOf(false)
+    private var isInPipModeState by mutableStateOf(false)
+    private var externalSubUri: Uri? = null
+    private var onSubtitleAddedBanner: ((String) -> Unit)? = null
+
+    private val subtitlePickerLauncher = registerForActivityResult(
+        ActivityResultContracts.OpenDocument()
+    ) { uri ->
+        if (uri != null) {
+            runCatching {
+                contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
             }
+            externalSubUri = uri
+            reloadCurrentItemWithSubtitle(uri)
+            onSubtitleAddedBanner?.invoke("Subtitle attached")
         }
     }
 
+    @OptIn(UnstableApi::class)
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        enableEdgeToEdge()
-        window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        WindowCompat.setDecorFitsSystemWindows(window, false)
         hideSystemBars()
 
-        hasPipFeature = Build.VERSION.SDK_INT >= Build.VERSION_CODES.O &&
-            packageManager.hasSystemFeature(PackageManager.FEATURE_PICTURE_IN_PICTURE)
+        playbackRepo = PlaybackRepository(this)
+        prefsRepo = UserPreferencesRepository(this)
 
-        playbackRepository = PlaybackRepository(VeloDatabase.getInstance(this).playbackHistoryDao())
-        prefsRepository = UserPreferencesRepository(this)
-
-        handleLaunchIntent(intent)
-        runCatching {
-            startService(Intent(this, PlaybackService::class.java))
-            val sessionToken = SessionToken(this, ComponentName(this, PlaybackService::class.java))
-            mediaControllerFuture = MediaController.Builder(this, sessionToken).buildAsync()
-        }
-
-        ContextCompat.registerReceiver(
-            this,
-            pipActionReceiver,
-            IntentFilter().apply {
-                addAction(ACTION_PIP_PLAY_PAUSE)
-                addAction(ACTION_PIP_REWIND)
-                addAction(ACTION_PIP_FORWARD)
-            },
-            ContextCompat.RECEIVER_NOT_EXPORTED
-        )
-
-        if (hasPipFeature && Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && Build.VERSION.SDK_INT < Build.VERSION_CODES.S) {
-            addOnUserLeaveHintListener {
-                val player = PlayerSessionManager.playerFlow.value
-                if (autoPipEnabled &&
-                    player?.isPlaying == true &&
-                    !PlayerSessionManager.isBackgroundPlayEnabled.value
-                ) {
-                    enterPipModeNow()
-                }
-            }
-        }
+        resolveInitialPlaylist(intent)
 
         setContent {
-            val scope = rememberCoroutineScope()
-            val player by PlayerSessionManager.playerFlow.collectAsStateWithLifecycle()
-            val useSoftwareDecoder by PlayerSessionManager.useSoftwareDecoder.collectAsStateWithLifecycle()
-            val isBackgroundPlayEnabled by PlayerSessionManager.isBackgroundPlayEnabled.collectAsStateWithLifecycle()
-            val volumePercent by PlayerSessionManager.volumePercent.collectAsStateWithLifecycle()
-            val isMuted by PlayerSessionManager.isMuted.collectAsStateWithLifecycle()
-            val activeTitle by PlayerSessionManager.currentVideoTitle.collectAsStateWithLifecycle()
-            val activeUri by PlayerSessionManager.currentVideoUri.collectAsStateWithLifecycle()
-            val audioTracks by PlayerSessionManager.audioTracks.collectAsStateWithLifecycle()
-            val subtitleTracks by PlayerSessionManager.subtitleTracks.collectAsStateWithLifecycle()
-            val subtitlesDisabled by PlayerSessionManager.subtitlesDisabled.collectAsStateWithLifecycle()
-            val playerError by PlayerSessionManager.playerError.collectAsStateWithLifecycle()
-            val prefs by prefsRepository.preferences.collectAsStateWithLifecycle(
-                initialValue = UserPreferences()
-            )
+            val prefs by prefsRepo.preferencesFlow.collectAsState(initial = UserPreferences())
 
-            LaunchedEffect(prefs.autoPipOnHome) {
-                autoPipEnabled = prefs.autoPipOnHome
-            }
-
-            LaunchedEffect(prefs.alwaysBackgroundPlay) {
-                PlayerSessionManager.setBackgroundPlayEnabled(prefs.alwaysBackgroundPlay)
-                updatePipParams(player)
-            }
-
-            LaunchedEffect(Unit) {
-                PlayerSessionManager.stopPlaybackSignal.collect {
-                    finish()
-                }
-            }
-
-            var isPlaying by remember { mutableStateOf(false) }
+            var isPlaying by remember { mutableStateOf(true) }
             var currentPosMs by remember { mutableLongStateOf(0L) }
             var durationMs by remember { mutableLongStateOf(0L) }
             var playbackSpeed by remember { mutableFloatStateOf(1.0f) }
             var repeatMode by remember { mutableIntStateOf(Player.REPEAT_MODE_OFF) }
             var sleepMinutesRemaining by remember { mutableStateOf<Int?>(null) }
             var isLocked by remember { mutableStateOf(false) }
+            var isBackgroundPlayEnabled by remember(prefs.alwaysBackgroundPlay) {
+                mutableStateOf(prefs.alwaysBackgroundPlay)
+            }
             var controlsVisible by remember { mutableStateOf(true) }
             var aspectMode by remember { mutableStateOf(PlayerAspectMode.FIT) }
-            var brightnessPercent by remember { mutableIntStateOf(65) }
-            var doubleTapFeedback by remember { mutableStateOf<String?>(null) }
+            var isRotated by remember { mutableStateOf(false) }
+            var brightnessPercent by remember { mutableIntStateOf(75) }
+            var volumePercent by remember { mutableIntStateOf(100) }
+            var lastNonZeroVolume by remember { mutableIntStateOf(100) }
+            var isMuted by remember { mutableStateOf(false) }
             var statusBanner by remember { mutableStateOf<String?>(null) }
+            var audioTracks by remember { mutableStateOf<List<MediaTrackOption>>(emptyList()) }
+            var subtitleTracks by remember { mutableStateOf<List<MediaTrackOption>>(emptyList()) }
+            var playerViewRef by remember { mutableStateOf<PlayerView?>(null) }
 
-            val subtitlePickerLauncher = rememberLauncherForActivityResult(
-                contract = ActivityResultContracts.OpenDocument()
-            ) { subUri: Uri? ->
-                if (subUri != null) {
-                    runCatching {
-                        contentResolver.takePersistableUriPermission(
-                            subUri,
-                            Intent.FLAG_GRANT_READ_URI_PERMISSION
-                        )
+            onSubtitleAddedBanner = { msg -> statusBanner = msg }
+
+            fun rebuildPlayer(software: Boolean, seekPosMs: Long = -1L) {
+                exoPlayer?.release()
+                loudnessEnhancer?.release()
+                loudnessEnhancer = null
+
+                val player = ExoPlayer.Builder(this@PlayerActivity)
+                    .setRenderersFactory(DecoderModeSelector.buildRenderersFactory(this@PlayerActivity, software))
+                    .build()
+
+                exoPlayer = player
+                playerViewRef?.player = player
+
+                val mediaItems = playlist.map { entry ->
+                    MediaItem.Builder()
+                        .setUri(Uri.parse(entry.uriString))
+                        .setMediaMetadata(MediaMetadata.Builder().setTitle(entry.title).build())
+                        .build()
+                }
+                if (mediaItems.isNotEmpty()) {
+                    val startIdx = currentIndex.coerceIn(0, mediaItems.lastIndex)
+                    player.setMediaItems(mediaItems, startIdx, seekPosMs.coerceAtLeast(0L))
+                    player.repeatMode = repeatMode
+                    player.playbackParameters = PlaybackParameters(playbackSpeed)
+                    player.prepare()
+                    player.playWhenReady = true
+                }
+
+                player.addListener(object : Player.Listener {
+                    override fun onIsPlayingChanged(playing: Boolean) {
+                        isPlaying = playing
                     }
-                    val subName = resolveDisplayName(subUri) ?: "subtitle.srt"
-                    PlayerSessionManager.attachExternalSubtitle(subUri, subName)
-                    statusBanner = "Loaded subtitle: $subName"
+
+                    override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
+                        currentIndex = player.currentMediaItemIndex
+                        PlayerSessionManager.updateCurrentIndex(currentIndex)
+                        val entry = playlist.getOrNull(currentIndex) ?: return
+                        lifecycleScope.launch { prefsRepo.markVideoPlayed(entry.uriString) }
+                    }
+
+                    override fun onTracksChanged(tracks: Tracks) {
+                        val parsedAudio = mutableListOf<MediaTrackOption>()
+                        val parsedSub = mutableListOf<MediaTrackOption>()
+                        tracks.groups.forEachIndexed { groupIdx, group ->
+                            when (group.type) {
+                                C.TRACK_TYPE_AUDIO -> {
+                                    for (trackIdx in 0 until group.length) {
+                                        val fmt = group.getTrackFormat(trackIdx)
+                                        val lang = fmt.language ?: "und"
+                                        val lbl = fmt.label ?: "Audio ${parsedAudio.size + 1} ($lang)"
+                                        parsedAudio += MediaTrackOption(groupIdx, trackIdx, lbl, fmt.language, group.isTrackSelected(trackIdx))
+                                    }
+                                }
+                                C.TRACK_TYPE_TEXT -> {
+                                    for (trackIdx in 0 until group.length) {
+                                        val fmt = group.getTrackFormat(trackIdx)
+                                        val lang = fmt.language ?: "sub"
+                                        val lbl = fmt.label ?: "Subtitle ${parsedSub.size + 1} ($lang)"
+                                        parsedSub += MediaTrackOption(groupIdx, trackIdx, lbl, fmt.language, group.isTrackSelected(trackIdx))
+                                    }
+                                }
+                            }
+                        }
+                        audioTracks = parsedAudio
+                        subtitleTracks = parsedSub
+                    }
+
+                    override fun onAudioSessionIdChanged(audioSessionId: Int) {
+                        runCatching {
+                            loudnessEnhancer?.release()
+                            loudnessEnhancer = LoudnessEnhancer(audioSessionId).apply {
+                                val boostGain = ((volumePercent - 100) * 15).coerceIn(0, 1500)
+                                setTargetGain(boostGain)
+                                enabled = volumePercent > 100
+                            }
+                        }
+                    }
+                })
+            }
+
+            // Initialize player + restore saved resume position
+            LaunchedEffect(Unit) {
+                val initialPrefs = prefsRepo.preferencesFlow.first()
+                val firstUri = playlist.getOrNull(currentIndex)?.uriString
+                val saved = firstUri?.let { playbackRepo.getHistoryForUri(it) }
+                useSoftwareDecoderState = saved?.useSoftwareDecoder ?: initialPrefs.defaultSoftwareDecoder
+                playbackSpeed = saved?.playbackSpeed ?: 1.0f
+                val resumeMs = if (saved != null && saved.positionMs > 1500L && saved.durationMs > 0L && saved.positionMs < saved.durationMs - 1500L) {
+                    saved.positionMs
+                } else {
+                    0L
+                }
+                if (firstUri != null) prefsRepo.markVideoPlayed(firstUri)
+                rebuildPlayer(useSoftwareDecoderState, resumeMs)
+                if (resumeMs > 0L) {
+                    statusBanner = "Resumed from ${FormatUtils.formatDuration(resumeMs)}"
                 }
             }
 
-            LaunchedEffect(playerError) {
-                if (playerError != null) {
-                    statusBanner = playerError
+            // Poll playback progress & persist periodically
+            LaunchedEffect(Unit) {
+                var tick = 0
+                while (true) {
+                    val p = exoPlayer
+                    if (p != null) {
+                        currentPosMs = p.currentPosition.coerceAtLeast(0L)
+                        durationMs = p.duration.coerceAtLeast(0L)
+                        isPlaying = p.isPlaying
+                        tick++
+                        if (tick % 6 == 0) {
+                            persistPlaybackSnapshot(playbackSpeed)
+                        }
+                    }
+                    delay(500L)
                 }
             }
 
-            LaunchedEffect(activeUri) {
-                val uriNow = activeUri
-                if (!uriNow.isNullOrBlank()) {
-                    prefsRepository.markVideoPlayed(uriNow)
+            // Auto-hide controls after 3.5s
+            LaunchedEffect(controlsVisible, isPlaying, isLocked) {
+                if (controlsVisible && (isPlaying || isLocked)) {
+                    delay(3500L)
+                    controlsVisible = false
                 }
             }
 
-            // Prepare playlist & restore exact saved timestamp
-            LaunchedEffect(playlistEntries, startPlaylistIndex) {
-                val target = playlistEntries.getOrNull(startPlaylistIndex) ?: return@LaunchedEffect
-                val saved = playbackRepository.getSavedState(target.uriString)
-                val initialPrefs = prefsRepository.preferences.first()
-                val startPos = saved?.positionMs ?: 0L
-                val startSpeed = saved?.playbackSpeed ?: 1.0f
-                val startSw = saved?.useSoftwareDecoder ?: initialPrefs.defaultSoftwareDecoder
-                playbackSpeed = startSpeed
-                PlayerSessionManager.setBackgroundPlayEnabled(initialPrefs.alwaysBackgroundPlay)
-
-                PlayerSessionManager.preparePlaylist(
-                    context = this@PlayerActivity,
-                    playlist = playlistEntries,
-                    startIndex = startPlaylistIndex,
-                    resumePositionMs = startPos,
-                    playbackSpeed = startSpeed,
-                    preferSoftware = startSw
-                )
-                if (startPos > 1_500L) {
-                    statusBanner = "Resumed from ${FormatUtils.formatDuration(startPos)}"
+            // Auto-clear status banner
+            LaunchedEffect(statusBanner) {
+                if (!statusBanner.isNullOrBlank()) {
+                    delay(2200L)
+                    statusBanner = null
                 }
             }
 
             // Sleep timer countdown
             LaunchedEffect(sleepMinutesRemaining) {
-                val mins = sleepMinutesRemaining ?: return@LaunchedEffect
-                if (mins <= 0) {
-                    player?.pause()
+                val rem = sleepMinutesRemaining ?: return@LaunchedEffect
+                if (rem <= 0) {
+                    exoPlayer?.pause()
                     sleepMinutesRemaining = null
                     statusBanner = "Sleep timer paused playback"
                 } else {
                     delay(60_000L)
-                    sleepMinutesRemaining = (mins - 1).coerceAtLeast(0)
+                    sleepMinutesRemaining = (rem - 1).coerceAtLeast(0)
                 }
             }
 
-            DisposableEffect(player) {
-                val activePlayer = player ?: return@DisposableEffect onDispose {}
-                val listener = object : Player.Listener {
-                    override fun onIsPlayingChanged(playing: Boolean) {
-                        isPlaying = playing
-                        updatePipParams(activePlayer)
-                    }
+            fun applyVolume(nextPct: Int) {
+                val clamped = nextPct.coerceIn(0, 200)
+                if (clamped > 0) lastNonZeroVolume = clamped
+                volumePercent = clamped
+                isMuted = clamped == 0
 
-                    override fun onVideoSizeChanged(videoSize: VideoSize) {
-                        updatePipParams(activePlayer)
-                    }
+                val am = getSystemService(Context.AUDIO_SERVICE) as AudioManager
+                val maxSys = am.getStreamMaxVolume(AudioManager.STREAM_MUSIC).coerceAtLeast(1)
+                val targetSys = ((clamped.coerceAtMost(100) / 100f) * maxSys).toInt().coerceIn(0, maxSys)
+                runCatching { am.setStreamVolume(AudioManager.STREAM_MUSIC, targetSys, 0) }
 
-                    override fun onRepeatModeChanged(newRepeatMode: Int) {
-                        repeatMode = newRepeatMode
+                exoPlayer?.volume = if (clamped == 0) 0f else 1f
+                runCatching {
+                    loudnessEnhancer?.apply {
+                        val gain = ((clamped - 100) * 15).coerceIn(0, 1500)
+                        setTargetGain(gain)
+                        enabled = clamped > 100
                     }
-
-                    override fun onPlaybackStateChanged(playbackState: Int) {
-                        if (playbackState == Player.STATE_READY) {
-                            val dur = activePlayer.duration.coerceAtLeast(0L)
-                            durationMs = dur
-                            updatePipParams(activePlayer)
-                            val uriNow = activeUri.orEmpty()
-                            if (uriNow.isNotBlank() && dur > 0L) {
-                                scope.launch {
-                                    playbackRepository.savePlaybackState(
-                                        videoUri = uriNow,
-                                        title = activeTitle,
-                                        positionMs = activePlayer.currentPosition.coerceAtLeast(0L),
-                                        durationMs = dur,
-                                        playbackSpeed = playbackSpeed,
-                                        useSoftwareDecoder = useSoftwareDecoder
-                                    )
-                                }
-                            }
-                        }
-                    }
-                }
-                activePlayer.addListener(listener)
-                isPlaying = activePlayer.isPlaying
-                repeatMode = activePlayer.repeatMode
-                durationMs = activePlayer.duration.coerceAtLeast(0L)
-                onDispose {
-                    activePlayer.removeListener(listener)
                 }
             }
 
-            LaunchedEffect(player) {
-                var ticks = 0
-                while (true) {
-                    val activePlayer = player
-                    if (activePlayer != null) {
-                        currentPosMs = activePlayer.currentPosition.coerceAtLeast(0L)
-                        val dur = activePlayer.duration.coerceAtLeast(0L)
-                        if (dur > 0L) durationMs = dur
-                        isPlaying = activePlayer.isPlaying
-                        val uriNow = activeUri.orEmpty()
-                        if (ticks % 6 == 0 && uriNow.isNotBlank() && dur > 0L) {
-                            playbackRepository.savePlaybackState(
-                                videoUri = uriNow,
-                                title = activeTitle,
-                                positionMs = currentPosMs,
-                                durationMs = dur,
-                                playbackSpeed = playbackSpeed,
-                                useSoftwareDecoder = useSoftwareDecoder
-                            )
-                        }
-                    }
-                    ticks++
-                    delay(500L)
-                }
-            }
-
-            LaunchedEffect(controlsVisible, isPlaying, isLocked) {
-                if (controlsVisible && (isPlaying || isLocked)) {
-                    delay(3_500L)
-                    controlsVisible = false
-                }
-            }
-
-            LaunchedEffect(doubleTapFeedback) {
-                if (doubleTapFeedback != null) {
-                    delay(900L)
-                    doubleTapFeedback = null
-                }
-            }
-
-            LaunchedEffect(statusBanner) {
-                if (statusBanner != null) {
-                    delay(2_400L)
-                    statusBanner = null
-                }
+            fun applyBrightness(nextPct: Int) {
+                val clamped = nextPct.coerceIn(2, 100)
+                brightnessPercent = clamped
+                val lp = window.attributes
+                lp.screenBrightness = clamped / 100f
+                window.attributes = lp
             }
 
             VeloPlayTheme(darkTheme = true) {
@@ -355,28 +304,18 @@ class PlayerActivity : ComponentActivity() {
                     modifier = Modifier
                         .fillMaxSize()
                         .background(Color.Black)
-                        .onGloballyPositioned { coords ->
-                            if (coords.isAttached) {
-                                val newRect = coords.boundsInWindow().toAndroidRectF().toRect()
-                                if (newRect != pipSourceRect && newRect.width() > 0 && newRect.height() > 0) {
-                                    pipSourceRect = newRect
-                                    updatePipParams(player)
-                                }
-                            }
-                        }
                 ) {
                     AndroidView(
                         factory = { ctx ->
                             PlayerView(ctx).apply {
                                 useController = false
-                                keepScreenOn = true
                                 resizeMode = AspectRatioFrameLayout.RESIZE_MODE_FIT
+                                player = exoPlayer
+                                playerViewRef = this
                             }
                         },
                         update = { view ->
-                            if (view.player !== player) {
-                                view.player = player
-                            }
+                            if (view.player !== exoPlayer) view.player = exoPlayer
                             view.resizeMode = when (aspectMode) {
                                 PlayerAspectMode.FIT -> AspectRatioFrameLayout.RESIZE_MODE_FIT
                                 PlayerAspectMode.FILL -> AspectRatioFrameLayout.RESIZE_MODE_FILL
@@ -386,169 +325,162 @@ class PlayerActivity : ComponentActivity() {
                         modifier = Modifier.fillMaxSize()
                     )
 
-                    val hasPrev = (player?.hasPreviousMediaItem() == true) || playlistEntries.size > 1
-                    val hasNext = (player?.hasNextMediaItem() == true) || playlistEntries.size > 1
-
-                    PlayerOverlay(
-                        title = activeTitle.ifBlank { "Video" },
-                        isPlaying = isPlaying,
-                        currentPositionMs = currentPosMs,
-                        durationMs = durationMs,
-                        playbackSpeed = playbackSpeed,
-                        useSoftwareDecoder = useSoftwareDecoder,
-                        isLocked = isLocked,
-                        isBackgroundPlayEnabled = isBackgroundPlayEnabled,
-                        hasPrevious = hasPrev && (player?.currentMediaItemIndex ?: 0) > 0,
-                        hasNext = hasNext && (player?.currentMediaItemIndex ?: 0) < (playlistEntries.size - 1),
-                        repeatMode = repeatMode,
-                        sleepMinutesRemaining = sleepMinutesRemaining,
-                        aspectMode = aspectMode,
-                        controlsVisible = controlsVisible,
-                        isInPipMode = isInPipState,
-                        brightnessPercent = brightnessPercent,
-                        volumePercent = volumePercent,
-                        isMuted = isMuted,
-                        audioTracks = audioTracks,
-                        subtitleTracks = subtitleTracks,
-                        subtitlesDisabled = subtitlesDisabled,
-                        doubleTapFeedback = doubleTapFeedback,
-                        statusBanner = statusBanner,
-                        singleClickAction = prefs.singleClickAction,
-                        doubleClickAction = prefs.doubleClickAction,
-                        enableSwipeGestures = prefs.enableSwipeGestures,
-                        gestureSeekStepSeconds = prefs.gestureSeekStepSeconds,
-                        controlsVisibility = prefs.controlsVisibility,
-                        onBack = {
-                            persistPositionBlocking()
-                            if (!isBackgroundPlayEnabled) {
-                                player?.pause()
-                            }
-                            finish()
-                        },
-                        onToggleControls = { controlsVisible = !controlsVisible },
-                        onTogglePlayPause = {
-                            val p = player ?: return@PlayerOverlay
-                            if (p.isPlaying) p.pause() else p.play()
-                            controlsVisible = true
-                        },
-                        onSeekTo = { target ->
-                            player?.seekTo(target.coerceIn(0L, durationMs.coerceAtLeast(0L)))
-                            currentPosMs = target
-                        },
-                        onSeekBy = { delta ->
-                            val p = player ?: return@PlayerOverlay
-                            val next = (p.currentPosition + delta).coerceIn(0L, durationMs.coerceAtLeast(0L))
-                            p.seekTo(next)
-                            currentPosMs = next
-                        },
-                        onPreviousVideo = {
-                            persistPositionBlocking()
-                            player?.seekToPreviousMediaItem()
-                        },
-                        onNextVideo = {
-                            persistPositionBlocking()
-                            player?.seekToNextMediaItem()
-                        },
-                        onToggleLock = {
-                            isLocked = !isLocked
-                            controlsVisible = true
-                            statusBanner = if (isLocked) "Controls Locked" else "Controls Unlocked"
-                        },
-                        onToggleRotation = {
-                            val currentOrientation = resources.configuration.orientation
-                            requestedOrientation = if (currentOrientation == Configuration.ORIENTATION_LANDSCAPE) {
-                                ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
-                            } else {
-                                ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
-                            }
-                        },
-                        onCycleSpeed = { newSpeed ->
-                            playbackSpeed = newSpeed
-                            player?.setPlaybackSpeed(newSpeed)
-                            statusBanner = "Speed ${newSpeed}x"
-                        },
-                        onToggleDecoder = {
-                            val nextSw = !useSoftwareDecoder
-                            PlayerSessionManager.switchDecoder(this@PlayerActivity, nextSw)
-                            scope.launch { prefsRepository.setDefaultSoftwareDecoder(nextSw) }
-                            statusBanner = if (nextSw) "Switched to SW Decoder" else "Switched to HW Decoder"
-                        },
-                        onEnterPip = { enterPipModeNow() },
-                        onToggleBackgroundPlay = {
-                            val next = !isBackgroundPlayEnabled
-                            PlayerSessionManager.setBackgroundPlayEnabled(next)
-                            updatePipParams(player)
-                            statusBanner = if (next) {
-                                "Background Audio Play Enabled"
-                            } else {
-                                "Background Audio Play Disabled"
-                            }
-                        },
-                        onCycleRepeatMode = {
-                            val nextMode = when (repeatMode) {
-                                Player.REPEAT_MODE_OFF -> Player.REPEAT_MODE_ONE
-                                Player.REPEAT_MODE_ONE -> Player.REPEAT_MODE_ALL
-                                else -> Player.REPEAT_MODE_OFF
-                            }
-                            repeatMode = nextMode
-                            player?.repeatMode = nextMode
-                            statusBanner = when (nextMode) {
-                                Player.REPEAT_MODE_ONE -> "Repeat: Current Video"
-                                Player.REPEAT_MODE_ALL -> "Repeat: Folder Playlist"
-                                else -> "Repeat: Off"
-                            }
-                        },
-                        onSetSleepTimerMinutes = { mins ->
-                            sleepMinutesRemaining = mins
-                            statusBanner = if (mins == null) "Sleep Timer Off" else "Sleep Timer: ${mins}m"
-                        },
-                        onCycleAspectMode = {
-                            val modes = PlayerAspectMode.entries
-                            aspectMode = modes[(aspectMode.ordinal + 1) % modes.size]
-                            statusBanner = "Screen: ${aspectMode.label}"
-                        },
-                        onToggleMute = {
-                            PlayerSessionManager.toggleMute(this@PlayerActivity)
-                        },
-                        onSelectAudioTrack = { track ->
-                            PlayerSessionManager.selectAudioTrack(track)
-                            statusBanner = "Audio: ${track.label}"
-                        },
-                        onSelectSubtitleTrack = { track ->
-                            PlayerSessionManager.selectSubtitleTrack(track)
-                            statusBanner = if (track == null) "Subtitles Off" else "Subtitle: ${track.label}"
-                        },
-                        onPickExternalSubtitle = {
-                            subtitlePickerLauncher.launch(arrayOf("*/*"))
-                        },
-                        onBrightnessChange = { nextPercent ->
-                            brightnessPercent = nextPercent
-                            val lp = window.attributes
-                            lp.screenBrightness = (nextPercent / 100f).coerceIn(0.02f, 1.0f)
-                            window.attributes = lp
-                        },
-                        onVolumeChange = { nextPercent ->
-                            PlayerSessionManager.setVolumeWithBoost(this@PlayerActivity, nextPercent)
-                        },
-                        onDoubleTapPlayPause = {
-                            val p = player ?: return@PlayerOverlay
-                            if (p.isPlaying) {
-                                p.pause()
-                                doubleTapFeedback = "Paused"
-                            } else {
-                                p.play()
-                                doubleTapFeedback = "Playing"
-                            }
-                        },
-                        onDoubleTapSeek = { delta ->
-                            val p = player ?: return@PlayerOverlay
-                            val upper = durationMs.takeIf { it > 0L } ?: Long.MAX_VALUE
-                            val next = (p.currentPosition + delta).coerceIn(0L, upper)
-                            p.seekTo(next)
-                            currentPosMs = next
-                            doubleTapFeedback = FormatUtils.formatSignedDelta(delta)
-                        }
-                    )
+                    if (!isInPipModeState) {
+                        val currentTitle = playlist.getOrNull(currentIndex)?.title ?: "Video"
+                        PlayerOverlay(
+                            title = currentTitle,
+                            isPlaying = isPlaying,
+                            currentPosMs = currentPosMs,
+                            durationMs = durationMs,
+                            playbackSpeed = playbackSpeed,
+                            useSoftwareDecoder = useSoftwareDecoderState,
+                            repeatMode = repeatMode,
+                            sleepMinutesRemaining = sleepMinutesRemaining,
+                            isLocked = isLocked,
+                            isBackgroundPlayEnabled = isBackgroundPlayEnabled,
+                            controlsVisible = controlsVisible,
+                            aspectMode = aspectMode,
+                            isRotated = isRotated,
+                            brightnessPercent = brightnessPercent,
+                            volumePercent = volumePercent,
+                            isMuted = isMuted,
+                            hasPrevious = currentIndex > 0,
+                            hasNext = currentIndex < playlist.lastIndex,
+                            preferences = prefs,
+                            statusBanner = statusBanner,
+                            audioTracks = audioTracks,
+                            subtitleTracks = subtitleTracks,
+                            onToggleControls = { controlsVisible = !controlsVisible },
+                            onBack = {
+                                lifecycleScope.launch { persistPlaybackSnapshot(playbackSpeed) }
+                                if (!isBackgroundPlayEnabled) {
+                                    exoPlayer?.pause()
+                                }
+                                finish()
+                            },
+                            onPlayPause = {
+                                exoPlayer?.let { p ->
+                                    if (p.isPlaying) p.pause() else p.play()
+                                }
+                                controlsVisible = true
+                            },
+                            onSeekTo = { pos ->
+                                exoPlayer?.seekTo(pos)
+                                currentPosMs = pos
+                            },
+                            onSeekBy = { delta ->
+                                exoPlayer?.let { p ->
+                                    val next = (p.currentPosition + delta).coerceIn(0L, p.duration.coerceAtLeast(0L))
+                                    p.seekTo(next)
+                                    currentPosMs = next
+                                    statusBanner = FormatUtils.formatSignedDelta(delta)
+                                }
+                            },
+                            onPrevious = {
+                                exoPlayer?.let { p ->
+                                    if (p.hasPreviousMediaItem()) p.seekToPreviousMediaItem()
+                                }
+                            },
+                            onNext = {
+                                exoPlayer?.let { p ->
+                                    if (p.hasNextMediaItem()) p.seekToNextMediaItem()
+                                }
+                            },
+                            onToggleLock = {
+                                isLocked = !isLocked
+                                controlsVisible = true
+                                statusBanner = if (isLocked) "Controls Locked" else "Controls Unlocked"
+                            },
+                            onCycleAspectMode = {
+                                val order = PlayerAspectMode.entries
+                                aspectMode = order[(order.indexOf(aspectMode) + 1) % order.size]
+                                statusBanner = "Screen: ${aspectMode.label}"
+                            },
+                            onEnterPip = { enterPipSafe() },
+                            onToggleDecoder = {
+                                val nextSw = !useSoftwareDecoderState
+                                useSoftwareDecoderState = nextSw
+                                val pos = exoPlayer?.currentPosition ?: 0L
+                                rebuildPlayer(nextSw, pos)
+                                lifecycleScope.launch { prefsRepo.setDefaultSoftwareDecoder(nextSw) }
+                                statusBanner = if (nextSw) "Switched to SW Decoder" else "Switched to HW Decoder"
+                            },
+                            onToggleRotation = {
+                                isRotated = !isRotated
+                                requestedOrientation = if (isRotated) {
+                                    ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+                                } else {
+                                    ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
+                                }
+                                statusBanner = if (isRotated) "Orientation: Landscape" else "Orientation: Auto"
+                            },
+                            onSelectSpeed = { spd ->
+                                playbackSpeed = spd
+                                exoPlayer?.playbackParameters = PlaybackParameters(spd)
+                                statusBanner = "Speed ${spd}x"
+                            },
+                            onCycleRepeat = {
+                                repeatMode = when (repeatMode) {
+                                    Player.REPEAT_MODE_OFF -> Player.REPEAT_MODE_ONE
+                                    Player.REPEAT_MODE_ONE -> Player.REPEAT_MODE_ALL
+                                    else -> Player.REPEAT_MODE_OFF
+                                }
+                                exoPlayer?.repeatMode = repeatMode
+                                statusBanner = when (repeatMode) {
+                                    Player.REPEAT_MODE_ONE -> "Repeat: Current Video"
+                                    Player.REPEAT_MODE_ALL -> "Repeat: Playlist"
+                                    else -> "Repeat: Off"
+                                }
+                            },
+                            onToggleMute = {
+                                if (isMuted || volumePercent == 0) {
+                                    applyVolume(lastNonZeroVolume.coerceAtLeast(50))
+                                } else {
+                                    applyVolume(0)
+                                }
+                            },
+                            onSelectSleepMinutes = { mins ->
+                                sleepMinutesRemaining = mins
+                                statusBanner = if (mins == null) "Sleep Timer Off" else "Sleep Timer: ${mins}m"
+                            },
+                            onToggleBackgroundPlay = {
+                                val next = !isBackgroundPlayEnabled
+                                isBackgroundPlayEnabled = next
+                                lifecycleScope.launch { prefsRepo.setAlwaysBackgroundPlay(next) }
+                                statusBanner = if (next) "Background Audio Play Enabled" else "Background Audio Play Disabled"
+                            },
+                            onSelectAudioTrack = { opt ->
+                                val player = exoPlayer ?: return@PlayerOverlay
+                                val group = player.currentTracks.groups.getOrNull(opt.groupIndex)?.mediaTrackGroup ?: return@PlayerOverlay
+                                player.trackSelectionParameters = player.trackSelectionParameters
+                                    .buildUpon()
+                                    .setOverrideForType(TrackSelectionOverride(group, opt.trackIndex))
+                                    .build()
+                                statusBanner = "Audio: ${opt.label}"
+                            },
+                            onSelectSubtitleTrack = { opt ->
+                                val player = exoPlayer ?: return@PlayerOverlay
+                                val builder = player.trackSelectionParameters.buildUpon()
+                                if (opt == null) {
+                                    builder.setTrackTypeDisabled(C.TRACK_TYPE_TEXT, true)
+                                    statusBanner = "Subtitles Off"
+                                } else {
+                                    builder.setTrackTypeDisabled(C.TRACK_TYPE_TEXT, false)
+                                    val group = player.currentTracks.groups.getOrNull(opt.groupIndex)?.mediaTrackGroup
+                                    if (group != null) {
+                                        builder.setOverrideForType(TrackSelectionOverride(group, opt.trackIndex))
+                                    }
+                                    statusBanner = "Subtitle: ${opt.label}"
+                                }
+                                player.trackSelectionParameters = builder.build()
+                            },
+                            onImportExternalSubtitle = {
+                                subtitlePickerLauncher.launch(arrayOf("*/*"))
+                            },
+                            onChangeBrightness = { applyBrightness(it) },
+                            onChangeVolume = { applyVolume(it) }
+                        )
+                    }
                 }
             }
         }
@@ -556,206 +488,112 @@ class PlayerActivity : ComponentActivity() {
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
-        setIntent(intent)
-        handleLaunchIntent(intent)
+        resolveInitialPlaylist(intent)
     }
 
-    private fun handleLaunchIntent(intent: Intent?) {
-        val pending = PlayerSessionManager.consumePendingPlaylist()
-        if (pending != null && pending.first.isNotEmpty()) {
-            playlistEntries = pending.first
-            startPlaylistIndex = pending.second
-            return
-        }
-
-        val uriExtra = intent?.getStringExtra(EXTRA_VIDEO_URI) ?: intent?.dataString
-        val titleExtra = intent?.getStringExtra(EXTRA_VIDEO_TITLE)
-            ?: intent?.data?.let { resolveDisplayName(it) }
-        if (!uriExtra.isNullOrBlank()) {
-            playlistEntries = listOf(PlaylistEntry(uriExtra, titleExtra?.takeIf { it.isNotBlank() } ?: "Video"))
-            startPlaylistIndex = 0
-        } else if (playlistEntries.isEmpty()) {
-            val activeUri = PlayerSessionManager.currentVideoUri.value
-            if (!activeUri.isNullOrBlank()) {
-                playlistEntries = listOf(
-                    PlaylistEntry(
-                        activeUri,
-                        PlayerSessionManager.currentVideoTitle.value.ifBlank { "Video" }
-                    )
-                )
-                startPlaylistIndex = 0
-            }
-        }
-    }
-
-    private fun resolveDisplayName(uri: Uri): String? {
-        return runCatching {
-            contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)
-                ?.use { cursor ->
-                    if (cursor.moveToFirst()) {
-                        val idx = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
-                        if (idx >= 0) cursor.getString(idx) else null
-                    } else null
-                }
+    override fun onUserLeaveHint() {
+        super.onUserLeaveHint()
+        val prefs = runCatching {
+            kotlinx.coroutines.runBlocking { prefsRepo.preferencesFlow.first() }
         }.getOrNull()
-    }
-
-    private fun hideSystemBars() {
-        WindowCompat.getInsetsController(window, window.decorView).apply {
-            systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
-            hide(WindowInsetsCompat.Type.systemBars())
+        if (prefs?.autoPipOnHome == true && prefs.alwaysBackgroundPlay.not()) {
+            enterPipSafe()
         }
     }
 
-    private fun enterPipModeNow() {
-        if (!hasPipFeature || Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
-        runCatching {
-            val params = buildPipParams(PlayerSessionManager.playerFlow.value)
-            enterPictureInPictureMode(params)
-        }
-    }
-
-    private fun updatePipParams(player: ExoPlayer?) {
-        if (!hasPipFeature || Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
-        runCatching { setPictureInPictureParams(buildPipParams(player)) }
-    }
-
-    @RequiresApi(Build.VERSION_CODES.O)
-    private fun buildPipParams(player: ExoPlayer?): PictureInPictureParams {
-        val builder = PictureInPictureParams.Builder()
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            val videoSize = player?.videoSize
-            if (videoSize != null && videoSize != VideoSize.UNKNOWN && videoSize.width > 0 && videoSize.height > 0) {
-                val rawRatio = videoSize.width.toFloat() / videoSize.height.toFloat()
-                val clampedRatio = rawRatio.coerceIn(1f / 2.39f, 2.39f)
-                val scaledW = (clampedRatio * 1000).toInt().coerceAtLeast(100)
-                builder.setAspectRatio(Rational(scaledW, 1000))
-            } else {
-                builder.setAspectRatio(Rational(16, 9))
-            }
-            pipSourceRect?.let {
-                if (it.width() > 0 && it.height() > 0) {
-                    builder.setSourceRectHint(it)
-                }
-            }
-
-            val isPlayingNow = player?.isPlaying == true
-            val rewindAction = RemoteAction(
-                Icon.createWithResource(this, android.R.drawable.ic_media_rew),
-                "Rewind",
-                "Rewind 10 seconds",
-                PendingIntent.getBroadcast(
-                    this, 101, Intent(ACTION_PIP_REWIND).setPackage(packageName),
-                    PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-                )
-            )
-            val playPauseAction = RemoteAction(
-                Icon.createWithResource(
-                    this,
-                    if (isPlayingNow) android.R.drawable.ic_media_pause else android.R.drawable.ic_media_play
-                ),
-                if (isPlayingNow) "Pause" else "Play",
-                if (isPlayingNow) "Pause video" else "Play video",
-                PendingIntent.getBroadcast(
-                    this, 102, Intent(ACTION_PIP_PLAY_PAUSE).setPackage(packageName),
-                    PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-                )
-            )
-            val forwardAction = RemoteAction(
-                Icon.createWithResource(this, android.R.drawable.ic_media_ff),
-                "Forward",
-                "Forward 10 seconds",
-                PendingIntent.getBroadcast(
-                    this, 103, Intent(ACTION_PIP_FORWARD).setPackage(packageName),
-                    PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-                )
-            )
-            builder.setActions(listOf(rewindAction, playPauseAction, forwardAction))
-        }
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            val shouldAutoPip = autoPipEnabled &&
-                player?.isPlaying == true &&
-                !PlayerSessionManager.isBackgroundPlayEnabled.value
-            builder.setAutoEnterEnabled(shouldAutoPip)
-        }
-        return builder.build()
-    }
-
-    override fun onPictureInPictureModeChanged(
-        isInPictureInPictureMode: Boolean,
-        newConfig: Configuration
-    ) {
+    override fun onPictureInPictureModeChanged(isInPictureInPictureMode: Boolean, newConfig: Configuration) {
         super.onPictureInPictureModeChanged(isInPictureInPictureMode, newConfig)
-        isInPipState = isInPictureInPictureMode
-        if (!isInPictureInPictureMode) {
-            hideSystemBars()
-        }
-    }
-
-    override fun onPause() {
-        super.onPause()
-        persistPositionBlocking()
+        isInPipModeState = isInPictureInPictureMode
     }
 
     override fun onStop() {
         super.onStop()
-        persistPositionBlocking()
-        val player = PlayerSessionManager.playerFlow.value
-        if (!isInPipState && !PlayerSessionManager.isBackgroundPlayEnabled.value && !isChangingConfigurations) {
-            player?.pause()
+        lifecycleScope.launch { persistPlaybackSnapshot(exoPlayer?.playbackParameters?.speed ?: 1f) }
+        val prefs = runCatching {
+            kotlinx.coroutines.runBlocking { prefsRepo.preferencesFlow.first() }
+        }.getOrNull()
+        if (!isInPipModeState && prefs?.alwaysBackgroundPlay != true) {
+            exoPlayer?.pause()
         }
     }
 
     override fun onDestroy() {
-        mediaControllerFuture?.let { future ->
-            runCatching { MediaController.releaseFuture(future) }
-            mediaControllerFuture = null
-        }
-        runCatching { unregisterReceiver(pipActionReceiver) }
+        loudnessEnhancer?.release()
+        loudnessEnhancer = null
+        exoPlayer?.release()
+        exoPlayer = null
         super.onDestroy()
     }
 
-    private fun persistPositionBlocking() {
-        val player = PlayerSessionManager.playerFlow.value ?: return
-        val uri = PlayerSessionManager.currentVideoUri.value ?: return
-        val title = PlayerSessionManager.currentVideoTitle.value
-        val pos = player.currentPosition.coerceAtLeast(0L)
-        val dur = player.duration.coerceAtLeast(0L)
-        val speed = player.playbackParameters.speed
-        val isSw = PlayerSessionManager.useSoftwareDecoder.value
-        persistScope.launch {
-            playbackRepository.savePlaybackState(
-                videoUri = uri,
-                title = title,
-                positionMs = pos,
+    private fun resolveInitialPlaylist(intent: Intent?) {
+        val dataUri = intent?.data
+        if (dataUri != null) {
+            val title = dataUri.lastPathSegment?.substringAfterLast('/')?.substringBeforeLast('.') ?: "Video"
+            playlist = listOf(PlaylistEntry(dataUri.toString(), title))
+            currentIndex = 0
+            return
+        }
+        val session = PlayerSessionManager.sessionMeta.value
+        if (session.playlist.isNotEmpty()) {
+            playlist = session.playlist
+            currentIndex = session.currentIndex
+        }
+    }
+
+    private fun reloadCurrentItemWithSubtitle(subUri: Uri) {
+        val player = exoPlayer ?: return
+        val entry = playlist.getOrNull(currentIndex) ?: return
+        val pos = player.currentPosition
+        val mime = when {
+            subUri.toString().endsWith(".vtt", true) -> MimeTypes.TEXT_VTT
+            subUri.toString().endsWith(".ass", true) || subUri.toString().endsWith(".ssa", true) -> MimeTypes.TEXT_SSA
+            else -> MimeTypes.APPLICATION_SUBRIP
+        }
+        val subConfig = MediaItem.SubtitleConfiguration.Builder(subUri)
+            .setMimeType(mime)
+            .setSelectionFlags(C.SELECTION_FLAG_DEFAULT)
+            .build()
+        val updated = MediaItem.Builder()
+            .setUri(Uri.parse(entry.uriString))
+            .setMediaMetadata(MediaMetadata.Builder().setTitle(entry.title).build())
+            .setSubtitleConfigurations(listOf(subConfig))
+            .build()
+        player.setMediaItem(updated, pos)
+        player.prepare()
+        player.playWhenReady = true
+    }
+
+    private fun enterPipSafe() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            runCatching {
+                val params = PictureInPictureParams.Builder()
+                    .setAspectRatio(Rational(16, 9))
+                    .build()
+                enterPictureInPictureMode(params)
+            }
+        }
+    }
+
+    private suspend fun persistPlaybackSnapshot(speed: Float) {
+        val p = exoPlayer ?: return
+        val entry = playlist.getOrNull(currentIndex) ?: return
+        val dur = p.duration
+        if (dur > 0L) {
+            playbackRepo.savePlaybackState(
+                videoUri = entry.uriString,
+                title = entry.title,
+                positionMs = p.currentPosition,
                 durationMs = dur,
                 playbackSpeed = speed,
-                useSoftwareDecoder = isSw
+                useSoftwareDecoder = useSoftwareDecoderState
             )
         }
     }
 
-    companion object {
-        const val EXTRA_VIDEO_URI = "extra_video_uri"
-        const val EXTRA_VIDEO_TITLE = "extra_video_title"
-        private const val ACTION_PIP_PLAY_PAUSE = "com.example.player.PIP_PLAY_PAUSE"
-        private const val ACTION_PIP_REWIND = "com.example.player.PIP_REWIND"
-        private const val ACTION_PIP_FORWARD = "com.example.player.PIP_FORWARD"
-
-        fun createIntent(context: Context, videoUri: String, title: String): Intent {
-            return Intent(context, PlayerActivity::class.java).apply {
-                putExtra(EXTRA_VIDEO_URI, videoUri)
-                putExtra(EXTRA_VIDEO_TITLE, title)
-            }
-        }
-
-        fun createPlaylistIntent(
-            context: Context,
-            playlist: List<PlaylistEntry>,
-            startIndex: Int
-        ): Intent {
-            PlayerSessionManager.setPendingPlaylist(playlist, startIndex)
-            return Intent(context, PlayerActivity::class.java)
-        }
+    private fun hideSystemBars() {
+        window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        val controller = WindowInsetsControllerCompat(window, window.decorView)
+        controller.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+        controller.hide(WindowInsetsCompat.Type.systemBars())
     }
 }

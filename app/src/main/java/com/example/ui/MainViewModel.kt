@@ -2,320 +2,192 @@ package com.example.ui
 
 import android.app.Application
 import android.content.IntentSender
-import android.graphics.Bitmap
+import android.net.Uri
+import android.os.Build
+import android.os.Environment
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.BuildConfig
 import com.example.data.local.PlaybackHistoryEntity
-import com.example.data.local.VeloDatabase
+import com.example.data.model.BrowserDestination
+import com.example.data.model.DoubleClickAction
+import com.example.data.model.PlayerControlButton
+import com.example.data.model.PlaylistEntry
+import com.example.data.model.SingleClickAction
+import com.example.data.model.SortDirection
+import com.example.data.model.SortField
+import com.example.data.model.UpdateUiState
+import com.example.data.model.UserPreferences
 import com.example.data.model.VideoFolder
 import com.example.data.model.VideoItem
-import com.example.data.repository.DoubleClickAction
-import com.example.data.repository.MediaFileOpResult
-import com.example.data.repository.PendingMediaOp
+import com.example.data.repository.LibrarySnapshot
+import com.example.data.repository.MediaMutationOutcome
 import com.example.data.repository.PlaybackRepository
-import com.example.data.repository.PlayerControlButton
-import com.example.data.repository.SingleClickAction
-import com.example.data.repository.UserPreferences
 import com.example.data.repository.UserPreferencesRepository
 import com.example.data.repository.VideoLibraryRepository
-import com.example.data.repository.VideoLibrarySnapshot
-import com.example.updater.ApkDownloadState
-import com.example.updater.GitHubReleaseInfo
 import com.example.updater.GitHubUpdateManager
-import com.example.updater.UpdateCheckResult
-import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
-import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
-import java.io.File
 
-enum class SortField(val label: String) {
-    NAME("Name"),
-    SIZE("Size"),
-    DATE("Date"),
-    TYPE("Type"),
-    PLAYS("Plays")
-}
-
-enum class SortDirection(val label: String) {
-    ASC("ASC"),
-    DESC("DESC")
-}
-
-sealed interface BrowserDestination {
-    data object Folders : BrowserDestination
-    data class Folder(val bucketId: Long) : BrowserDestination
-    data object Favorites : BrowserDestination
-    data class Playlist(val name: String) : BrowserDestination
-}
-
-sealed interface UpdateUiState {
-    data object Idle : UpdateUiState
-    data object Checking : UpdateUiState
-    data class Available(val release: GitHubReleaseInfo) : UpdateUiState
-    data class UpToDate(val versionName: String) : UpdateUiState
-    data class Error(val message: String) : UpdateUiState
-    data class Downloading(
-        val release: GitHubReleaseInfo,
-        val progressPercent: Int,
-        val bytesDownloaded: Long,
-        val totalBytes: Long,
-        val speedBytesPerSec: Long
-    ) : UpdateUiState
-    data class ReadyToInstall(val release: GitHubReleaseInfo, val apkFile: File) : UpdateUiState
-}
-
-data class PendingPermissionRequest(
-    val intentSender: IntentSender,
-    val pendingOp: PendingMediaOp
+data class PendingMoveRequest(
+    val videos: List<VideoItem>,
+    val targetPath: String
 )
 
-data class MainUiState(
-    val isLoadingLibrary: Boolean = false,
-    val folders: List<VideoFolder> = emptyList(),
-    val videosByFolder: Map<Long, List<VideoItem>> = emptyMap(),
-    val allVideos: List<VideoItem> = emptyList(),
-    val destination: BrowserDestination = BrowserDestination.Folders,
-    val searchQuery: String = "",
-    val sortField: SortField = SortField.NAME,
-    val sortDirection: SortDirection = SortDirection.ASC,
-    val selectedVideoUris: Set<String> = emptySet(),
-    val historyByUri: Map<String, PlaybackHistoryEntity> = emptyMap(),
-    val recentVideos: List<Pair<VideoItem, PlaybackHistoryEntity>> = emptyList(),
-    val lastHistoryEntry: PlaybackHistoryEntity? = null,
-    val preferences: UserPreferences = UserPreferences(),
-    val updateState: UpdateUiState = UpdateUiState.Idle,
-    val showUpdateSheet: Boolean = false,
-    val pendingInstallApk: File? = null,
-    val pendingPermissionRequest: PendingPermissionRequest? = null,
-    val actionMessage: String? = null
-) {
-    val isSelectionMode: Boolean
-        get() = selectedVideoUris.isNotEmpty()
-
-    val selectedFolder: VideoFolder?
-        get() = (destination as? BrowserDestination.Folder)?.let { dest ->
-            folders.firstOrNull { it.bucketId == dest.bucketId }
-        }
-
-    val filteredFolders: List<VideoFolder>
-        get() {
-            val baseFolders = if (preferences.showHiddenFiles) {
-                folders
-            } else {
-                folders.filter { !it.name.startsWith(".") }
-            }
-            val base = if (searchQuery.isBlank()) {
-                baseFolders
-            } else {
-                val q = searchQuery.trim().lowercase()
-                baseFolders.filter { folder ->
-                    folder.name.lowercase().contains(q) ||
-                        videosByFolder[folder.bucketId].orEmpty().any {
-                            it.title.lowercase().contains(q) || it.displayName.lowercase().contains(q)
-                        }
-                }
-            }
-            val comparator = when (sortField) {
-                SortField.NAME -> compareBy<VideoFolder> { it.name.lowercase() }
-                SortField.SIZE -> compareBy<VideoFolder> { it.totalSizeBytes }
-                SortField.DATE -> compareBy<VideoFolder> { it.latestModifiedSec }
-                SortField.TYPE -> compareBy<VideoFolder> { it.videoCount }.thenBy { it.name.lowercase() }
-                SortField.PLAYS -> compareBy<VideoFolder> { folder ->
-                    videosByFolder[folder.bucketId].orEmpty().maxOfOrNull { historyByUri[it.uriString]?.lastPlayedAt ?: 0L } ?: 0L
-                }
-            }
-            return if (sortDirection == SortDirection.ASC) {
-                base.sortedWith(comparator)
-            } else {
-                base.sortedWith(comparator.reversed())
-            }
-        }
-
-    val currentVideos: List<VideoItem>
-        get() {
-            val videoByUri = allVideos.associateBy { it.uriString }
-            val rawDest = when (val dest = destination) {
-                BrowserDestination.Folders -> emptyList()
-                is BrowserDestination.Folder -> videosByFolder[dest.bucketId].orEmpty()
-                BrowserDestination.Favorites -> {
-                    allVideos.filter { preferences.favoriteUris.contains(it.uriString) }
-                }
-                is BrowserDestination.Playlist -> {
-                    preferences.playlists[dest.name].orEmpty().mapNotNull { videoByUri[it] }
-                }
-            }
-            val raw = if (preferences.showHiddenFiles) {
-                rawDest
-            } else {
-                rawDest.filter { !it.displayName.startsWith(".") && !it.folderName.startsWith(".") }
-            }
-
-            val filtered = if (searchQuery.isBlank()) {
-                raw
-            } else {
-                val q = searchQuery.trim().lowercase()
-                raw.filter {
-                    it.title.lowercase().contains(q) || it.displayName.lowercase().contains(q)
-                }
-            }
-
-            val comparator = when (sortField) {
-                SortField.NAME -> compareBy<VideoItem> { it.title.lowercase() }
-                SortField.SIZE -> compareBy<VideoItem> { it.sizeBytes }
-                SortField.DATE -> compareBy<VideoItem> { it.dateModifiedSec }
-                SortField.TYPE -> compareBy<VideoItem> {
-                    it.displayName.substringAfterLast('.', "").lowercase()
-                }.thenBy { it.title.lowercase() }
-                SortField.PLAYS -> compareBy<VideoItem> { historyByUri[it.uriString]?.lastPlayedAt ?: 0L }
-            }
-            return if (sortDirection == SortDirection.ASC) {
-                filtered.sortedWith(comparator)
-            } else {
-                filtered.sortedWith(comparator.reversed())
-            }
-        }
-
-    val favoriteVideosCount: Int
-        get() {
-            val availableUris = allVideos.map { it.uriString }.toHashSet()
-            return preferences.favoriteUris.count { availableUris.contains(it) }
-        }
-
-    fun isVideoNew(video: VideoItem): Boolean {
-        return !historyByUri.containsKey(video.uriString) &&
-            !preferences.playedVideoUris.contains(video.uriString)
-    }
-
-    fun unplayedCountForFolder(bucketId: Long): Int {
-        return videosByFolder[bucketId].orEmpty().count { isVideoNew(it) }
-    }
-}
-
 class MainViewModel(application: Application) : AndroidViewModel(application) {
-
-    private val libraryRepo = VideoLibraryRepository(application)
-    private val playbackRepo = PlaybackRepository(VeloDatabase.getInstance(application).playbackHistoryDao())
     private val prefsRepo = UserPreferencesRepository(application)
-    val updateManager = GitHubUpdateManager(application)
+    private val playbackRepo = PlaybackRepository(application)
+    private val libraryRepo = VideoLibraryRepository(application)
 
-    private val _librarySnapshot = MutableStateFlow(
-        VideoLibrarySnapshot(emptyList(), emptyMap(), emptyList())
-    )
-    private val _isLoadingLibrary = MutableStateFlow(false)
+    private val _isLoadingLibrary = MutableStateFlow(true)
+    val isLoadingLibrary: StateFlow<Boolean> = _isLoadingLibrary.asStateFlow()
+
+    private val _snapshot = MutableStateFlow(LibrarySnapshot(emptyList(), emptyMap(), emptyList()))
+    val snapshot: StateFlow<LibrarySnapshot> = _snapshot.asStateFlow()
+
     private val _destination = MutableStateFlow<BrowserDestination>(BrowserDestination.Folders)
+    val destination: StateFlow<BrowserDestination> = _destination.asStateFlow()
+
     private val _searchQuery = MutableStateFlow("")
-    private val _sortField = MutableStateFlow(SortField.NAME)
-    private val _sortDirection = MutableStateFlow(SortDirection.ASC)
+    val searchQuery: StateFlow<String> = _searchQuery.asStateFlow()
+
+    private val _sortField = MutableStateFlow(SortField.DATE)
+    val sortField: StateFlow<SortField> = _sortField.asStateFlow()
+
+    private val _sortDirection = MutableStateFlow(SortDirection.DESC)
+    val sortDirection: StateFlow<SortDirection> = _sortDirection.asStateFlow()
+
     private val _selectedVideoUris = MutableStateFlow<Set<String>>(emptySet())
-    private val _updateState = MutableStateFlow<UpdateUiState>(UpdateUiState.Idle)
-    private val _showUpdateSheet = MutableStateFlow(false)
-    private val _pendingInstallApk = MutableStateFlow<File?>(null)
-    private val _pendingPermissionRequest = MutableStateFlow<PendingPermissionRequest?>(null)
+    val selectedVideoUris: StateFlow<Set<String>> = _selectedVideoUris.asStateFlow()
+
     private val _actionMessage = MutableStateFlow<String?>(null)
+    val actionMessage: StateFlow<String?> = _actionMessage.asStateFlow()
 
-    private var downloadJob: Job? = null
+    private val _pendingIntentSender = MutableStateFlow<IntentSender?>(null)
+    val pendingIntentSender: StateFlow<IntentSender?> = _pendingIntentSender.asStateFlow()
 
-    val uiState: StateFlow<MainUiState> = combine(
-        _librarySnapshot,
-        _isLoadingLibrary,
+    private val _pendingMoveAccessPrompt = MutableStateFlow<PendingMoveRequest?>(null)
+    val pendingMoveAccessPrompt: StateFlow<PendingMoveRequest?> = _pendingMoveAccessPrompt.asStateFlow()
+
+    private val _updateState = MutableStateFlow<UpdateUiState>(UpdateUiState.Idle)
+    val updateState: StateFlow<UpdateUiState> = _updateState.asStateFlow()
+
+    private val _showUpdateDialog = MutableStateFlow(false)
+    val showUpdateDialog: StateFlow<Boolean> = _showUpdateDialog.asStateFlow()
+
+    private var pendingMoveForRetry: PendingMoveRequest? = null
+
+    val preferences: StateFlow<UserPreferences> = prefsRepo.preferencesFlow.stateIn(
+        viewModelScope,
+        SharingStarted.Eagerly,
+        UserPreferences()
+    )
+
+    val historyByUri: StateFlow<Map<String, PlaybackHistoryEntity>> = playbackRepo.observeHistory()
+        .map { list -> list.associateBy { it.videoUri } }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, emptyMap())
+
+    val lastHistoryEntry: StateFlow<PlaybackHistoryEntity?> = combine(
+        playbackRepo.observeHistory(),
+        _snapshot
+    ) { entries, snap ->
+        val available = snap.allVideos.map { it.uriString }.toSet()
+        entries.firstOrNull { it.videoUri in available || it.positionMs > 0L }
+    }.stateIn(viewModelScope, SharingStarted.Eagerly, null)
+
+    val filteredFolders: StateFlow<List<VideoFolder>> = combine(
+        _snapshot,
+        _searchQuery,
+        _sortField,
+        _sortDirection,
+        preferences
+    ) { snap, query, field, dir, prefs ->
+        val q = query.trim().lowercase()
+        val matched = if (q.isBlank()) {
+            snap.folders
+        } else {
+            snap.folders.filter { folder ->
+                folder.name.lowercase().contains(q) ||
+                    (snap.videosByFolder[folder.bucketId]?.any {
+                        it.title.lowercase().contains(q) || it.displayName.lowercase().contains(q)
+                    } == true)
+            }
+        }
+        val unplayedCounts = snap.videosByFolder.mapValues { (_, list) ->
+            list.count { it.uriString !in prefs.playedVideoUris }
+        }
+        val cmp = when (field) {
+            SortField.NAME -> compareBy<VideoFolder> { it.name.lowercase() }
+            SortField.SIZE -> compareBy<VideoFolder> { it.totalSizeBytes }
+            SortField.DATE -> compareBy<VideoFolder> { it.latestModifiedSec }
+            SortField.TYPE -> compareBy<VideoFolder> { it.pathHint.lowercase() }
+            SortField.PLAYS -> compareBy<VideoFolder> { unplayedCounts[it.bucketId] ?: 0 }
+        }
+        val sorted = matched.sortedWith(cmp)
+        if (dir == SortDirection.DESC) sorted.reversed() else sorted
+    }.stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+
+    val currentVideos: StateFlow<List<VideoItem>> = combine(
+        _snapshot,
         _destination,
         _searchQuery,
         _sortField,
         _sortDirection,
-        _selectedVideoUris,
-        playbackRepo.historyByUri,
-        prefsRepo.preferences,
-        _updateState,
-        _showUpdateSheet,
-        _pendingInstallApk,
-        _pendingPermissionRequest,
-        _actionMessage
-    ) { values ->
-        @Suppress("UNCHECKED_CAST")
-        val snapshot = values[0] as VideoLibrarySnapshot
-        val loading = values[1] as Boolean
-        val destination = values[2] as BrowserDestination
-        val query = values[3] as String
-        val sortField = values[4] as SortField
-        val sortDirection = values[5] as SortDirection
-        @Suppress("UNCHECKED_CAST")
-        val selectedUris = values[6] as Set<String>
-        @Suppress("UNCHECKED_CAST")
-        val history = values[7] as Map<String, PlaybackHistoryEntity>
-        val prefs = values[8] as UserPreferences
-        val updateState = values[9] as UpdateUiState
-        val showSheet = values[10] as Boolean
-        val pendingApk = values[11] as File?
-        val pendingPermission = values[12] as PendingPermissionRequest?
-        val actionMsg = values[13] as String?
+        preferences
+    ) { arr ->
+        val snap = arr[0] as LibrarySnapshot
+        val dest = arr[1] as BrowserDestination
+        val query = arr[2] as String
+        val field = arr[3] as SortField
+        val dir = arr[4] as SortDirection
+        val prefs = arr[5] as UserPreferences
 
-        val videoByUri = snapshot.allVideos.associateBy { it.uriString }
-        val sortedHistory = history.values.sortedByDescending { it.lastPlayedAt }
-        val recent = sortedHistory
-            .filter { it.positionMs > 1_500L }
-            .mapNotNull { entry -> videoByUri[entry.videoUri]?.let { it to entry } }
-            .take(8)
-        val lastHistory = sortedHistory.firstOrNull { entry ->
-            entry.videoUri.isNotBlank() && (videoByUri.containsKey(entry.videoUri) || entry.positionMs > 0L)
+        val videoByUri = snap.allVideos.associateBy { it.uriString }
+        val raw = when (dest) {
+            BrowserDestination.Folders -> emptyList()
+            is BrowserDestination.Folder -> snap.videosByFolder[dest.bucketId].orEmpty()
+            BrowserDestination.Favorites -> snap.allVideos.filter { it.uriString in prefs.favoriteUris }
+            is BrowserDestination.Playlist -> prefs.playlists[dest.name].orEmpty().mapNotNull { videoByUri[it] }
         }
+        filterAndSortVideos(raw, query, field, dir, prefs)
+    }.stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
 
-        MainUiState(
-            isLoadingLibrary = loading,
-            folders = snapshot.folders,
-            videosByFolder = snapshot.videosByFolder,
-            allVideos = snapshot.allVideos,
-            destination = destination,
-            searchQuery = query,
-            sortField = sortField,
-            sortDirection = sortDirection,
-            selectedVideoUris = selectedUris,
-            historyByUri = history,
-            recentVideos = recent,
-            lastHistoryEntry = lastHistory,
-            preferences = prefs,
-            updateState = updateState,
-            showUpdateSheet = showSheet,
-            pendingInstallApk = pendingApk,
-            pendingPermissionRequest = pendingPermission,
-            actionMessage = actionMsg
-        )
-    }.stateIn(
-        scope = viewModelScope,
-        started = SharingStarted.WhileSubscribed(5000),
-        initialValue = MainUiState()
-    )
+    val sortedAllVideos: StateFlow<List<VideoItem>> = combine(
+        _snapshot,
+        _searchQuery,
+        _sortField,
+        _sortDirection,
+        preferences
+    ) { snap, query, field, dir, prefs ->
+        filterAndSortVideos(snap.allVideos, query, field, dir, prefs)
+    }.stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
 
     init {
         viewModelScope.launch {
-            val prefs = prefsRepo.preferences.first()
-            if (prefs.githubRepoSlug != UserPreferences.DEFAULT_GITHUB_REPO) {
-                checkForUpdates(manual = false)
+            preferences.map { it.showHiddenFiles }.distinctUntilChanged().collect {
+                refreshLibrary()
             }
         }
     }
+
+    fun currentAppVersionLabel(): String = "v${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})"
 
     fun refreshLibrary() {
         viewModelScope.launch {
             _isLoadingLibrary.value = true
-            try {
-                _librarySnapshot.value = libraryRepo.scanVideos()
-            } finally {
-                _isLoadingLibrary.value = false
-            }
+            _snapshot.value = libraryRepo.loadLibrary(preferences.value.showHiddenFiles)
+            _isLoadingLibrary.value = false
         }
     }
 
-    suspend fun loadThumbnail(videoId: Long, uriString: String): Bitmap? {
-        return libraryRepo.loadThumbnail(videoId, uriString)
-    }
-
-    fun openFolder(bucketId: Long) {
+    fun openFolder(bucketId: String) {
         _destination.value = BrowserDestination.Folder(bucketId)
         _searchQuery.value = ""
         _selectedVideoUris.value = emptySet()
@@ -339,41 +211,31 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         _selectedVideoUris.value = emptySet()
     }
 
-    fun setSearchQuery(query: String) {
-        _searchQuery.value = query
+    fun setSearchQuery(q: String) {
+        _searchQuery.value = q
     }
 
-    fun setSortOption(field: SortField, direction: SortDirection) {
+    fun setSortOption(field: SortField, dir: SortDirection) {
         _sortField.value = field
-        _sortDirection.value = direction
+        _sortDirection.value = dir
     }
 
-    fun toggleGridView() {
-        viewModelScope.launch {
-            val prefs = prefsRepo.preferences.first()
-            val currentGrid = if (prefs.mainViewLayout == "list") false else (prefs.mainViewLayout == "grid" || prefs.isGridView)
-            val nextGrid = !currentGrid
-            prefsRepo.setGridView(nextGrid)
-            prefsRepo.setMainViewLayout(if (nextGrid) "grid" else "list")
-        }
-    }
-
-    fun startVideoSelection(uri: String) {
+    fun startSelection(uri: String) {
         _selectedVideoUris.value = _selectedVideoUris.value + uri
     }
 
-    fun toggleVideoSelection(uri: String) {
+    fun toggleSelection(uri: String) {
         val current = _selectedVideoUris.value
-        _selectedVideoUris.value = if (current.contains(uri)) {
-            current - uri
-        } else {
-            current + uri
-        }
+        _selectedVideoUris.value = if (uri in current) current - uri else current + uri
     }
 
-    fun selectAllCurrentVideos() {
-        val allUris = uiState.value.currentVideos.map { it.uriString }.toSet()
-        _selectedVideoUris.value = allUris
+    fun selectAllVisible() {
+        val list = if (_destination.value == BrowserDestination.Folders && preferences.value.mainDisplayMode == "files") {
+            sortedAllVideos.value
+        } else {
+            currentVideos.value
+        }
+        _selectedVideoUris.value = list.map { it.uriString }.toSet()
     }
 
     fun clearSelection() {
@@ -391,267 +253,217 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    fun addVideoToPlaylist(playlistName: String, video: VideoItem) {
+    fun addToPlaylist(name: String, video: VideoItem) {
         viewModelScope.launch {
-            prefsRepo.addVideoToPlaylist(playlistName, video.uriString)
-            _actionMessage.value = "Added to playlist \"$playlistName\""
+            prefsRepo.addToPlaylist(name, video.uriString)
+            _actionMessage.value = "Added to playlist \"${name.trim()}\""
         }
     }
 
-    fun removeVideoFromPlaylist(playlistName: String, video: VideoItem) {
+    fun removeFromPlaylist(name: String, video: VideoItem) {
         viewModelScope.launch {
-            prefsRepo.removeVideoFromPlaylist(playlistName, video.uriString)
-            _actionMessage.value = "Removed from playlist \"$playlistName\""
+            prefsRepo.removeFromPlaylist(name, video.uriString)
+            _actionMessage.value = "Removed from playlist \"$name\""
         }
     }
 
-    fun deletePlaylist(playlistName: String) {
+    fun deletePlaylist(name: String) {
         viewModelScope.launch {
-            prefsRepo.deletePlaylist(playlistName)
-            if (_destination.value == BrowserDestination.Playlist(playlistName)) {
+            prefsRepo.deletePlaylist(name)
+            if ((_destination.value as? BrowserDestination.Playlist)?.name == name) {
                 _destination.value = BrowserDestination.Folders
             }
-            _actionMessage.value = "Deleted playlist \"$playlistName\""
-        }
-    }
-
-    fun deleteVideos(videos: List<VideoItem>) {
-        viewModelScope.launch {
-            handleMediaFileOpResult(libraryRepo.deleteVideos(videos))
+            _actionMessage.value = "Deleted playlist \"$name\""
         }
     }
 
     fun renameVideo(video: VideoItem, newTitle: String) {
         viewModelScope.launch {
-            handleMediaFileOpResult(libraryRepo.renameVideo(video, newTitle))
+            handleMutationOutcome(libraryRepo.renameVideo(video, newTitle))
         }
     }
 
-    fun moveVideos(videos: List<VideoItem>, targetRelativePath: String) {
+    fun moveVideos(videos: List<VideoItem>, targetPath: String) {
         viewModelScope.launch {
-            handleMediaFileOpResult(libraryRepo.moveVideos(videos, targetRelativePath))
+            pendingMoveForRetry = PendingMoveRequest(videos, targetPath)
+            val outcome = libraryRepo.moveVideos(videos, targetPath)
+            if (outcome is MediaMutationOutcome.NeedsAllFilesAccess) {
+                _pendingMoveAccessPrompt.value = PendingMoveRequest(videos, outcome.targetFolder)
+            } else {
+                handleMutationOutcome(outcome)
+            }
         }
     }
 
-    fun onPermissionRequestResult(granted: Boolean) {
-        val pending = _pendingPermissionRequest.value ?: return
-        _pendingPermissionRequest.value = null
-        if (!granted) {
-            _actionMessage.value = "Permission denied"
-            return
+    fun dismissMoveAccessPrompt() {
+        _pendingMoveAccessPrompt.value = null
+    }
+
+    fun retryMoveAfterAllFilesAccessResult() {
+        val pending = _pendingMoveAccessPrompt.value ?: pendingMoveForRetry ?: return
+        _pendingMoveAccessPrompt.value = null
+        val granted = Build.VERSION.SDK_INT < Build.VERSION_CODES.R || Environment.isExternalStorageManager()
+        if (granted) {
+            moveVideos(pending.videos, pending.targetPath)
+        } else {
+            _actionMessage.value = "File access not granted. Try moving under Movies/ or grant All Files Access."
         }
+    }
+
+    fun moveToScopedMoviesSubfolder(pending: PendingMoveRequest) {
+        _pendingMoveAccessPrompt.value = null
+        val folderLeaf = pending.targetPath.trim('/').substringAfterLast('/').ifBlank { "Moved" }
+        moveVideos(pending.videos, "Movies/$folderLeaf")
+    }
+
+    fun deleteVideos(videos: List<VideoItem>) {
         viewModelScope.launch {
-            val result = when (val op = pending.pendingOp) {
-                is PendingMediaOp.DeleteVideos -> {
-                    // On Android 11+, createDeleteRequest already deletes upon user approval!
-                    if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R) {
-                        MediaFileOpResult.Success(
-                            "Deleted ${op.videos.size} video(s)",
-                            op.videos.map { it.uriString }
-                        )
-                    } else {
-                        libraryRepo.deleteVideos(op.videos)
-                    }
+            val outcome = libraryRepo.deleteVideos(videos)
+            if (outcome is MediaMutationOutcome.Success) {
+                for (v in videos) {
+                    playbackRepo.clearPosition(v.uriString)
+                    prefsRepo.removeUriFromCollections(v.uriString)
                 }
-                is PendingMediaOp.RenameVideo -> libraryRepo.renameVideo(op.video, op.newTitle)
-                is PendingMediaOp.MoveVideos -> libraryRepo.moveVideos(op.videos, op.targetRelativePath)
             }
-            handleMediaFileOpResult(result)
+            handleMutationOutcome(outcome)
         }
     }
 
-    private suspend fun handleMediaFileOpResult(result: MediaFileOpResult) {
-        when (result) {
-            is MediaFileOpResult.Success -> {
-                _selectedVideoUris.value = emptySet()
-                result.affectedUris.forEach { uri ->
-                    playbackRepo.clearHistory(uri)
-                    prefsRepo.removeFavoriteIfPresent(uri)
-                }
-                _actionMessage.value = result.message
-                _librarySnapshot.value = libraryRepo.scanVideos()
-            }
-            is MediaFileOpResult.NeedsPermission -> {
-                _pendingPermissionRequest.value = PendingPermissionRequest(
-                    intentSender = result.intentSender,
-                    pendingOp = result.pendingOp
-                )
-            }
-            is MediaFileOpResult.Error -> {
-                _actionMessage.value = result.message
-            }
+    fun clearResumePosition(videoUri: String) {
+        viewModelScope.launch {
+            playbackRepo.clearPosition(videoUri)
+            _actionMessage.value = "Resume position cleared"
         }
+    }
+
+    fun onPermissionSenderHandled(granted: Boolean) {
+        _pendingIntentSender.value = null
+        if (granted) {
+            val pending = pendingMoveForRetry
+            if (pending != null) {
+                pendingMoveForRetry = null
+                moveVideos(pending.videos, pending.targetPath)
+                return
+            }
+            refreshLibrary()
+            _actionMessage.value = "Permission granted"
+        } else {
+            pendingMoveForRetry = null
+            _actionMessage.value = "Storage permission denied"
+        }
+    }
+
+    fun consumeIntentSender() {
+        _pendingIntentSender.value = null
     }
 
     fun clearActionMessage() {
         _actionMessage.value = null
     }
 
-    fun toggleDarkMode() {
+    fun markVideoPlayed(uri: String) {
+        viewModelScope.launch { prefsRepo.markVideoPlayed(uri) }
+    }
+
+    fun buildPlaylistFor(video: VideoItem, list: List<VideoItem>): Pair<List<PlaylistEntry>, Int> {
+        val entries = list.map { PlaylistEntry(it.uriString, it.title) }
+        val idx = list.indexOfFirst { it.uriString == video.uriString }.coerceAtLeast(0)
+        return entries to idx
+    }
+
+    fun getLastPlayedVideoAndPlaylist(): Pair<VideoItem, List<VideoItem>>? {
+        val snap = _snapshot.value
+        val last = lastHistoryEntry.value
+        val target = if (last != null) {
+            snap.allVideos.firstOrNull { it.uriString == last.videoUri } ?: snap.allVideos.firstOrNull()
+        } else {
+            snap.allVideos.firstOrNull()
+        } ?: return null
+        val folderList = snap.videosByFolder[target.bucketId].orEmpty().ifEmpty { listOf(target) }
+        return target to folderList
+    }
+
+    // Settings updates
+    fun toggleDarkMode() = viewModelScope.launch { prefsRepo.setDarkMode(!preferences.value.isDarkMode) }
+    fun toggleGridView() = viewModelScope.launch { prefsRepo.setGridView(!preferences.value.isGridView) }
+    fun setShowHiddenFiles(v: Boolean) = viewModelScope.launch { prefsRepo.setShowHiddenFiles(v) }
+    fun setMainDisplayMode(m: String) = viewModelScope.launch { prefsRepo.setMainDisplayMode(m) }
+    fun setMainViewLayout(l: String) = viewModelScope.launch { prefsRepo.setMainViewLayout(l) }
+    fun setOneFingerGesture(g: String) = viewModelScope.launch { prefsRepo.setOneFingerGesture(g) }
+    fun setTwoFingerGesture(g: String) = viewModelScope.launch { prefsRepo.setTwoFingerGesture(g) }
+    fun setThreeFingerGesture(g: String) = viewModelScope.launch { prefsRepo.setThreeFingerGesture(g) }
+    fun setAutoPipOnHome(v: Boolean) = viewModelScope.launch { prefsRepo.setAutoPipOnHome(v) }
+    fun setDefaultSoftwareDecoder(v: Boolean) = viewModelScope.launch { prefsRepo.setDefaultSoftwareDecoder(v) }
+    fun setSingleClickAction(a: SingleClickAction) = viewModelScope.launch { prefsRepo.setSingleClickAction(a) }
+    fun setDoubleClickAction(a: DoubleClickAction) = viewModelScope.launch { prefsRepo.setDoubleClickAction(a) }
+    fun setAlwaysBackgroundPlay(v: Boolean) = viewModelScope.launch { prefsRepo.setAlwaysBackgroundPlay(v) }
+    fun setEnableSwipeGestures(v: Boolean) = viewModelScope.launch { prefsRepo.setEnableSwipeGestures(v) }
+    fun setGestureSeekStepSeconds(s: Int) = viewModelScope.launch { prefsRepo.setGestureSeekStepSeconds(s) }
+    fun setPlayerButtonVisible(b: PlayerControlButton, v: Boolean) = viewModelScope.launch {
+        prefsRepo.setPlayerButtonVisible(b, v)
+    }
+    fun showAllPlayerButtons() = viewModelScope.launch { prefsRepo.showAllPlayerButtons() }
+
+    // GitHub Updates
+    fun openUpdateCheck() {
+        _showUpdateDialog.value = true
         viewModelScope.launch {
-            val current = prefsRepo.preferences.first().isDarkMode
-            prefsRepo.setDarkMode(!current)
-        }
-    }
-
-    fun setShowHiddenFiles(enabled: Boolean) {
-        viewModelScope.launch { prefsRepo.setShowHiddenFiles(enabled) }
-    }
-
-    fun setMainDisplayMode(mode: String) {
-        viewModelScope.launch { prefsRepo.setMainDisplayMode(mode) }
-    }
-
-    fun setMainViewLayout(layout: String) {
-        viewModelScope.launch {
-            prefsRepo.setMainViewLayout(layout)
-            prefsRepo.setGridView(layout == "grid")
-        }
-    }
-
-    fun setOneFingerGesture(gesture: String) {
-        viewModelScope.launch { prefsRepo.setOneFingerGesture(gesture) }
-    }
-
-    fun setTwoFingerGesture(gesture: String) {
-        viewModelScope.launch { prefsRepo.setTwoFingerGesture(gesture) }
-    }
-
-    fun setThreeFingerGesture(gesture: String) {
-        viewModelScope.launch { prefsRepo.setThreeFingerGesture(gesture) }
-    }
-
-    fun setAutoPipEnabled(enabled: Boolean) {
-        viewModelScope.launch { prefsRepo.setAutoPipOnHome(enabled) }
-    }
-
-    fun setDefaultSoftwareDecoder(enabled: Boolean) {
-        viewModelScope.launch { prefsRepo.setDefaultSoftwareDecoder(enabled) }
-    }
-
-    fun setSingleClickAction(action: SingleClickAction) {
-        viewModelScope.launch { prefsRepo.setSingleClickAction(action) }
-    }
-
-    fun setDoubleClickAction(action: DoubleClickAction) {
-        viewModelScope.launch { prefsRepo.setDoubleClickAction(action) }
-    }
-
-    fun setAlwaysBackgroundPlay(enabled: Boolean) {
-        viewModelScope.launch {
-            prefsRepo.setAlwaysBackgroundPlay(enabled)
-            com.example.player.PlayerSessionManager.setBackgroundPlayEnabled(enabled)
-        }
-    }
-
-    fun setEnableSwipeGestures(enabled: Boolean) {
-        viewModelScope.launch { prefsRepo.setEnableSwipeGestures(enabled) }
-    }
-
-    fun setGestureSeekStepSeconds(seconds: Int) {
-        viewModelScope.launch { prefsRepo.setGestureSeekStepSeconds(seconds) }
-    }
-
-    fun setPlayerButtonVisible(button: PlayerControlButton, visible: Boolean) {
-        viewModelScope.launch { prefsRepo.setPlayerButtonVisible(button, visible) }
-    }
-
-    fun showAllPlayerButtons() {
-        viewModelScope.launch { prefsRepo.showAllPlayerButtons() }
-    }
-
-    fun openUpdateSheet() {
-        checkForUpdates(manual = true)
-    }
-
-    fun dismissUpdateSheet() {
-        _showUpdateSheet.value = false
-    }
-
-    fun saveGithubRepoAndCheck(repoSlug: String) {
-        viewModelScope.launch {
-            prefsRepo.setGithubRepoSlug(repoSlug)
-            checkForUpdates(manual = true, overrideSlug = repoSlug)
-        }
-    }
-
-    fun checkForUpdates(manual: Boolean, overrideSlug: String? = null) {
-        viewModelScope.launch {
-            val slug = overrideSlug ?: prefsRepo.preferences.first().githubRepoSlug
-            if (manual) {
-                _showUpdateSheet.value = true
-            }
             _updateState.value = UpdateUiState.Checking
-            when (val result = updateManager.checkForUpdate(slug)) {
-                is UpdateCheckResult.UpdateAvailable -> {
-                    _updateState.value = UpdateUiState.Available(result.release)
-                    _showUpdateSheet.value = true
+            _updateState.value = GitHubUpdateManager.checkForUpdate(preferences.value.githubRepoSlug)
+        }
+    }
+
+    fun dismissUpdateDialog() {
+        _showUpdateDialog.value = false
+    }
+
+    private fun handleMutationOutcome(outcome: MediaMutationOutcome) {
+        when (outcome) {
+            is MediaMutationOutcome.Success -> {
+                pendingMoveForRetry = null
+                _selectedVideoUris.value = emptySet()
+                _actionMessage.value = outcome.message
+                refreshLibrary()
+            }
+            is MediaMutationOutcome.NeedsPermission -> {
+                _pendingIntentSender.value = outcome.intentSender
+            }
+            is MediaMutationOutcome.NeedsAllFilesAccess -> {
+                val pending = pendingMoveForRetry
+                if (pending != null) {
+                    _pendingMoveAccessPrompt.value = pending
+                } else {
+                    _actionMessage.value = "Storage permission required to move files."
                 }
-                is UpdateCheckResult.UpToDate -> {
-                    _updateState.value = if (manual) {
-                        UpdateUiState.UpToDate(result.currentVersion)
-                    } else {
-                        UpdateUiState.Idle
-                    }
-                }
-                is UpdateCheckResult.Error -> {
-                    _updateState.value = if (manual) {
-                        UpdateUiState.Error(result.message)
-                    } else {
-                        UpdateUiState.Idle
-                    }
-                }
+            }
+            is MediaMutationOutcome.Failure -> {
+                pendingMoveForRetry = null
+                _actionMessage.value = outcome.message
             }
         }
     }
 
-    fun startInAppDownload(release: GitHubReleaseInfo) {
-        downloadJob?.cancel()
-        downloadJob = viewModelScope.launch {
-            updateManager.downloadApk(release).collect { state ->
-                when (state) {
-                    ApkDownloadState.Idle -> Unit
-                    is ApkDownloadState.Downloading -> {
-                        _updateState.value = UpdateUiState.Downloading(
-                            release = release,
-                            progressPercent = state.progressPercent,
-                            bytesDownloaded = state.bytesDownloaded,
-                            totalBytes = state.totalBytes,
-                            speedBytesPerSec = state.speedBytesPerSec
-                        )
-                    }
-                    is ApkDownloadState.Completed -> {
-                        _pendingInstallApk.value = state.apkFile
-                        _updateState.value = UpdateUiState.ReadyToInstall(release, state.apkFile)
-                    }
-                    is ApkDownloadState.Failed -> {
-                        _updateState.value = UpdateUiState.Error(state.error)
-                    }
-                }
-            }
+    private fun filterAndSortVideos(
+        raw: List<VideoItem>,
+        query: String,
+        field: SortField,
+        dir: SortDirection,
+        prefs: UserPreferences
+    ): List<VideoItem> {
+        val q = query.trim().lowercase()
+        val matched = if (q.isBlank()) {
+            raw
+        } else {
+            raw.filter { it.title.lowercase().contains(q) || it.displayName.lowercase().contains(q) }
         }
-    }
-
-    fun cancelInAppDownload() {
-        downloadJob?.cancel()
-        downloadJob = null
-        val current = _updateState.value
-        if (current is UpdateUiState.Downloading) {
-            _updateState.value = UpdateUiState.Available(current.release)
+        val cmp = when (field) {
+            SortField.NAME -> compareBy<VideoItem> { it.title.lowercase() }
+            SortField.SIZE -> compareBy<VideoItem> { it.sizeBytes }
+            SortField.DATE -> compareBy<VideoItem> { it.dateModifiedSec }
+            SortField.TYPE -> compareBy<VideoItem> { it.displayName.substringAfterLast('.', "").lowercase() }
+            SortField.PLAYS -> compareBy<VideoItem> { if (it.uriString in prefs.playedVideoUris) 1 else 0 }
         }
-    }
-
-    fun clearPendingInstallApk() {
-        _pendingInstallApk.value = null
-    }
-
-    fun clearResumePosition(videoUri: String) {
-        viewModelScope.launch {
-            playbackRepo.clearHistory(videoUri)
-        }
-    }
-
-    fun currentAppVersionLabel(): String {
-        return "v${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})"
+        val sorted = matched.sortedWith(cmp)
+        return if (dir == SortDirection.DESC) sorted.reversed() else sorted
     }
 }
