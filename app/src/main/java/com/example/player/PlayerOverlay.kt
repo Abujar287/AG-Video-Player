@@ -298,16 +298,12 @@ fun PlayerOverlay(
 
                         when (activeGesture) {
                             ActiveDragGesture.SEEK -> {
-                                val stepPx = 110f
-                                val steps = ((abs(totalDx) - 20f).coerceAtLeast(0f) / stepPx).toInt() + 1
-                                val deltaMs = if (totalDx >= 0f) {
-                                    steps * latestSeekStepMs
-                                } else {
-                                    -steps * latestSeekStepMs
-                                }
+                                val widthPx = (sizeNow.width.toFloat()).coerceAtLeast(200f)
+                                val fraction = totalDx / widthPx
+                                val totalDur = if (latestDurationMs > 0L) latestDurationMs else 60_000L
+                                val deltaMs = (fraction * totalDur * 0.8f).toLong()
                                 seekDeltaMs = deltaMs
-                                val dur = latestDurationMs
-                                val targetUpper = if (dur > 0L) dur else Long.MAX_VALUE
+                                val targetUpper = if (latestDurationMs > 0L) latestDurationMs else Long.MAX_VALUE
                                 previewSeekMs = (dragStartPosMs + deltaMs).coerceIn(0L, targetUpper)
                             }
                             ActiveDragGesture.BRIGHTNESS -> {

@@ -119,6 +119,9 @@ data class UserPreferences(
     val showHiddenFiles: Boolean = false,
     val mainDisplayMode: String = "folders", // "folders" or "files"
     val mainViewLayout: String = "grid", // "grid" or "list"
+    val oneFingerGesture: String = "Brightness / Volume Swipe",
+    val twoFingerGesture: String = "Zoom / Scale",
+    val threeFingerGesture: String = "Play / Pause",
     val autoPipOnHome: Boolean = true,
     val defaultSoftwareDecoder: Boolean = false,
     val githubRepoSlug: String = DEFAULT_GITHUB_REPO,
@@ -145,6 +148,9 @@ class UserPreferencesRepository(private val context: Context) {
         val SHOW_HIDDEN_FILES = booleanPreferencesKey("show_hidden_files")
         val MAIN_DISPLAY_MODE = stringPreferencesKey("main_display_mode")
         val MAIN_VIEW_LAYOUT = stringPreferencesKey("main_view_layout")
+        val ONE_FINGER_GESTURE = stringPreferencesKey("one_finger_gesture")
+        val TWO_FINGER_GESTURE = stringPreferencesKey("two_finger_gesture")
+        val THREE_FINGER_GESTURE = stringPreferencesKey("three_finger_gesture")
         val AUTO_PIP_ON_HOME = booleanPreferencesKey("auto_pip_on_home")
         val DEFAULT_SW_DECODER = booleanPreferencesKey("default_sw_decoder")
         val GITHUB_REPO_SLUG = stringPreferencesKey("github_repo_slug")
@@ -168,6 +174,9 @@ class UserPreferencesRepository(private val context: Context) {
             showHiddenFiles = prefs[Keys.SHOW_HIDDEN_FILES] ?: false,
             mainDisplayMode = prefs[Keys.MAIN_DISPLAY_MODE] ?: "folders",
             mainViewLayout = prefs[Keys.MAIN_VIEW_LAYOUT] ?: "grid",
+            oneFingerGesture = prefs[Keys.ONE_FINGER_GESTURE] ?: "Brightness / Volume Swipe",
+            twoFingerGesture = prefs[Keys.TWO_FINGER_GESTURE] ?: "Zoom / Scale",
+            threeFingerGesture = prefs[Keys.THREE_FINGER_GESTURE] ?: "Play / Pause",
             autoPipOnHome = prefs[Keys.AUTO_PIP_ON_HOME] ?: true,
             defaultSoftwareDecoder = prefs[Keys.DEFAULT_SW_DECODER] ?: false,
             githubRepoSlug = savedSlug ?: UserPreferences.DEFAULT_GITHUB_REPO,
@@ -205,6 +214,18 @@ class UserPreferencesRepository(private val context: Context) {
 
     suspend fun setMainViewLayout(layout: String) {
         context.dataStore.edit { it[Keys.MAIN_VIEW_LAYOUT] = layout }
+    }
+
+    suspend fun setOneFingerGesture(gesture: String) {
+        context.dataStore.edit { it[Keys.ONE_FINGER_GESTURE] = gesture }
+    }
+
+    suspend fun setTwoFingerGesture(gesture: String) {
+        context.dataStore.edit { it[Keys.TWO_FINGER_GESTURE] = gesture }
+    }
+
+    suspend fun setThreeFingerGesture(gesture: String) {
+        context.dataStore.edit { it[Keys.THREE_FINGER_GESTURE] = gesture }
     }
 
     suspend fun setAutoPipOnHome(enabled: Boolean) {

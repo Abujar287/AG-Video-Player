@@ -350,8 +350,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun toggleGridView() {
         viewModelScope.launch {
-            val current = prefsRepo.preferences.first().isGridView
-            prefsRepo.setGridView(!current)
+            val prefs = prefsRepo.preferences.first()
+            val currentGrid = if (prefs.mainViewLayout == "list") false else (prefs.mainViewLayout == "grid" || prefs.isGridView)
+            val nextGrid = !currentGrid
+            prefsRepo.setGridView(nextGrid)
+            prefsRepo.setMainViewLayout(if (nextGrid) "grid" else "list")
         }
     }
 
@@ -500,7 +503,22 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun setMainViewLayout(layout: String) {
-        viewModelScope.launch { prefsRepo.setMainViewLayout(layout) }
+        viewModelScope.launch {
+            prefsRepo.setMainViewLayout(layout)
+            prefsRepo.setGridView(layout == "grid")
+        }
+    }
+
+    fun setOneFingerGesture(gesture: String) {
+        viewModelScope.launch { prefsRepo.setOneFingerGesture(gesture) }
+    }
+
+    fun setTwoFingerGesture(gesture: String) {
+        viewModelScope.launch { prefsRepo.setTwoFingerGesture(gesture) }
+    }
+
+    fun setThreeFingerGesture(gesture: String) {
+        viewModelScope.launch { prefsRepo.setThreeFingerGesture(gesture) }
     }
 
     fun setAutoPipEnabled(enabled: Boolean) {

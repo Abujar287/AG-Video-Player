@@ -267,6 +267,9 @@ class MainActivity : ComponentActivity() {
                     onShowHiddenFilesChange = { viewModel.setShowHiddenFiles(it) },
                     onMainDisplayModeChange = { viewModel.setMainDisplayMode(it) },
                     onMainViewLayoutChange = { viewModel.setMainViewLayout(it) },
+                    onOneFingerGestureChange = { viewModel.setOneFingerGesture(it) },
+                    onTwoFingerGestureChange = { viewModel.setTwoFingerGesture(it) },
+                    onThreeFingerGestureChange = { viewModel.setThreeFingerGesture(it) },
                     onTogglePlayerButtonVisibility = { btn, visible ->
                         viewModel.setPlayerButtonVisible(btn, visible)
                     },

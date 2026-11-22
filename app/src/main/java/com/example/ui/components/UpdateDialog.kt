@@ -174,26 +174,10 @@ fun UpdateCheckDialog(
                                         color = MaterialTheme.colorScheme.onSurfaceVariant
                                     )
                                     Text(
-                                        text = buildString {
-                                            append("v${release.versionName}")
-                                            if (release.apkSizeBytes > 0L) {
-                                                append(" · ${FormatUtils.formatFileSize(release.apkSizeBytes)}")
-                                            }
-                                        },
+                                        text = "v${release.versionName}",
                                         style = MaterialTheme.typography.bodyMedium,
                                         fontWeight = FontWeight.Bold,
                                         color = MaterialTheme.colorScheme.primary
-                                    )
-                                }
-                                if (release.releaseNotes.isNotBlank()) {
-                                    Text(
-                                        text = release.releaseNotes,
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                        modifier = Modifier
-                                            .fillMaxWidth()
-                                            .heightIn(max = 100.dp)
-                                            .verticalScroll(rememberScrollState())
                                     )
                                 }
                             }

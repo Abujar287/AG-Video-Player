@@ -28,6 +28,7 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.FastForward
 import androidx.compose.material.icons.filled.Headphones
 import androidx.compose.material.icons.filled.Lock
+import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.PictureInPictureAlt
 import androidx.compose.material.icons.filled.RadioButtonUnchecked
 import androidx.compose.material.icons.filled.Repeat
@@ -71,9 +72,10 @@ import com.example.data.repository.SingleClickAction
 import com.example.data.repository.UserPreferences
 
 private enum class SettingsTab(val title: String, val subtitle: String, val icon: ImageVector) {
+    MENU("Menu", "Default entry mode, layout & hidden files", Icons.Default.Menu),
     UPDATE("Check Update", "GitHub version & APK download", Icons.Default.SystemUpdate),
     PLAYBACK("Playback & Background", "Background play, PiP & SW decoder", Icons.Default.Headphones),
-    GESTURES("Tap & Swipe Control", "Single/double click & swipe gestures", Icons.Default.TouchApp),
+    GESTURES("Tap & Swipe Control", "Finger gestures, single/double click & swipe", Icons.Default.TouchApp),
     BUTTONS("Play Screen Buttons", "Show or hide video overlay buttons", Icons.Default.Visibility)
 }
 
@@ -94,6 +96,9 @@ fun ControlSettingsDialog(
     onShowHiddenFilesChange: (Boolean) -> Unit,
     onMainDisplayModeChange: (String) -> Unit,
     onMainViewLayoutChange: (String) -> Unit,
+    onOneFingerGestureChange: (String) -> Unit,
+    onTwoFingerGestureChange: (String) -> Unit,
+    onThreeFingerGestureChange: (String) -> Unit,
     onTogglePlayerButtonVisibility: (PlayerControlButton, Boolean) -> Unit,
     onShowAllButtons: () -> Unit
 ) {
@@ -250,39 +255,8 @@ fun ControlSettingsDialog(
                         verticalArrangement = Arrangement.spacedBy(14.dp)
                     ) {
                         when (activeTab) {
-                            SettingsTab.PLAYBACK -> {
-                                SettingsGroup(title = "PLAYBACK & BACKGROUND") {
-                                    SettingsSwitchItem(
-                                        title = "Always Background Play",
-                                        subtitle = "Keep playing when phone locks or app minimizes",
-                                        checked = preferences.alwaysBackgroundPlay,
-                                        onCheckedChange = onAlwaysBackgroundPlayChange
-                                    )
-                                    SettingsRowDivider()
-                                    SettingsSwitchItem(
-                                        title = "Auto PiP on Home",
-                                        subtitle = "Mini player window when background play is off",
-                                        checked = preferences.autoPipOnHome,
-                                        onCheckedChange = onAutoPipChange
-                                    )
-                                    SettingsRowDivider()
-                                    SettingsSwitchItem(
-                                        title = "Default SW Decoder",
-                                        subtitle = "Use Software decoder instead of Hardware",
-                                        checked = preferences.defaultSoftwareDecoder,
-                                        onCheckedChange = onDefaultSoftwareDecoderChange
-                                    )
-                                    SettingsRowDivider()
-                                    SettingsSwitchItem(
-                                        title = "Show Hidden Files",
-                                        subtitle = "Display hidden files and folders starting with dot (.)",
-                                        checked = preferences.showHiddenFiles,
-                                        onCheckedChange = onShowHiddenFilesChange
-                                    )
-                                }
-
-                                Spacer(Modifier.height(8.dp))
-                                SettingsGroup(title = "MAIN INTERFACE ENTRY & VIEW") {
+                            SettingsTab.MENU -> {
+                                SettingsGroup(title = "MAIN INTERFACE MENU & PREFERENCES") {
                                     Column(
                                         modifier = Modifier.padding(14.dp),
                                         verticalArrangement = Arrangement.spacedBy(10.dp)
@@ -315,6 +289,40 @@ fun ControlSettingsDialog(
                                             onSelect = { onMainViewLayoutChange(it.first) }
                                         )
                                     }
+
+                                    SettingsRowDivider()
+
+                                    SettingsSwitchItem(
+                                        title = "Show Hidden Files",
+                                        subtitle = "Display hidden files and folders starting with dot (.)",
+                                        checked = preferences.showHiddenFiles,
+                                        onCheckedChange = onShowHiddenFilesChange
+                                    )
+                                }
+                            }
+
+                            SettingsTab.PLAYBACK -> {
+                                SettingsGroup(title = "PLAYBACK & BACKGROUND") {
+                                    SettingsSwitchItem(
+                                        title = "Always Background Play",
+                                        subtitle = "Keep playing when phone locks or app minimizes",
+                                        checked = preferences.alwaysBackgroundPlay,
+                                        onCheckedChange = onAlwaysBackgroundPlayChange
+                                    )
+                                    SettingsRowDivider()
+                                    SettingsSwitchItem(
+                                        title = "Auto PiP on Home",
+                                        subtitle = "Mini player window when background play is off",
+                                        checked = preferences.autoPipOnHome,
+                                        onCheckedChange = onAutoPipChange
+                                    )
+                                    SettingsRowDivider()
+                                    SettingsSwitchItem(
+                                        title = "Default SW Decoder",
+                                        subtitle = "Use Software decoder instead of Hardware",
+                                        checked = preferences.defaultSoftwareDecoder,
+                                        onCheckedChange = onDefaultSoftwareDecoderChange
+                                    )
                                 }
                             }
 
@@ -324,6 +332,65 @@ fun ControlSettingsDialog(
                                         modifier = Modifier.padding(14.dp),
                                         verticalArrangement = Arrangement.spacedBy(10.dp)
                                     ) {
+                                        Text(
+                                            text = "1 Finger Gesture",
+                                            style = MaterialTheme.typography.labelMedium,
+                                            fontWeight = FontWeight.SemiBold,
+                                            color = MaterialTheme.colorScheme.onSurface
+                                        )
+                                        UniformTwoColumnGrid(
+                                            items = listOf(
+                                                "Brightness / Volume Swipe",
+                                                "Seek & Controls",
+                                                "None"
+                                            ),
+                                            itemLabel = { it },
+                                            isSelected = { preferences.oneFingerGesture == it },
+                                            onSelect = onOneFingerGestureChange
+                                        )
+
+                                        Spacer(Modifier.height(2.dp))
+
+                                        Text(
+                                            text = "2 Finger Gesture",
+                                            style = MaterialTheme.typography.labelMedium,
+                                            fontWeight = FontWeight.SemiBold,
+                                            color = MaterialTheme.colorScheme.onSurface
+                                        )
+                                        UniformTwoColumnGrid(
+                                            items = listOf(
+                                                "Zoom / Scale",
+                                                "Seek ±10s",
+                                                "Brightness / Vol",
+                                                "None"
+                                            ),
+                                            itemLabel = { it },
+                                            isSelected = { preferences.twoFingerGesture == it },
+                                            onSelect = onTwoFingerGestureChange
+                                        )
+
+                                        Spacer(Modifier.height(2.dp))
+
+                                        Text(
+                                            text = "3 Finger Gesture",
+                                            style = MaterialTheme.typography.labelMedium,
+                                            fontWeight = FontWeight.SemiBold,
+                                            color = MaterialTheme.colorScheme.onSurface
+                                        )
+                                        UniformTwoColumnGrid(
+                                            items = listOf(
+                                                "Play / Pause",
+                                                "Lock / Unlock",
+                                                "Mute Audio",
+                                                "None"
+                                            ),
+                                            itemLabel = { it },
+                                            isSelected = { preferences.threeFingerGesture == it },
+                                            onSelect = onThreeFingerGestureChange
+                                        )
+
+                                        Spacer(Modifier.height(2.dp))
+
                                         Text(
                                             text = "Single Click",
                                             style = MaterialTheme.typography.labelMedium,

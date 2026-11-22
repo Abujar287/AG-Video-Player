@@ -78,10 +78,39 @@ android {
     buildConfig = true
   }
   testOptions { unitTests { isIncludeAndroidResources = true } }
-  dependenciesInfo {
-    includeInApk = false
-    includeInBundle = true
+  packaging {
+    resources {
+      excludes += listOf(
+        "META-INF/DEPENDENCIES",
+        "META-INF/LICENSE",
+        "META-INF/LICENSE.txt",
+        "META-INF/license.txt",
+        "META-INF/NOTICE",
+        "META-INF/NOTICE.txt",
+        "META-INF/notice.txt",
+        "META-INF/ASL2.0",
+        "META-INF/*.kotlin_module"
+      )
+    }
   }
+
+}
+
+base {
+  archivesName.set("AG Video Player")
+}
+
+tasks.register<Copy>("copyAgVideoPlayerApk") {
+  from(layout.buildDirectory.dir("outputs/apk/release"))
+  from(layout.buildDirectory.dir("outputs/apk/debug"))
+  into(layout.buildDirectory.dir("export"))
+  include("*.apk")
+  rename { "AG Video Player.apk" }
+  duplicatesStrategy = DuplicatesStrategy.INCLUDE
+}
+
+tasks.matching { it.name == "assembleDebug" || it.name == "assembleRelease" || it.name == "assemble" }.configureEach {
+  finalizedBy("copyAgVideoPlayerApk")
 }
 
 // Configure the Secrets Gradle Plugin to use .env and .env.example files

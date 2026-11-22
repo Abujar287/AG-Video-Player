@@ -175,12 +175,20 @@ fun VeloMainScreen(
     onShowHiddenFilesChange: (Boolean) -> Unit,
     onMainDisplayModeChange: (String) -> Unit,
     onMainViewLayoutChange: (String) -> Unit,
+    onOneFingerGestureChange: (String) -> Unit,
+    onTwoFingerGestureChange: (String) -> Unit,
+    onThreeFingerGestureChange: (String) -> Unit,
     onTogglePlayerButtonVisibility: (PlayerControlButton, Boolean) -> Unit,
     onShowAllButtons: () -> Unit,
     loadThumbnail: suspend (Long, String) -> Bitmap?
 ) {
     val activeFolder = uiState.selectedFolder
     val isInVideoList = uiState.destination != BrowserDestination.Folders
+    val isGridLayoutActive = when (uiState.preferences.mainViewLayout) {
+        "list" -> false
+        "grid" -> true
+        else -> uiState.preferences.isGridView
+    }
 
     if (uiState.isSelectionMode) {
         BackHandler(onBack = onClearSelection)
@@ -376,12 +384,12 @@ fun VeloMainScreen(
                                     .testTag("grid_toggle_button")
                             ) {
                                 Icon(
-                                    imageVector = if (uiState.preferences.isGridView) {
+                                    imageVector = if (isGridLayoutActive) {
                                         Icons.AutoMirrored.Filled.ViewList
                                     } else {
                                         Icons.Default.GridView
                                     },
-                                    contentDescription = if (uiState.preferences.isGridView) {
+                                    contentDescription = if (isGridLayoutActive) {
                                         "Switch to List View"
                                     } else {
                                         "Show Grid"
@@ -462,7 +470,7 @@ fun VeloMainScreen(
                                 val videos = uiState.allVideos
                                 VideoListContent(
                                     videos = videos,
-                                    isGridView = uiState.preferences.mainViewLayout == "grid" || uiState.preferences.isGridView,
+                                    isGridView = isGridLayoutActive,
                                     isSelectionMode = uiState.isSelectionMode,
                                     selectedUris = uiState.selectedVideoUris,
                                     favoriteUris = uiState.preferences.favoriteUris,
@@ -500,6 +508,7 @@ fun VeloMainScreen(
                             } else {
                                 FolderBrowserContent(
                                     uiState = uiState,
+                                    isGrid = isGridLayoutActive,
                                     onSearchQueryChange = onSearchQueryChange,
                                     onFolderClick = onFolderClick,
                                     onOpenFavorites = onOpenFavorites,
@@ -513,7 +522,7 @@ fun VeloMainScreen(
                             val activePlaylistName = (dest as? BrowserDestination.Playlist)?.name
                             VideoListContent(
                                 videos = videos,
-                                isGridView = uiState.preferences.mainViewLayout == "grid" || uiState.preferences.isGridView,
+                                isGridView = isGridLayoutActive,
                                 isSelectionMode = uiState.isSelectionMode,
                                 selectedUris = uiState.selectedVideoUris,
                                 favoriteUris = uiState.preferences.favoriteUris,
@@ -586,6 +595,9 @@ fun VeloMainScreen(
             onShowHiddenFilesChange = onShowHiddenFilesChange,
             onMainDisplayModeChange = onMainDisplayModeChange,
             onMainViewLayoutChange = onMainViewLayoutChange,
+            onOneFingerGestureChange = onOneFingerGestureChange,
+            onTwoFingerGestureChange = onTwoFingerGestureChange,
+            onThreeFingerGestureChange = onThreeFingerGestureChange,
             onTogglePlayerButtonVisibility = onTogglePlayerButtonVisibility,
             onShowAllButtons = onShowAllButtons
         )
@@ -1152,6 +1164,7 @@ private fun PermissionPromptView(
 @Composable
 private fun FolderBrowserContent(
     uiState: MainUiState,
+    isGrid: Boolean,
     onSearchQueryChange: (String) -> Unit,
     onFolderClick: (VideoFolder) -> Unit,
     onOpenFavorites: () -> Unit,
@@ -1193,8 +1206,6 @@ private fun FolderBrowserContent(
         return
     }
 
-    val isGrid = uiState.preferences.isGridView
-
     BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
         val columns = if (isGrid) {
             when {
@@ -1203,11 +1214,7 @@ private fun FolderBrowserContent(
                 else -> 2
             }
         } else {
-            when {
-                maxWidth >= 840.dp -> 3
-                maxWidth >= 560.dp -> 2
-                else -> 1
-            }
+            1
         }
 
         LazyVerticalGrid(

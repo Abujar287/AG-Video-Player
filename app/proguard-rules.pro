@@ -3,8 +3,11 @@
 -renamesourcefileattribute SourceFile
 
 # Media3 ExoPlayer & Audio Effects
--keep class androidx.media3.** { *; }
 -dontwarn androidx.media3.**
+-keep class androidx.media3.exoplayer.** { *; }
+-keep class androidx.media3.session.** { *; }
+-keep class androidx.media3.ui.** { *; }
+-keep class androidx.media3.common.** { *; }
 
 # Room entities and DAOs
 -keep class * extends androidx.room.RoomDatabase
