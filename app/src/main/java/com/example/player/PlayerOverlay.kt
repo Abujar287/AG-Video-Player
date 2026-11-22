@@ -762,15 +762,15 @@ fun PlayerOverlay(
             }
         }
 
-        // Locked Screen Unlock Button
+        // Locked Screen Unlock Button (shown at top when screen is locked)
         AnimatedVisibility(
             visible = isLocked && controlsVisible,
             enter = fadeIn(),
             exit = fadeOut(),
             modifier = Modifier
-                .align(Alignment.BottomCenter)
+                .align(Alignment.TopCenter)
                 .windowInsetsPadding(WindowInsets.safeDrawing)
-                .padding(bottom = 32.dp)
+                .padding(top = 18.dp)
         ) {
             Surface(
                 shape = RoundedCornerShape(24.dp),
