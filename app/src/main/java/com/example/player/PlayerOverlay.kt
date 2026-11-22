@@ -238,10 +238,10 @@ fun PlayerOverlay(
                         when (dragMode) {
                             DragMode.SEEK -> {
                                 val widthPx = boxSize.width.coerceAtLeast(300).toFloat()
-                                val dur = durationMs.coerceAtLeast(60_000L)
+                                val realDur = durationMs.coerceAtLeast(1_000L)
                                 val rawDelta = if (preferences.gestureSeekStepSeconds <= 0) {
-                                    // Normal / Auto: smooth proportional scrubbing across duration (max ~90s full-width on long videos)
-                                    val spanMs = minOf(dur, 120_000L).coerceAtLeast(30_000L)
+                                    // Normal / Auto: smooth proportional scrubbing across duration (max 120s full-width on long videos)
+                                    val spanMs = realDur.coerceIn(15_000L, 120_000L)
                                     ((dragAccumX / widthPx) * spanMs).toLong()
                                 } else {
                                     // Fixed 10s / 20s step increments per drag segment
@@ -250,7 +250,7 @@ fun PlayerOverlay(
                                     steps * stepMs
                                 }
                                 dragSeekDeltaMs = rawDelta
-                                previewSeekMs = (dragStartPosMs + rawDelta).coerceIn(0L, dur)
+                                previewSeekMs = (dragStartPosMs + rawDelta).coerceIn(0L, realDur)
                             }
                             DragMode.BRIGHTNESS -> {
                                 val heightPx = (boxSize.height * 0.5f).coerceAtLeast(220f)
