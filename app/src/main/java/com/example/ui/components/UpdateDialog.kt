@@ -75,7 +75,7 @@ fun UpdateCheckDialog(
                     is UpdateUiState.Available -> "New Update Available"
                     is UpdateUiState.Downloading -> "Downloading Update…"
                     is UpdateUiState.ReadyToInstall -> "Update Ready"
-                    is UpdateUiState.UpToDate -> "No New Update"
+                    is UpdateUiState.UpToDate -> "Already Installed Latest Version"
                     is UpdateUiState.Error -> "Update Check"
                     else -> "Checking for Update…"
                 },
@@ -112,7 +112,7 @@ fun UpdateCheckDialog(
                             )
                             Spacer(Modifier.width(10.dp))
                             Text(
-                                text = "You are using the latest version (v${updateState.versionName}).",
+                                text = "Already installed latest version (v${updateState.versionName}).",
                                 style = MaterialTheme.typography.bodyMedium
                             )
                         }
@@ -236,11 +236,16 @@ fun UpdateCheckDialog(
                                 color = MaterialTheme.colorScheme.secondary
                             )
                         }
+                        Text(
+                            text = "Saving to File Manager (Downloads) & notification bar…",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
                     }
 
                     is UpdateUiState.ReadyToInstall -> {
                         Text(
-                            text = "${updateState.release.apkFileName} downloaded. Tap Install Update to upgrade cleanly.",
+                            text = "${updateState.release.apkFileName} downloaded & saved to Downloads. Tap Install Update to replace the old version with v${updateState.release.versionName}.",
                             style = MaterialTheme.typography.bodyMedium
                         )
                         Button(

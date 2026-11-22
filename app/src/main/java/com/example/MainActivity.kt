@@ -151,6 +151,13 @@ class MainActivity : ComponentActivity() {
                     loadThumbnail = { id, uri -> viewModel.loadThumbnail(id, uri) }
                 )
 
+                val updateStateNow = uiState.updateState
+                LaunchedEffect(updateStateNow) {
+                    if (updateStateNow is com.example.ui.UpdateUiState.ReadyToInstall) {
+                        triggerApkInstall(updateStateNow.apkFile)
+                    }
+                }
+
                 if (uiState.showUpdateSheet) {
                     UpdateCheckDialog(
                         currentVersionLabel = viewModel.currentAppVersionLabel(),

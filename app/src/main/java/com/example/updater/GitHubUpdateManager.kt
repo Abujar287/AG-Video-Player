@@ -1,10 +1,17 @@
 package com.example.updater
 
+import android.app.NotificationChannel
+import android.app.NotificationManager
+import android.app.PendingIntent
+import android.content.ContentValues
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.os.Build
+import android.os.Environment
+import android.provider.MediaStore
 import android.provider.Settings
+import androidx.core.app.NotificationCompat
 import androidx.core.content.FileProvider
 import com.example.BuildConfig
 import kotlinx.coroutines.Dispatchers
@@ -145,9 +152,11 @@ class GitHubUpdateManager(private val context: Context) {
         // Remove stale APK files before saving new update
         updatesDir.listFiles()?.forEach { if (it.name.endsWith(".apk")) it.delete() }
 
-        val targetFile = File(updatesDir, release.apkFileName.ifBlank { "veloplay-update.apk" })
+        val fileName = release.apkFileName.ifBlank { "AG-Video-Player-v${release.versionName}.apk" }
+        val targetFile = File(updatesDir, fileName)
         val tempFile = File(updatesDir, "${targetFile.name}.part")
         var connection: HttpURLConnection? = null
+        ensureUpdateNotificationChannel()
 
         try {
             var currentUrl = release.apkDownloadUrl
@@ -172,6 +181,7 @@ class GitHubUpdateManager(private val context: Context) {
 
             val activeConn = connection ?: throw IllegalStateException("Connection failed")
             if (activeConn.responseCode !in 200..299) {
+                cancelProgressNotification()
                 emit(ApkDownloadState.Failed("Download failed (HTTP ${activeConn.responseCode})"))
                 return@flow
             }
@@ -181,8 +191,10 @@ class GitHubUpdateManager(private val context: Context) {
             var lastTickTime = System.currentTimeMillis()
             var lastTickBytes = 0L
             var currentSpeed = 0L
+            var lastNotifiedPercent = -1
 
             emit(ApkDownloadState.Downloading(0, 0L, totalBytes, 0L))
+            postProgressNotification(release.versionName, 0, totalBytes <= 0L)
 
             activeConn.inputStream.use { input ->
                 FileOutputStream(tempFile).use { output ->
@@ -196,7 +208,7 @@ class GitHubUpdateManager(private val context: Context) {
 
                         val now = System.currentTimeMillis()
                         val elapsedMs = now - lastTickTime
-                        if (elapsedMs >= 250L || downloaded == totalBytes) {
+                        if (elapsedMs >= 200L || downloaded == totalBytes) {
                             if (elapsedMs > 0L) {
                                 currentSpeed = ((downloaded - lastTickBytes) * 1000L) / elapsedMs
                             }
@@ -206,6 +218,10 @@ class GitHubUpdateManager(private val context: Context) {
                                 ((downloaded * 100L) / totalBytes).toInt().coerceIn(0, 100)
                             } else {
                                 0
+                            }
+                            if (percent != lastNotifiedPercent && (percent - lastNotifiedPercent >= 2 || percent == 100)) {
+                                lastNotifiedPercent = percent
+                                postProgressNotification(release.versionName, percent, totalBytes <= 0L)
                             }
                             emit(
                                 ApkDownloadState.Downloading(
@@ -226,14 +242,116 @@ class GitHubUpdateManager(private val context: Context) {
                 tempFile.copyTo(targetFile, overwrite = true)
                 tempFile.delete()
             }
+
+            exportApkToPublicDownloads(targetFile, fileName)
+            postCompletedNotification(release.versionName, targetFile)
             emit(ApkDownloadState.Completed(targetFile))
         } catch (e: Exception) {
             tempFile.delete()
+            cancelProgressNotification()
             emit(ApkDownloadState.Failed(e.localizedMessage ?: "Download interrupted."))
         } finally {
             connection?.disconnect()
         }
     }.flowOn(Dispatchers.IO)
+
+    private fun exportApkToPublicDownloads(sourceApk: File, fileName: String) {
+        runCatching {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                val resolver = context.contentResolver
+                val values = ContentValues().apply {
+                    put(MediaStore.Downloads.DISPLAY_NAME, fileName)
+                    put(MediaStore.Downloads.MIME_TYPE, "application/vnd.android.package-archive")
+                    put(MediaStore.Downloads.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS)
+                    put(MediaStore.Downloads.IS_PENDING, 1)
+                }
+                val itemUri = resolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values) ?: return
+                resolver.openOutputStream(itemUri)?.use { out ->
+                    sourceApk.inputStream().use { input -> input.copyTo(out) }
+                }
+                values.clear()
+                values.put(MediaStore.Downloads.IS_PENDING, 0)
+                resolver.update(itemUri, values, null, null)
+            } else {
+                @Suppress("DEPRECATION")
+                val downloadsDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
+                if (downloadsDir != null) {
+                    downloadsDir.mkdirs()
+                    val destFile = File(downloadsDir, fileName)
+                    sourceApk.copyTo(destFile, overwrite = true)
+                }
+            }
+        }
+    }
+
+    private fun ensureUpdateNotificationChannel() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val nm = context.getSystemService(Context.NOTIFICATION_SERVICE) as? NotificationManager ?: return
+            if (nm.getNotificationChannel(UPDATE_CHANNEL_ID) == null) {
+                val channel = NotificationChannel(
+                    UPDATE_CHANNEL_ID,
+                    "App Updates",
+                    NotificationManager.IMPORTANCE_LOW
+                ).apply {
+                    description = "Shows progress when downloading AG Video Player updates"
+                }
+                nm.createNotificationChannel(channel)
+            }
+        }
+    }
+
+    private fun postProgressNotification(versionName: String, percent: Int, indeterminate: Boolean) {
+        runCatching {
+            val nm = context.getSystemService(Context.NOTIFICATION_SERVICE) as? NotificationManager ?: return
+            val notification = NotificationCompat.Builder(context, UPDATE_CHANNEL_ID)
+                .setSmallIcon(android.R.drawable.stat_sys_download)
+                .setContentTitle("Downloading AG Video Player v$versionName")
+                .setContentText(if (indeterminate) "Downloading update…" else "$percent% completed")
+                .setOnlyAlertOnce(true)
+                .setOngoing(true)
+                .setProgress(100, percent, indeterminate)
+                .build()
+            nm.notify(UPDATE_NOTIFICATION_ID, notification)
+        }
+    }
+
+    private fun postCompletedNotification(versionName: String, apkFile: File) {
+        runCatching {
+            val nm = context.getSystemService(Context.NOTIFICATION_SERVICE) as? NotificationManager ?: return
+            val apkUri = FileProvider.getUriForFile(
+                context,
+                "${context.packageName}.fileprovider",
+                apkFile
+            )
+            val installIntent = Intent(Intent.ACTION_VIEW).apply {
+                setDataAndType(apkUri, "application/vnd.android.package-archive")
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            val pendingIntent = PendingIntent.getActivity(
+                context,
+                202,
+                installIntent,
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+            )
+            val notification = NotificationCompat.Builder(context, UPDATE_CHANNEL_ID)
+                .setSmallIcon(android.R.drawable.stat_sys_download_done)
+                .setContentTitle("AG Video Player v$versionName Ready")
+                .setContentText("Saved to Downloads. Tap to install update.")
+                .setContentIntent(pendingIntent)
+                .setAutoCancel(true)
+                .setOngoing(false)
+                .build()
+            nm.notify(UPDATE_NOTIFICATION_ID, notification)
+        }
+    }
+
+    private fun cancelProgressNotification() {
+        runCatching {
+            val nm = context.getSystemService(Context.NOTIFICATION_SERVICE) as? NotificationManager ?: return
+            nm.cancel(UPDATE_NOTIFICATION_ID)
+        }
+    }
 
     fun canInstallPackages(): Boolean {
         return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
@@ -279,6 +397,9 @@ class GitHubUpdateManager(private val context: Context) {
     }
 
     companion object {
+        private const val UPDATE_CHANNEL_ID = "ag_apk_updates"
+        private const val UPDATE_NOTIFICATION_ID = 7001
+
         internal fun parseOptionalVersionCode(releaseNotes: String): Int? {
             val regex = Regex("""versionCode\s*[:=]\s*(\d+)""", RegexOption.IGNORE_CASE)
             return regex.find(releaseNotes)?.groupValues?.getOrNull(1)?.toIntOrNull()

@@ -7,6 +7,7 @@ import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
+import com.example.BuildConfig
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 
@@ -19,7 +20,8 @@ data class UserPreferences(
     val githubRepoSlug: String = DEFAULT_GITHUB_REPO
 ) {
     companion object {
-        const val DEFAULT_GITHUB_REPO = "owner/ag-video-player"
+        val DEFAULT_GITHUB_REPO: String
+            get() = BuildConfig.GITHUB_REPO_SLUG
     }
 }
 

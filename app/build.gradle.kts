@@ -13,11 +13,20 @@ android {
   compileSdk { version = release(36) { minorApiLevel = 1 } }
 
   defaultConfig {
+    val ciVersionCode = (project.findProperty("appVersionCode") as? String)?.toIntOrNull() ?: 1
+    val ciVersionName = (project.findProperty("appVersionName") as? String)
+      ?.takeIf { it.isNotBlank() } ?: "1.0.0"
+    val ciRepoSlug = (project.findProperty("githubRepoSlug") as? String)
+      ?.takeIf { it.contains('/') }
+      ?: System.getenv("GITHUB_REPOSITORY")?.takeIf { it.contains('/') }
+      ?: "owner/ag-video-player"
+
     applicationId = "com.aistudio.veloplay.mvxkpq"
     minSdk = 24
     targetSdk = 36
-    versionCode = 1
-    versionName = "1.0.0"
+    versionCode = ciVersionCode
+    versionName = ciVersionName
+    buildConfigField("String", "GITHUB_REPO_SLUG", "\"$ciRepoSlug\"")
 
     testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 

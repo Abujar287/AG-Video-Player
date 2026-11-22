@@ -71,6 +71,7 @@ import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -175,23 +176,35 @@ fun PlayerOverlay(
 
     val speedOptions = remember { listOf(0.5f, 0.75f, 1.0f, 1.25f, 1.5f, 2.0f) }
 
+    val latestIsLocked by rememberUpdatedState(isLocked)
+    val latestDurationMs by rememberUpdatedState(durationMs)
+    val latestPositionMs by rememberUpdatedState(currentPositionMs)
+    val latestBrightness by rememberUpdatedState(brightnessPercent)
+    val latestVolume by rememberUpdatedState(volumePercent)
+    val latestContainerSize by rememberUpdatedState(containerSize)
+    val latestOnToggleControls by rememberUpdatedState(onToggleControls)
+    val latestOnDoubleTapSeek by rememberUpdatedState(onDoubleTapSeek)
+    val latestOnSeekTo by rememberUpdatedState(onSeekTo)
+    val latestOnBrightnessChange by rememberUpdatedState(onBrightnessChange)
+    val latestOnVolumeChange by rememberUpdatedState(onVolumeChange)
+
     Box(
         modifier = Modifier
             .fillMaxSize()
             .onSizeChanged { containerSize = it }
-            .pointerInput(isLocked, containerSize) {
+            .pointerInput(Unit) {
                 detectTapGestures(
-                    onTap = { onToggleControls() },
+                    onTap = { latestOnToggleControls() },
                     onDoubleTap = { offset ->
-                        if (!isLocked && containerSize.width > 0) {
-                            val isRight = offset.x > containerSize.width / 2f
-                            onDoubleTapSeek(isRight)
+                        val width = latestContainerSize.width
+                        if (!latestIsLocked && width > 0) {
+                            val isRight = offset.x > width / 2f
+                            latestOnDoubleTapSeek(isRight)
                         }
                     }
                 )
             }
-            .pointerInput(isLocked, durationMs, currentPositionMs, brightnessPercent, volumePercent) {
-                if (isLocked) return@pointerInput
+            .pointerInput(Unit) {
                 var totalDx = 0f
                 var totalDy = 0f
                 var gestureStartX = 0f
@@ -201,15 +214,15 @@ fun PlayerOverlay(
                         totalDx = 0f
                         totalDy = 0f
                         gestureStartX = startOffset.x
-                        dragStartPosMs = currentPositionMs
-                        previewSeekMs = currentPositionMs
+                        dragStartPosMs = latestPositionMs
+                        previewSeekMs = latestPositionMs
                         seekDeltaMs = 0L
-                        startBrightness = brightnessPercent.toFloat()
-                        startVolume = volumePercent.toFloat()
+                        startBrightness = latestBrightness.toFloat()
+                        startVolume = latestVolume.toFloat()
                     },
                     onDragEnd = {
-                        if (activeGesture == ActiveDragGesture.SEEK) {
-                            onSeekTo(previewSeekMs)
+                        if (!latestIsLocked && activeGesture == ActiveDragGesture.SEEK) {
+                            latestOnSeekTo(previewSeekMs)
                         }
                         activeGesture = ActiveDragGesture.NONE
                     },
@@ -217,15 +230,18 @@ fun PlayerOverlay(
                         activeGesture = ActiveDragGesture.NONE
                     },
                     onDrag = { change, dragAmount ->
+                        if (latestIsLocked) return@detectDragGestures
                         change.consume()
                         totalDx += dragAmount.x
                         totalDy += dragAmount.y
+                        val sizeNow = latestContainerSize
 
                         if (activeGesture == ActiveDragGesture.NONE) {
-                            if (abs(totalDx) > 22f && abs(totalDx) > abs(totalDy) * 1.2f) {
+                            if (abs(totalDx) > 14f && abs(totalDx) > abs(totalDy) * 1.1f) {
                                 activeGesture = ActiveDragGesture.SEEK
-                            } else if (abs(totalDy) > 22f && abs(totalDy) > abs(totalDx) * 1.2f) {
-                                activeGesture = if (gestureStartX < containerSize.width / 2f) {
+                            } else if (abs(totalDy) > 14f && abs(totalDy) > abs(totalDx) * 1.1f) {
+                                val midX = if (sizeNow.width > 0) sizeNow.width / 2f else 500f
+                                activeGesture = if (gestureStartX < midX) {
                                     ActiveDragGesture.BRIGHTNESS
                                 } else {
                                     ActiveDragGesture.VOLUME
@@ -235,23 +251,29 @@ fun PlayerOverlay(
 
                         when (activeGesture) {
                             ActiveDragGesture.SEEK -> {
-                                val widthPx = containerSize.width.coerceAtLeast(1).toFloat()
-                                val maxSpanMs = (durationMs.coerceAtLeast(60_000L)).coerceAtMost(180_000L)
+                                val widthPx = sizeNow.width.coerceAtLeast(320).toFloat()
+                                val dur = latestDurationMs
+                                val maxSpanMs = if (dur > 0L) {
+                                    dur.coerceIn(30_000L, 180_000L)
+                                } else {
+                                    90_000L
+                                }
                                 val deltaMs = ((totalDx / widthPx) * maxSpanMs).toLong()
                                 seekDeltaMs = deltaMs
-                                previewSeekMs = (dragStartPosMs + deltaMs).coerceIn(0L, durationMs.coerceAtLeast(0L))
+                                val targetUpper = if (dur > 0L) dur else Long.MAX_VALUE
+                                previewSeekMs = (dragStartPosMs + deltaMs).coerceIn(0L, targetUpper)
                             }
                             ActiveDragGesture.BRIGHTNESS -> {
-                                val heightPx = (containerSize.height * 0.6f).coerceAtLeast(100f)
+                                val heightPx = (sizeNow.height * 0.55f).coerceAtLeast(180f)
                                 val deltaPercent = (-totalDy / heightPx) * 100f
                                 val nextBrightness = (startBrightness + deltaPercent).roundToInt().coerceIn(2, 100)
-                                onBrightnessChange(nextBrightness)
+                                latestOnBrightnessChange(nextBrightness)
                             }
                             ActiveDragGesture.VOLUME -> {
-                                val heightPx = (containerSize.height * 0.65f).coerceAtLeast(100f)
+                                val heightPx = (sizeNow.height * 0.55f).coerceAtLeast(180f)
                                 val deltaPercent = (-totalDy / heightPx) * 200f
                                 val nextVol = (startVolume + deltaPercent).roundToInt().coerceIn(0, 200)
-                                onVolumeChange(nextVol)
+                                latestOnVolumeChange(nextVol)
                             }
                             ActiveDragGesture.NONE -> Unit
                         }
