@@ -42,7 +42,12 @@ import com.example.util.FormatUtils
 import java.io.File
 
 /**
- * Clean Update Dialog: shows Current version vs Update version note and single Download Update APK CTA.
+ * Clean Update Dialog matching exact requested items:
+ * New Update Available
+ * Current Version
+ * New Version
+ * Download Update APK
+ * Cancel
  */
 @Composable
 fun UpdateCheckDialog(
@@ -92,7 +97,7 @@ fun UpdateCheckDialog(
                             CircularProgressIndicator(modifier = Modifier.size(22.dp), strokeWidth = 2.5.dp)
                             Spacer(Modifier.width(12.dp))
                             Text(
-                                text = "Checking GitHub for updates ($currentVersionLabel)…",
+                                text = "Checking GitHub for updates…",
                                 style = MaterialTheme.typography.bodyMedium
                             )
                         }
@@ -147,7 +152,7 @@ fun UpdateCheckDialog(
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
                                     Text(
-                                        text = "Current version :",
+                                        text = "Current Version",
                                         style = MaterialTheme.typography.bodyMedium,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant
                                     )
@@ -164,7 +169,7 @@ fun UpdateCheckDialog(
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
                                     Text(
-                                        text = "Update version :",
+                                        text = "New Version",
                                         style = MaterialTheme.typography.bodyMedium,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant
                                     )
@@ -187,7 +192,7 @@ fun UpdateCheckDialog(
                                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                                         modifier = Modifier
                                             .fillMaxWidth()
-                                            .heightIn(max = 110.dp)
+                                            .heightIn(max = 100.dp)
                                             .verticalScroll(rememberScrollState())
                                     )
                                 }
@@ -202,7 +207,7 @@ fun UpdateCheckDialog(
                         ) {
                             Icon(Icons.Default.CloudDownload, contentDescription = null, modifier = Modifier.size(18.dp))
                             Spacer(Modifier.width(8.dp))
-                            Text(stringResource(R.string.update_now_cta))
+                            Text("Download Update APK")
                         }
                     }
 
@@ -245,16 +250,11 @@ fun UpdateCheckDialog(
                                 color = MaterialTheme.colorScheme.secondary
                             )
                         }
-                        Text(
-                            text = "Saving to File Manager (Downloads) & notification bar…",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
                     }
 
                     is UpdateUiState.ReadyToInstall -> {
                         Text(
-                            text = "${updateState.release.apkFileName} downloaded & saved to Downloads. Tap Install Update to replace the old version with v${updateState.release.versionName}.",
+                            text = "${updateState.release.apkFileName} downloaded. Tap Install Update to install v${updateState.release.versionName}.",
                             style = MaterialTheme.typography.bodyMedium
                         )
                         Button(
@@ -280,10 +280,14 @@ fun UpdateCheckDialog(
                 TextButton(onClick = onCancelDownload) {
                     Text(stringResource(R.string.cancel_cta))
                 }
+            } else if (updateState is UpdateUiState.Available) {
+                TextButton(onClick = onDismiss) {
+                    Text("Cancel")
+                }
             }
         },
         confirmButton = {
-            if (updateState !is UpdateUiState.Downloading) {
+            if (updateState !is UpdateUiState.Downloading && updateState !is UpdateUiState.Available) {
                 TextButton(onClick = onDismiss) {
                     Text(stringResource(R.string.close_cta))
                 }

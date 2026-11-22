@@ -762,7 +762,7 @@ fun PlayerOverlay(
             }
         }
 
-        // Locked Screen Unlock Button (shown at top when screen is locked)
+        // Locked Screen Unlock Button (icon only, no text label)
         AnimatedVisibility(
             visible = isLocked && controlsVisible,
             enter = fadeIn(),
@@ -770,32 +770,22 @@ fun PlayerOverlay(
             modifier = Modifier
                 .align(Alignment.TopCenter)
                 .windowInsetsPadding(WindowInsets.safeDrawing)
-                .padding(top = 18.dp)
+                .padding(top = 16.dp)
         ) {
-            Surface(
-                shape = RoundedCornerShape(24.dp),
-                color = PlayerOverlayScrim,
+            IconButton(
+                onClick = onToggleLock,
                 modifier = Modifier
-                    .clickable(onClick = onToggleLock)
+                    .size(48.dp)
+                    .clip(CircleShape)
+                    .background(PlayerOverlayScrim)
                     .testTag("player_unlock_button")
             ) {
-                Row(
-                    modifier = Modifier.padding(horizontal = 18.dp, vertical = 10.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.LockOpen,
-                        contentDescription = stringResource(R.string.unlock_controls_desc),
-                        tint = ElectricTeal,
-                        modifier = Modifier.size(20.dp)
-                    )
-                    Spacer(Modifier.width(8.dp))
-                    Text(
-                        text = "Unlock Screen",
-                        style = MaterialTheme.typography.titleSmall,
-                        color = Color.White
-                    )
-                }
+                Icon(
+                    imageVector = Icons.Default.LockOpen,
+                    contentDescription = stringResource(R.string.unlock_controls_desc),
+                    tint = ElectricTeal,
+                    modifier = Modifier.size(24.dp)
+                )
             }
         }
 

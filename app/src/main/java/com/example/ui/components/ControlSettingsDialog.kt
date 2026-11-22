@@ -23,6 +23,7 @@ import androidx.compose.material.icons.filled.AspectRatio
 import androidx.compose.material.icons.filled.Bedtime
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.FastForward
 import androidx.compose.material.icons.filled.Headphones
@@ -35,7 +36,9 @@ import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material.icons.filled.Speed
 import androidx.compose.material.icons.filled.Subtitles
 import androidx.compose.material.icons.filled.SystemUpdate
+import androidx.compose.material.icons.filled.TouchApp
 import androidx.compose.material.icons.filled.Tune
+import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material3.Button
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -46,6 +49,10 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -62,6 +69,13 @@ import com.example.data.repository.DoubleClickAction
 import com.example.data.repository.PlayerControlButton
 import com.example.data.repository.SingleClickAction
 import com.example.data.repository.UserPreferences
+
+private enum class SettingsTab(val title: String, val subtitle: String, val icon: ImageVector) {
+    UPDATE("Check Update", "GitHub version & APK download", Icons.Default.SystemUpdate),
+    PLAYBACK("Playback & Background", "Background play, PiP & SW decoder", Icons.Default.Headphones),
+    GESTURES("Tap & Swipe Control", "Single/double click & swipe gestures", Icons.Default.TouchApp),
+    BUTTONS("Play Screen Buttons", "Show or hide video overlay buttons", Icons.Default.Visibility)
+}
 
 @Composable
 fun ControlSettingsDialog(
@@ -80,6 +94,8 @@ fun ControlSettingsDialog(
     onTogglePlayerButtonVisibility: (PlayerControlButton, Boolean) -> Unit,
     onShowAllButtons: () -> Unit
 ) {
+    var activeTab by remember { mutableStateOf<SettingsTab?>(null) }
+
     Dialog(
         onDismissRequest = onDismiss,
         properties = DialogProperties(usePlatformDefaultWidth = false)
@@ -90,11 +106,11 @@ fun ControlSettingsDialog(
             tonalElevation = 4.dp,
             modifier = Modifier
                 .fillMaxWidth(0.93f)
-                .heightIn(max = 700.dp)
+                .heightIn(max = 680.dp)
                 .testTag("control_settings_dialog")
         ) {
             Column(modifier = Modifier.fillMaxWidth()) {
-                // Clean Header
+                // Main Dialog Header or Sub-dialog Header
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -109,7 +125,7 @@ fun ControlSettingsDialog(
                         contentAlignment = Alignment.Center
                     ) {
                         Icon(
-                            imageVector = Icons.Default.Tune,
+                            imageVector = activeTab?.icon ?: Icons.Default.Tune,
                             contentDescription = null,
                             tint = MaterialTheme.colorScheme.primary,
                             modifier = Modifier.size(20.dp)
@@ -118,248 +134,288 @@ fun ControlSettingsDialog(
                     Spacer(Modifier.width(12.dp))
                     Column(modifier = Modifier.weight(1f)) {
                         Text(
-                            text = "Settings",
+                            text = activeTab?.title ?: "Settings",
                             style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.Bold
                         )
                         Text(
-                            text = "Playback, controls & updates",
+                            text = activeTab?.subtitle ?: "Tap a tab below to configure",
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
-                    IconButton(onClick = onDismiss) {
+                    IconButton(onClick = {
+                        if (activeTab != null) {
+                            activeTab = null
+                        } else {
+                            onDismiss()
+                        }
+                    }) {
                         Icon(Icons.Default.Close, contentDescription = "Close")
                     }
                 }
 
                 HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f))
 
-                Column(
-                    modifier = Modifier
-                        .weight(1f, fill = false)
-                        .verticalScroll(rememberScrollState())
-                        .padding(horizontal = 16.dp, vertical = 14.dp),
-                    verticalArrangement = Arrangement.spacedBy(16.dp)
-                ) {
-                    // 1. App Update (Right at top inside Settings for instant access)
-                    SettingsGroup(title = "APP UPDATE") {
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(horizontal = 14.dp, vertical = 12.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(12.dp)
-                        ) {
-                            Box(
-                                modifier = Modifier
-                                    .size(36.dp)
-                                    .clip(CircleShape)
-                                    .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.12f)),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Default.SystemUpdate,
-                                    contentDescription = null,
-                                    tint = MaterialTheme.colorScheme.primary,
-                                    modifier = Modifier.size(18.dp)
-                                )
-                            }
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text(
-                                    text = "Version $currentVersionLabel",
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    fontWeight = FontWeight.SemiBold
-                                )
-                                Text(
-                                    text = if (hasAvailableUpdate) {
-                                        "New update available"
-                                    } else {
-                                        "Check GitHub for latest release"
-                                    },
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = if (hasAvailableUpdate) {
-                                        MaterialTheme.colorScheme.primary
-                                    } else {
-                                        MaterialTheme.colorScheme.onSurfaceVariant
-                                    }
-                                )
-                            }
-                            Button(
-                                onClick = {
-                                    onDismiss()
-                                    onOpenUpdateCheck()
-                                },
-                                shape = RoundedCornerShape(10.dp),
-                                modifier = Modifier.testTag("settings_update_button")
-                            ) {
-                                Text("Update", style = MaterialTheme.typography.labelMedium)
-                            }
-                        }
-                    }
-
-                    // 2. Playback & Background
-                    SettingsGroup(title = "PLAYBACK & BACKGROUND") {
-                        SettingsSwitchItem(
-                            title = "Always Background Play",
-                            subtitle = "Keep playing when phone locks or app minimizes",
-                            checked = preferences.alwaysBackgroundPlay,
-                            onCheckedChange = onAlwaysBackgroundPlayChange
-                        )
-                        SettingsRowDivider()
-                        SettingsSwitchItem(
-                            title = "Auto PiP on Home",
-                            subtitle = "Mini player window when background play is off",
-                            checked = preferences.autoPipOnHome,
-                            onCheckedChange = onAutoPipChange
-                        )
-                        SettingsRowDivider()
-                        SettingsSwitchItem(
-                            title = "Default SW Decoder",
-                            subtitle = "Use Software decoder instead of Hardware",
-                            checked = preferences.defaultSoftwareDecoder,
-                            onCheckedChange = onDefaultSoftwareDecoderChange
-                        )
-                    }
-
-                    // 3. Touch & Gestures (Aligned 2x2 uniform grids)
-                    SettingsGroup(title = "TAP & SWIPE CONTROLS") {
-                        Column(
-                            modifier = Modifier.padding(14.dp),
-                            verticalArrangement = Arrangement.spacedBy(10.dp)
-                        ) {
-                            Text(
-                                text = "Single Click",
-                                style = MaterialTheme.typography.labelMedium,
-                                fontWeight = FontWeight.SemiBold,
-                                color = MaterialTheme.colorScheme.onSurface
-                            )
-                            UniformTwoColumnGrid(
-                                items = SingleClickAction.entries,
-                                itemLabel = { it.label },
-                                isSelected = { preferences.singleClickAction == it },
-                                onSelect = onSingleClickActionChange
-                            )
-
-                            Spacer(Modifier.height(2.dp))
-
-                            Text(
-                                text = "Double Click",
-                                style = MaterialTheme.typography.labelMedium,
-                                fontWeight = FontWeight.SemiBold,
-                                color = MaterialTheme.colorScheme.onSurface
-                            )
-                            UniformTwoColumnGrid(
-                                items = DoubleClickAction.entries,
-                                itemLabel = { it.label },
-                                isSelected = { preferences.doubleClickAction == it },
-                                onSelect = onDoubleClickActionChange
-                            )
-                        }
-
-                        SettingsRowDivider()
-
-                        SettingsSwitchItem(
-                            title = "Swipe Gestures",
-                            subtitle = "Horizontal seek, left brightness, right volume",
-                            checked = preferences.enableSwipeGestures,
-                            onCheckedChange = onEnableSwipeGesturesChange
-                        )
-
-                        SettingsRowDivider()
-
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(horizontal = 14.dp, vertical = 12.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.SpaceBetween
-                        ) {
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text(
-                                    text = "Swipe Seek Step",
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    fontWeight = FontWeight.Medium
-                                )
-                                Text(
-                                    text = "Jump duration per horizontal drag",
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            }
+                if (activeTab == null) {
+                    // Main Tab List
+                    Column(
+                        modifier = Modifier
+                            .weight(1f, fill = false)
+                            .verticalScroll(rememberScrollState())
+                            .padding(horizontal = 16.dp, vertical = 14.dp),
+                        verticalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        SettingsTab.entries.forEach { tab ->
                             Surface(
-                                shape = RoundedCornerShape(10.dp),
-                                color = MaterialTheme.colorScheme.surface
+                                onClick = {
+                                    if (tab == SettingsTab.UPDATE) {
+                                        onDismiss()
+                                        onOpenUpdateCheck()
+                                    } else {
+                                        activeTab = tab
+                                    }
+                                },
+                                shape = RoundedCornerShape(16.dp),
+                                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.48f),
+                                modifier = Modifier.fillMaxWidth()
                             ) {
                                 Row(
-                                    modifier = Modifier.padding(3.dp),
-                                    horizontalArrangement = Arrangement.spacedBy(3.dp)
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(horizontal = 16.dp, vertical = 14.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(12.dp)
                                 ) {
-                                    listOf(10, 20).forEach { sec ->
-                                        val selected = preferences.gestureSeekStepSeconds == sec
-                                        Surface(
-                                            onClick = { onGestureSeekStepChange(sec) },
-                                            shape = RoundedCornerShape(8.dp),
-                                            color = if (selected) {
-                                                MaterialTheme.colorScheme.primary
-                                            } else {
-                                                Color.Transparent
-                                            }
+                                    Icon(
+                                        imageVector = tab.icon,
+                                        contentDescription = null,
+                                        tint = if (tab == SettingsTab.UPDATE && hasAvailableUpdate) {
+                                            MaterialTheme.colorScheme.secondary
+                                        } else {
+                                            MaterialTheme.colorScheme.primary
+                                        },
+                                        modifier = Modifier.size(22.dp)
+                                    )
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Row(
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.spacedBy(8.dp)
                                         ) {
                                             Text(
-                                                text = "${sec}s",
-                                                style = MaterialTheme.typography.labelMedium,
-                                                fontWeight = FontWeight.SemiBold,
-                                                color = if (selected) {
-                                                    MaterialTheme.colorScheme.onPrimary
-                                                } else {
-                                                    MaterialTheme.colorScheme.onSurfaceVariant
-                                                },
-                                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
+                                                text = tab.title,
+                                                style = MaterialTheme.typography.bodyMedium,
+                                                fontWeight = FontWeight.SemiBold
                                             )
+                                            if (tab == SettingsTab.UPDATE && hasAvailableUpdate) {
+                                                Surface(
+                                                    shape = RoundedCornerShape(4.dp),
+                                                    color = MaterialTheme.colorScheme.secondary
+                                                ) {
+                                                    Text(
+                                                        text = "NEW",
+                                                        style = MaterialTheme.typography.labelSmall.copy(fontSize = 9.sp),
+                                                        color = MaterialTheme.colorScheme.onSecondary,
+                                                        modifier = Modifier.padding(horizontal = 5.dp, vertical = 1.dp)
+                                                    )
+                                                }
+                                            }
+                                        }
+                                        Text(
+                                            text = tab.subtitle,
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                    }
+                                    Icon(
+                                        imageVector = Icons.Default.ChevronRight,
+                                        contentDescription = null,
+                                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        modifier = Modifier.size(20.dp)
+                                    )
+                                }
+                            }
+                        }
+                    }
+                } else {
+                    // Sub-tab Detail Content
+                    Column(
+                        modifier = Modifier
+                            .weight(1f, fill = false)
+                            .verticalScroll(rememberScrollState())
+                            .padding(horizontal = 16.dp, vertical = 14.dp),
+                        verticalArrangement = Arrangement.spacedBy(14.dp)
+                    ) {
+                        when (activeTab) {
+                            SettingsTab.PLAYBACK -> {
+                                SettingsGroup(title = "PLAYBACK & BACKGROUND") {
+                                    SettingsSwitchItem(
+                                        title = "Always Background Play",
+                                        subtitle = "Keep playing when phone locks or app minimizes",
+                                        checked = preferences.alwaysBackgroundPlay,
+                                        onCheckedChange = onAlwaysBackgroundPlayChange
+                                    )
+                                    SettingsRowDivider()
+                                    SettingsSwitchItem(
+                                        title = "Auto PiP on Home",
+                                        subtitle = "Mini player window when background play is off",
+                                        checked = preferences.autoPipOnHome,
+                                        onCheckedChange = onAutoPipChange
+                                    )
+                                    SettingsRowDivider()
+                                    SettingsSwitchItem(
+                                        title = "Default SW Decoder",
+                                        subtitle = "Use Software decoder instead of Hardware",
+                                        checked = preferences.defaultSoftwareDecoder,
+                                        onCheckedChange = onDefaultSoftwareDecoderChange
+                                    )
+                                }
+                            }
+
+                            SettingsTab.GESTURES -> {
+                                SettingsGroup(title = "TAP & SWIPE CONTROLS") {
+                                    Column(
+                                        modifier = Modifier.padding(14.dp),
+                                        verticalArrangement = Arrangement.spacedBy(10.dp)
+                                    ) {
+                                        Text(
+                                            text = "Single Click",
+                                            style = MaterialTheme.typography.labelMedium,
+                                            fontWeight = FontWeight.SemiBold,
+                                            color = MaterialTheme.colorScheme.onSurface
+                                        )
+                                        UniformTwoColumnGrid(
+                                            items = SingleClickAction.entries,
+                                            itemLabel = { it.label },
+                                            isSelected = { preferences.singleClickAction == it },
+                                            onSelect = onSingleClickActionChange
+                                        )
+
+                                        Spacer(Modifier.height(2.dp))
+
+                                        Text(
+                                            text = "Double Click",
+                                            style = MaterialTheme.typography.labelMedium,
+                                            fontWeight = FontWeight.SemiBold,
+                                            color = MaterialTheme.colorScheme.onSurface
+                                        )
+                                        UniformTwoColumnGrid(
+                                            items = DoubleClickAction.entries,
+                                            itemLabel = { it.label },
+                                            isSelected = { preferences.doubleClickAction == it },
+                                            onSelect = onDoubleClickActionChange
+                                        )
+                                    }
+
+                                    SettingsRowDivider()
+
+                                    SettingsSwitchItem(
+                                        title = "Swipe Gestures",
+                                        subtitle = "Horizontal seek, left brightness, right volume",
+                                        checked = preferences.enableSwipeGestures,
+                                        onCheckedChange = onEnableSwipeGesturesChange
+                                    )
+
+                                    SettingsRowDivider()
+
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(horizontal = 14.dp, vertical = 12.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.SpaceBetween
+                                    ) {
+                                        Column(modifier = Modifier.weight(1f)) {
+                                            Text(
+                                                text = "Swipe Seek Step",
+                                                style = MaterialTheme.typography.bodyMedium,
+                                                fontWeight = FontWeight.Medium
+                                            )
+                                            Text(
+                                                text = "Jump duration per horizontal drag",
+                                                style = MaterialTheme.typography.labelSmall,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                            )
+                                        }
+                                        Surface(
+                                            shape = RoundedCornerShape(10.dp),
+                                            color = MaterialTheme.colorScheme.surface
+                                        ) {
+                                            Row(
+                                                modifier = Modifier.padding(3.dp),
+                                                horizontalArrangement = Arrangement.spacedBy(3.dp)
+                                            ) {
+                                                listOf(10, 20).forEach { sec ->
+                                                    val selected = preferences.gestureSeekStepSeconds == sec
+                                                    Surface(
+                                                        onClick = { onGestureSeekStepChange(sec) },
+                                                        shape = RoundedCornerShape(8.dp),
+                                                        color = if (selected) {
+                                                            MaterialTheme.colorScheme.primary
+                                                        } else {
+                                                            Color.Transparent
+                                                        }
+                                                    ) {
+                                                        Text(
+                                                            text = "${sec}s",
+                                                            style = MaterialTheme.typography.labelMedium,
+                                                            fontWeight = FontWeight.SemiBold,
+                                                            color = if (selected) {
+                                                                MaterialTheme.colorScheme.onPrimary
+                                                            } else {
+                                                                MaterialTheme.colorScheme.onSurfaceVariant
+                                                            },
+                                                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
+                                                        )
+                                                    }
+                                                }
+                                            }
                                         }
                                     }
                                 }
                             }
-                        }
-                    }
 
-                    // 4. On-Screen Player Buttons (Clean aligned 2-column grid)
-                    SettingsGroup(
-                        title = "PLAYER SCREEN BUTTONS",
-                        action = {
-                            TextButton(
-                                onClick = onShowAllButtons,
-                                modifier = Modifier.height(28.dp)
-                            ) {
-                                Text("Show All", style = MaterialTheme.typography.labelSmall)
-                            }
-                        }
-                    ) {
-                        Column(
-                            modifier = Modifier.padding(10.dp),
-                            verticalArrangement = Arrangement.spacedBy(6.dp)
-                        ) {
-                            PlayerControlButton.entries.chunked(2).forEach { pair ->
-                                Row(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    horizontalArrangement = Arrangement.spacedBy(6.dp)
-                                ) {
-                                    pair.forEach { btn ->
-                                        val visible = preferences.controlsVisibility.isVisible(btn)
-                                        PlayerButtonToggleTile(
-                                            icon = buttonIconFor(btn),
-                                            label = btn.label,
-                                            enabled = visible,
-                                            onClick = { onTogglePlayerButtonVisibility(btn, !visible) },
-                                            modifier = Modifier.weight(1f)
-                                        )
+                            SettingsTab.BUTTONS -> {
+                                SettingsGroup(
+                                    title = "PLAYER SCREEN BUTTONS",
+                                    action = {
+                                        TextButton(
+                                            onClick = onShowAllButtons,
+                                            modifier = Modifier.height(28.dp)
+                                        ) {
+                                            Text("Show All", style = MaterialTheme.typography.labelSmall)
+                                        }
                                     }
-                                    if (pair.size == 1) {
-                                        Spacer(Modifier.weight(1f))
+                                ) {
+                                    Column(
+                                        modifier = Modifier.padding(10.dp),
+                                        verticalArrangement = Arrangement.spacedBy(6.dp)
+                                    ) {
+                                        PlayerControlButton.entries.chunked(2).forEach { pair ->
+                                            Row(
+                                                modifier = Modifier.fillMaxWidth(),
+                                                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                            ) {
+                                                pair.forEach { btn ->
+                                                    val visible = preferences.controlsVisibility.isVisible(btn)
+                                                    PlayerButtonToggleTile(
+                                                        icon = buttonIconFor(btn),
+                                                        label = btn.label,
+                                                        enabled = visible,
+                                                        onClick = { onTogglePlayerButtonVisibility(btn, !visible) },
+                                                        modifier = Modifier.weight(1f)
+                                                    )
+                                                }
+                                                if (pair.size == 1) {
+                                                    Spacer(Modifier.weight(1f))
+                                                }
+                                            }
+                                        }
                                     }
                                 }
                             }
+
+                            else -> Unit
                         }
                     }
                 }
@@ -370,8 +426,16 @@ fun ControlSettingsDialog(
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(horizontal = 16.dp, vertical = 10.dp),
-                    horizontalArrangement = Arrangement.End
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
+                    if (activeTab != null) {
+                        TextButton(onClick = { activeTab = null }) {
+                            Text("Back to Tabs")
+                        }
+                    } else {
+                        Spacer(Modifier.width(1.dp))
+                    }
                     Button(
                         onClick = onDismiss,
                         shape = RoundedCornerShape(10.dp)
