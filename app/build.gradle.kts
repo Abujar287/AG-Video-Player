@@ -19,7 +19,7 @@ android {
     val ciRepoSlug = (project.findProperty("githubRepoSlug") as? String)
       ?.takeIf { it.contains('/') }
       ?: System.getenv("GITHUB_REPOSITORY")?.takeIf { it.contains('/') }
-      ?: "owner/ag-video-player"
+      ?: "Abujar287/AG-Video-Player"
 
     applicationId = "com.aistudio.veloplay.mvxkpq"
     minSdk = 24

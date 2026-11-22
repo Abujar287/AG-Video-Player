@@ -130,8 +130,12 @@ class GitHubUpdateManager(private val context: Context) {
                 )
             }
 
-            // Fallback to GitHub Web Releases when API returns 403/429 rate-limit or is unreachable
+            // Fallback to GitHub Atom feed & Web Releases when API returns 403/429 rate-limit or fails
             val apiError = apiResult.exceptionOrNull()
+            val atomRelease = fetchLatestViaAtomFeed(cleanedSlug)
+            if (atomRelease != null) {
+                return@withContext atomRelease
+            }
             val webRelease = fetchLatestViaWebFallback(cleanedSlug)
             if (webRelease != null) {
                 return@withContext webRelease
@@ -148,6 +152,27 @@ class GitHubUpdateManager(private val context: Context) {
         }
     }
 
+    private fun fetchLatestViaAtomFeed(cleanedSlug: String): UpdateCheckResult? {
+        return runCatching {
+            val atomXml = fetchText("https://github.com/$cleanedSlug/releases.atom") ?: return@runCatching null
+            val parsed = parseLatestFromAtomXml(atomXml)
+            if (parsed == null) {
+                return@runCatching if (atomXml.contains("<feed")) {
+                    UpdateCheckResult.Error("No published APK release found on GitHub ($cleanedSlug) yet.")
+                } else {
+                    null
+                }
+            }
+            val (tagName, title, notes) = parsed
+            resolveWebReleaseForTag(
+                cleanedSlug = cleanedSlug,
+                tagName = tagName,
+                releaseTitle = title,
+                releaseNotes = notes
+            )
+        }.getOrNull()
+    }
+
     private fun fetchLatestViaWebFallback(cleanedSlug: String): UpdateCheckResult? {
         return runCatching {
             var currentUrl = "https://github.com/$cleanedSlug/releases/latest"
@@ -159,74 +184,90 @@ class GitHubUpdateManager(private val context: Context) {
                     useCaches = false
                     connectTimeout = 12_000
                     readTimeout = 15_000
-                    setRequestProperty("User-Agent", "Mozilla/5.0 (Android) VideoPlayer/${BuildConfig.VERSION_NAME}")
+                    setRequestProperty("User-Agent", WEB_USER_AGENT)
                 }
                 val status = conn.responseCode
                 val location = conn.getHeaderField("Location")
-                conn.disconnect()
                 if (status in 300..399 && !location.isNullOrBlank()) {
-                    currentUrl = if (location.startsWith("http")) {
-                        location
-                    } else {
-                        "https://github.com$location"
-                    }
-                    val marker = "/releases/tag/"
-                    val idx = currentUrl.indexOf(marker)
-                    if (idx >= 0) {
-                        resolvedTag = Uri.decode(
-                            currentUrl.substring(idx + marker.length)
-                                .substringBefore('?')
-                                .substringBefore('#')
-                                .trim('/')
-                        )
-                    }
+                    conn.disconnect()
+                    currentUrl = URL(URL(currentUrl), location).toString()
+                    extractTagFromUrl(currentUrl)?.let { resolvedTag = it }
                 } else {
+                    if (status in 200..299 && resolvedTag.isBlank()) {
+                        extractTagFromUrl(conn.url.toString())?.let { resolvedTag = it }
+                        if (resolvedTag.isBlank()) {
+                            val html = runCatching {
+                                conn.inputStream.bufferedReader().use { it.readText() }
+                            }.getOrNull().orEmpty()
+                            resolvedTag = extractTagFromUrl(html).orEmpty()
+                        }
+                    }
+                    conn.disconnect()
                     break
                 }
             }
 
             if (resolvedTag.isBlank()) return@runCatching null
-
-            val remoteVersionName = resolvedTag.removePrefix("v").removePrefix("V").ifBlank { "0.0.0" }
-            val hasNewerVersion = isNewerVersion(
-                currentVersionName = BuildConfig.VERSION_NAME,
-                currentVersionCode = BuildConfig.VERSION_CODE,
-                remoteVersionName = remoteVersionName,
-                remoteVersionCode = null
-            )
-
-            if (!hasNewerVersion) {
-                return@runCatching UpdateCheckResult.UpToDate(BuildConfig.VERSION_NAME)
-            }
-
-            val expandedAssetsUrl = "https://github.com/$cleanedSlug/releases/expanded_assets/$resolvedTag"
-            val assetsHtml = fetchText(expandedAssetsUrl).orEmpty()
-            val apkHrefRegex = Regex("""href="([^"]*?/releases/download/[^"]+?\.apk)"""", RegexOption.IGNORE_CASE)
-            val relativeHref = apkHrefRegex.find(assetsHtml)?.groupValues?.getOrNull(1)
-                ?: return@runCatching UpdateCheckResult.Error(
-                    "Latest release ($resolvedTag) has no .apk file attached yet."
-                )
-            val fullApkUrl = if (relativeHref.startsWith("http")) {
-                relativeHref
-            } else {
-                "https://github.com$relativeHref"
-            }
-            val apkFileName = fullApkUrl.substringAfterLast('/').substringBefore('?')
-                .ifBlank { "Video-Player-$remoteVersionName.apk" }
-
-            UpdateCheckResult.UpdateAvailable(
-                GitHubReleaseInfo(
-                    versionName = remoteVersionName,
-                    versionCode = null,
-                    releaseTitle = "Video Player v$remoteVersionName",
-                    releaseNotes = "New update available on GitHub Releases.",
-                    apkDownloadUrl = fullApkUrl,
-                    apkFileName = apkFileName,
-                    apkSizeBytes = 0L,
-                    htmlUrl = "https://github.com/$cleanedSlug/releases/tag/$resolvedTag"
-                )
+            resolveWebReleaseForTag(
+                cleanedSlug = cleanedSlug,
+                tagName = resolvedTag,
+                releaseTitle = "Video Player $resolvedTag",
+                releaseNotes = "New update available on GitHub Releases."
             )
         }.getOrNull()
+    }
+
+    private fun resolveWebReleaseForTag(
+        cleanedSlug: String,
+        tagName: String,
+        releaseTitle: String,
+        releaseNotes: String
+    ): UpdateCheckResult {
+        val remoteVersionName = tagName.removePrefix("v").removePrefix("V").ifBlank { "0.0.0" }
+        val parsedVersionCode = parseOptionalVersionCode(releaseNotes)
+        val hasNewerVersion = isNewerVersion(
+            currentVersionName = BuildConfig.VERSION_NAME,
+            currentVersionCode = BuildConfig.VERSION_CODE,
+            remoteVersionName = remoteVersionName,
+            remoteVersionCode = parsedVersionCode
+        )
+
+        if (!hasNewerVersion) {
+            return UpdateCheckResult.UpToDate(BuildConfig.VERSION_NAME)
+        }
+
+        val expandedAssetsUrl = "https://github.com/$cleanedSlug/releases/expanded_assets/$tagName"
+        val assetsHtml = fetchText(expandedAssetsUrl)
+            ?: fetchText("https://github.com/$cleanedSlug/releases/tag/$tagName").orEmpty()
+        val relativeHref = extractApkHref(assetsHtml)
+            ?: return UpdateCheckResult.Error(
+                "Latest release ($tagName) has no .apk file attached yet."
+            )
+        val fullApkUrl = if (relativeHref.startsWith("http")) {
+            relativeHref
+        } else {
+            "https://github.com$relativeHref"
+        }
+        val apkFileName = fullApkUrl.substringAfterLast('/').substringBefore('?')
+            .ifBlank { "Video-Player-$remoteVersionName.apk" }
+
+        return UpdateCheckResult.UpdateAvailable(
+            GitHubReleaseInfo(
+                versionName = remoteVersionName,
+                versionCode = parsedVersionCode,
+                releaseTitle = releaseTitle.ifBlank { "Video Player v$remoteVersionName" },
+                releaseNotes = releaseNotes.ifBlank { "New update available on GitHub Releases." },
+                apkDownloadUrl = fullApkUrl,
+                apkFileName = apkFileName,
+                apkSizeBytes = 0L,
+                htmlUrl = "https://github.com/$cleanedSlug/releases/tag/$tagName"
+            )
+        )
+    }
+
+    private fun extractTagFromUrl(text: String): String? {
+        val match = Regex("""/releases/tag/([^/"?#\s]+)""").find(text) ?: return null
+        return runCatching { Uri.decode(match.groupValues[1]) }.getOrNull()?.takeIf { it.isNotBlank() }
     }
 
     private fun fetchText(urlString: String): String? {
@@ -237,7 +278,7 @@ class GitHubUpdateManager(private val context: Context) {
                 useCaches = false
                 connectTimeout = 12_000
                 readTimeout = 15_000
-                setRequestProperty("User-Agent", "Mozilla/5.0 (Android) VideoPlayer/${BuildConfig.VERSION_NAME}")
+                setRequestProperty("User-Agent", WEB_USER_AGENT)
             }
             if (connection.responseCode !in 200..299) return null
             connection.inputStream.bufferedReader().use { it.readText() }
@@ -331,7 +372,7 @@ class GitHubUpdateManager(private val context: Context) {
                 val status = connection.responseCode
                 if (status in 300..399) {
                     val location = connection.getHeaderField("Location") ?: break
-                    currentUrl = location
+                    currentUrl = URL(URL(currentUrl), location).toString()
                     redirectCount++
                 } else {
                     break
@@ -558,6 +599,40 @@ class GitHubUpdateManager(private val context: Context) {
     companion object {
         private const val UPDATE_CHANNEL_ID = "ag_apk_updates"
         private const val UPDATE_NOTIFICATION_ID = 7001
+        private const val WEB_USER_AGENT = "Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 Chrome/120.0 Mobile Safari/537.36"
+
+        internal fun parseLatestFromAtomXml(atomXml: String): Triple<String, String, String>? {
+            val entryMatch = Regex("""<entry>([\s\S]*?)</entry>""").find(atomXml) ?: return null
+            val entry = entryMatch.groupValues[1]
+            val tagMatch = Regex("""/releases/tag/([^/"?#\s<>]+)""").find(entry) ?: return null
+            val tag = tagMatch.groupValues[1].trim()
+            if (tag.isBlank()) return null
+
+            val title = Regex("""<title[^>]*>([\s\S]*?)</title>""").find(entry)
+                ?.groupValues?.getOrNull(1)
+                ?.replace("&amp;", "&")
+                ?.trim()
+                .orEmpty()
+
+            val rawContent = Regex("""<content[^>]*>([\s\S]*?)</content>""").find(entry)
+                ?.groupValues?.getOrNull(1)
+                .orEmpty()
+            val cleanedNotes = rawContent
+                .replace("&lt;", "<")
+                .replace("&gt;", ">")
+                .replace("&amp;", "&")
+                .replace("&quot;", "\"")
+                .replace(Regex("""<br\s*/?>""", RegexOption.IGNORE_CASE), "\n")
+                .replace(Regex("""<[^>]+>"""), "")
+                .trim()
+
+            return Triple(tag, title, cleanedNotes)
+        }
+
+        internal fun extractApkHref(html: String): String? {
+            val apkHrefRegex = Regex("""href="([^"]*?/releases/download/[^"]+?\.apk)"""", RegexOption.IGNORE_CASE)
+            return apkHrefRegex.find(html)?.groupValues?.getOrNull(1)
+        }
 
         internal fun parseOptionalVersionCode(releaseNotes: String): Int? {
             val regex = Regex("""versionCode\s*[:=]\s*(\d+)""", RegexOption.IGNORE_CASE)
