@@ -88,8 +88,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val _showUpdateDialog = MutableStateFlow(false)
     val showUpdateDialog: StateFlow<Boolean> = _showUpdateDialog.asStateFlow()
 
-    private var pendingMoveForRetry: PendingMoveRequest? = null
-
     val preferences: StateFlow<UserPreferences> = prefsRepo.preferencesFlow.stateIn(
         viewModelScope,
         SharingStarted.Eagerly,
