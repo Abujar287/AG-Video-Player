@@ -33,6 +33,10 @@ android {
     ndk {
       abiFilters += listOf("arm64-v8a", "armeabi-v7a")
     }
+
+    androidResources {
+      localeFilters += listOf("en")
+    }
   }
 
   signingConfigs {
@@ -88,7 +92,11 @@ android {
         "META-INF/NOTICE.txt",
         "META-INF/notice.txt",
         "META-INF/ASL2.0",
-        "META-INF/*.kotlin_module"
+        "META-INF/*.kotlin_module",
+        "META-INF/*.version",
+        "META-INF/{AL2.0,LGPL2.1}",
+        "DebugProbesKt.bin",
+        "kotlin-tooling-metadata.json"
       )
     }
   }

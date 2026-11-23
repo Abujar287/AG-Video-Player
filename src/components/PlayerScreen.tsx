@@ -973,15 +973,6 @@ export function PlayerScreen({
           onPointerDown={(e) => e.stopPropagation()}
         >
           <div className="flex items-center gap-2.5">
-            <button
-              type="button"
-              onClick={handleBackClick}
-              aria-label="Turn off video and return"
-              title="Turn off video and return"
-              className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-white/10 text-white transition-colors hover:bg-white/25 active:scale-95"
-            >
-              <ArrowLeft className="h-5 w-5" />
-            </button>
             <h1 className="min-w-0 flex-1 truncate text-[15px] font-semibold">
               {currentEntry?.title ?? 'Video'}
             </h1>
@@ -1280,18 +1271,23 @@ export function PlayerScreen({
                   <PictureInPicture2 className="h-5 w-5" />
                 </button>
               )}
-              <button
-                type="button"
-                onClick={handleBackClick}
-                aria-label="Back"
-                title="Back"
-                className="flex h-10 w-10 items-center justify-center rounded-full text-white transition-colors hover:bg-white/10"
-              >
-                <ArrowLeft className="h-5 w-5" />
-              </button>
             </div>
           </div>
         </div>
+
+        {/* Right-Side Middle Back Button (hides/shows with controls on single click) */}
+        <button
+          type="button"
+          onClick={handleBackClick}
+          onPointerDown={(e) => e.stopPropagation()}
+          aria-label="Turn off video and return"
+          title="Turn off video and return"
+          className={`absolute top-1/2 right-3 flex h-11 w-11 -translate-y-1/2 items-center justify-center rounded-full bg-black/65 text-white shadow-lg transition-colors hover:bg-white/20 active:scale-95 md:right-5 ${
+            controlsVisible && !isLocked ? 'pointer-events-auto' : 'pointer-events-none'
+          }`}
+        >
+          <ArrowLeft className="h-5 w-5" />
+        </button>
       </div>
 
       {/* Unlock Button when locked */}

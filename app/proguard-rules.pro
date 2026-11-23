@@ -1,24 +1,24 @@
-# ProGuard rules for AG Video Player / ExoPlayer / Compose / Room
+# ProGuard / R8 rules for AG Video Player
+# Keep minimal reflection targets; Compose, Media3, Room, DataStore & Coroutines
+# include their own consumer ProGuard rules inside their AARs.
 -keepattributes SourceFile,LineNumberTable
 -renamesourcefileattribute SourceFile
 
-# Jetpack Compose
--keep class androidx.compose.** { *; }
--dontwarn androidx.compose.**
-
-# ExoPlayer / Media3
--keep class androidx.media3.** { *; }
--dontwarn androidx.media3.**
-
-# Room Database
--keep class androidx.room.** { *; }
--keep class * extends androidx.room.RoomDatabase { *; }
+# Room Database constructor safety
+-keep class * extends androidx.room.RoomDatabase {
+    <init>();
+}
 -dontwarn androidx.room.**
 
-# Kotlin Coroutines
--keep class kotlinx.coroutines.** { *; }
--dontwarn kotlinx.coroutines.**
+# ViewModel reflection constructors used by viewModel()
+-keepclassmembers class * extends androidx.lifecycle.ViewModel {
+    <init>(...);
+}
+-keepclassmembers class * extends androidx.lifecycle.AndroidViewModel {
+    <init>(...);
+}
 
-# DataStore Preferences
--keep class androidx.datastore.** { *; }
--dontwarn androidx.datastore.**
+# Silence optional Play Core / annotation warnings during R8
+-dontwarn com.google.errorprone.annotations.**
+-dontwarn javax.annotation.**
+-dontwarn org.codehaus.mojo.animal_sniffer.**
