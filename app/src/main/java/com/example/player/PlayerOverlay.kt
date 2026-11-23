@@ -168,7 +168,11 @@ fun PlayerOverlay(
     val latestDurationMs by rememberUpdatedState(durationMs)
     val latestBrightness by rememberUpdatedState(brightnessPercent)
     val latestVolume by rememberUpdatedState(volumePercent)
+    val latestOnToggleControls by rememberUpdatedState(onToggleControls)
+    val latestOnPlayPause by rememberUpdatedState(onPlayPause)
+    val latestOnToggleMute by rememberUpdatedState(onToggleMute)
     val latestOnSeekTo by rememberUpdatedState(onSeekTo)
+    val latestOnSeekBy by rememberUpdatedState(onSeekBy)
     val latestOnChangeBrightness by rememberUpdatedState(onChangeBrightness)
     val latestOnChangeVolume by rememberUpdatedState(onChangeVolume)
 
@@ -195,36 +199,46 @@ fun PlayerOverlay(
     val displayedTools = allTopTools.take(4)
     val overflowTools = allTopTools.drop(4)
 
+    androidx.compose.runtime.LaunchedEffect(controlsVisible) {
+        if (!controlsVisible) {
+            showSpeedPicker = false
+        }
+    }
+
+    val doubleTapEnabled = !isLocked && preferences.doubleClickAction != DoubleClickAction.NONE
+
     Box(
         modifier = Modifier
             .fillMaxSize()
             .onSizeChanged { boxSize = it }
-            .pointerInput(isLocked, preferences.singleClickAction, preferences.doubleClickAction) {
+            .pointerInput(doubleTapEnabled) {
                 detectTapGestures(
                     onTap = {
                         showSpeedPicker = false
-                        if (isLocked) {
-                            onToggleControls()
+                        if (latestLocked) {
+                            latestOnToggleControls()
                         } else {
-                            when (preferences.singleClickAction) {
-                                SingleClickAction.TOGGLE_CONTROLS -> onToggleControls()
-                                SingleClickAction.PLAY_PAUSE -> onPlayPause()
-                                SingleClickAction.TOGGLE_MUTE -> onToggleMute()
+                            when (latestPrefs.singleClickAction) {
+                                SingleClickAction.TOGGLE_CONTROLS -> latestOnToggleControls()
+                                SingleClickAction.PLAY_PAUSE -> latestOnPlayPause()
+                                SingleClickAction.TOGGLE_MUTE -> latestOnToggleMute()
                                 SingleClickAction.NONE -> Unit
                             }
                         }
                     },
-                    onDoubleTap = { offset ->
-                        if (!isLocked) {
-                            val leftHalf = offset.x < boxSize.width / 2f
-                            when (preferences.doubleClickAction) {
-                                DoubleClickAction.PLAY_PAUSE -> onPlayPause()
-                                DoubleClickAction.SEEK_10S -> onSeekBy(if (leftHalf) -10_000L else 10_000L)
-                                DoubleClickAction.SEEK_20S -> onSeekBy(if (leftHalf) -20_000L else 20_000L)
-                                DoubleClickAction.NONE -> Unit
+                    onDoubleTap = if (doubleTapEnabled) {
+                        { offset ->
+                            if (!latestLocked) {
+                                val leftHalf = offset.x < boxSize.width / 2f
+                                when (latestPrefs.doubleClickAction) {
+                                    DoubleClickAction.PLAY_PAUSE -> latestOnPlayPause()
+                                    DoubleClickAction.SEEK_10S -> latestOnSeekBy(if (leftHalf) -10_000L else 10_000L)
+                                    DoubleClickAction.SEEK_20S -> latestOnSeekBy(if (leftHalf) -20_000L else 20_000L)
+                                    DoubleClickAction.NONE -> Unit
+                                }
                             }
                         }
-                    }
+                    } else null
                 )
             }
             .pointerInput(Unit) {
@@ -757,26 +771,6 @@ fun PlayerOverlay(
                     .background(Color(0xFF0B0E14).copy(alpha = 0.85f))
                     .padding(horizontal = 16.dp, vertical = 8.dp)
             )
-        }
-
-        // When controls are auto-hidden, keep a distinct floating circular back button at TopStart
-        if (!isLocked && !controlsVisible) {
-            IconButton(
-                onClick = onBack,
-                modifier = Modifier
-                    .align(Alignment.TopStart)
-                    .padding(top = 12.dp, start = 12.dp)
-                    .size(46.dp)
-                    .clip(CircleShape)
-                    .background(Color.Black.copy(alpha = 0.6f))
-            ) {
-                Icon(
-                    imageVector = Icons.AutoMirrored.Rounded.ArrowBack,
-                    contentDescription = "Turn off video and return",
-                    tint = Color.White,
-                    modifier = Modifier.size(26.dp)
-                )
-            }
         }
     }
 

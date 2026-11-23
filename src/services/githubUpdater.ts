@@ -128,7 +128,7 @@ export async function checkForUpdate(repoSlug: string): Promise<UpdateUiState> {
     if (apiRateLimited) {
       return { status: 'up_to_date', versionName: APP_VERSION_NAME };
     }
-    return { status: 'up_to_date', versionName: APP_VERSION_NAME };
+    return { status: 'error', message: 'Could not reach update server. Please try again later.' };
   } catch {
     return { status: 'error', message: 'Unable to check for updates right now.' };
   }

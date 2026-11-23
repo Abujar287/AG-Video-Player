@@ -19,10 +19,17 @@ import java.io.File
 import java.net.HttpURLConnection
 import java.net.URL
 
+enum class ApkInstallResult {
+    LAUNCHED,
+    PERMISSION_NEEDED,
+    FAILED
+}
+
 object GitHubUpdateManager {
 
     suspend fun checkForUpdate(repoSlug: String): UpdateUiState = withContext(Dispatchers.IO) {
         val cleanedSlug = repoSlug.trim()
+            .ifBlank { BuildConfig.GITHUB_REPO_SLUG }
             .removePrefix("https://github.com/")
             .trim('/')
 
@@ -176,35 +183,81 @@ object GitHubUpdateManager {
         )
     }
 
-    fun startApkDownload(context: Context, release: GitHubReleaseInfo): Long {
-        val dm = context.getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager
-        val fileName = "AG Video Player.apk"
-        val request = DownloadManager.Request(Uri.parse(release.apkDownloadUrl))
-            .setTitle("AG Video Player v${release.versionName}")
-            .setDescription("Downloading $fileName")
-            .setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
-            .setMimeType("application/vnd.android.package-archive")
-            .setDestinationInExternalPublicDir(Environment.DIRECTORY_DOWNLOADS, fileName)
-        return dm.enqueue(request)
+    fun buildUpdateFileName(release: GitHubReleaseInfo): String {
+        val safeVersion = release.versionName.replace(Regex("[^A-Za-z0-9._-]"), "_").ifBlank { "latest" }
+        return "AG-Video-Player-v$safeVersion.apk"
     }
 
-    fun installDownloadedApk(context: Context, apkFile: File) {
+    fun getExpectedApkFile(context: Context, release: GitHubReleaseInfo): File {
+        val fileName = buildUpdateFileName(release)
+        val appDownloadsDir = context.getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS)
+        return if (appDownloadsDir != null) {
+            File(appDownloadsDir, fileName)
+        } else {
+            File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS), fileName)
+        }
+    }
+
+    fun startApkDownload(context: Context, release: GitHubReleaseInfo): Long {
+        val rawUrl = release.apkDownloadUrl.trim().replace(" ", "%20")
+        if (!rawUrl.startsWith("https://", ignoreCase = true) && !rawUrl.startsWith("http://", ignoreCase = true)) {
+            return -1L
+        }
+
+        val dm = context.getSystemService(Context.DOWNLOAD_SERVICE) as? DownloadManager ?: return -1L
+        val fileName = buildUpdateFileName(release)
+        val appDownloadsDir = context.getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS)
+
+        return runCatching {
+            val request = DownloadManager.Request(Uri.parse(rawUrl))
+                .setTitle("AG Video Player v${release.versionName}")
+                .setDescription("Downloading $fileName")
+                .setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
+                .setMimeType("application/vnd.android.package-archive")
+
+            if (appDownloadsDir != null) {
+                appDownloadsDir.mkdirs()
+                appDownloadsDir.listFiles()?.forEach { existing ->
+                    if (existing.isFile && existing.name.endsWith(".apk", ignoreCase = true)) {
+                        existing.delete()
+                    }
+                }
+                request.setDestinationInExternalFilesDir(context, Environment.DIRECTORY_DOWNLOADS, fileName)
+            } else {
+                val publicFile = File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS), fileName)
+                if (publicFile.exists()) publicFile.delete()
+                request.setDestinationInExternalPublicDir(Environment.DIRECTORY_DOWNLOADS, fileName)
+            }
+
+            dm.enqueue(request)
+        }.getOrDefault(-1L)
+    }
+
+    fun installDownloadedApk(context: Context, apkFile: File): ApkInstallResult {
+        if (!apkFile.exists() || apkFile.length() <= 0L) {
+            return ApkInstallResult.FAILED
+        }
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O &&
             !context.packageManager.canRequestPackageInstalls()
         ) {
-            val settingsIntent = Intent(
-                Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,
-                Uri.parse("package:${context.packageName}")
-            ).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-            context.startActivity(settingsIntent)
-            return
+            return runCatching {
+                val settingsIntent = Intent(
+                    Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,
+                    Uri.parse("package:${context.packageName}")
+                ).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                context.startActivity(settingsIntent)
+                ApkInstallResult.PERMISSION_NEEDED
+            }.getOrDefault(ApkInstallResult.FAILED)
         }
-        val uri = FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", apkFile)
-        val intent = Intent(Intent.ACTION_VIEW).apply {
-            setDataAndType(uri, "application/vnd.android.package-archive")
-            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK)
-        }
-        context.startActivity(intent)
+        return runCatching {
+            val uri = FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", apkFile)
+            val intent = Intent(Intent.ACTION_VIEW).apply {
+                setDataAndType(uri, "application/vnd.android.package-archive")
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            context.startActivity(intent)
+            ApkInstallResult.LAUNCHED
+        }.getOrDefault(ApkInstallResult.FAILED)
     }
 
     fun isNewerVersion(

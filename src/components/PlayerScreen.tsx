@@ -379,6 +379,9 @@ export function PlayerScreen({
   // Clean up subtitle blob URLs and audio context on unmount
   useEffect(() => {
     return () => {
+      if (singleTapTimerRef.current) {
+        window.clearTimeout(singleTapTimerRef.current);
+      }
       subtitleTracks.forEach((tr) => {
         if (tr.srcUrl) URL.revokeObjectURL(tr.srcUrl);
       });
@@ -613,33 +616,7 @@ export function PlayerScreen({
       const leftHalf = clientX - (rect?.left ?? 0) < width / 2;
       const now = Date.now();
 
-      if (now - lastTapTimeRef.current < 260) {
-        if (singleTapTimerRef.current) {
-          window.clearTimeout(singleTapTimerRef.current);
-          singleTapTimerRef.current = null;
-        }
-        lastTapTimeRef.current = 0;
-        if (!isLocked) {
-          switch (preferences.doubleClickAction) {
-            case DoubleClickAction.PLAY_PAUSE:
-              handlePlayPause();
-              break;
-            case DoubleClickAction.SEEK_10S:
-              handleSeekBy(leftHalf ? -10_000 : 10_000);
-              break;
-            case DoubleClickAction.SEEK_20S:
-              handleSeekBy(leftHalf ? -20_000 : 20_000);
-              break;
-            case DoubleClickAction.NONE:
-              break;
-          }
-        }
-        return;
-      }
-
-      lastTapTimeRef.current = now;
-      singleTapTimerRef.current = window.setTimeout(() => {
-        singleTapTimerRef.current = null;
+      const executeSingleTap = () => {
         setShowSpeedPicker(false);
         if (isLocked) {
           setControlsVisible((v) => !v);
@@ -658,6 +635,38 @@ export function PlayerScreen({
               break;
           }
         }
+      };
+
+      if (isLocked || preferences.doubleClickAction === DoubleClickAction.NONE) {
+        lastTapTimeRef.current = 0;
+        executeSingleTap();
+        return;
+      }
+
+      if (now - lastTapTimeRef.current < 260) {
+        if (singleTapTimerRef.current) {
+          window.clearTimeout(singleTapTimerRef.current);
+          singleTapTimerRef.current = null;
+        }
+        lastTapTimeRef.current = 0;
+        switch (preferences.doubleClickAction) {
+          case DoubleClickAction.PLAY_PAUSE:
+            handlePlayPause();
+            break;
+          case DoubleClickAction.SEEK_10S:
+            handleSeekBy(leftHalf ? -10_000 : 10_000);
+            break;
+          case DoubleClickAction.SEEK_20S:
+            handleSeekBy(leftHalf ? -20_000 : 20_000);
+            break;
+        }
+        return;
+      }
+
+      lastTapTimeRef.current = now;
+      singleTapTimerRef.current = window.setTimeout(() => {
+        singleTapTimerRef.current = null;
+        executeSingleTap();
       }, 240);
     },
     [
@@ -707,7 +716,7 @@ export function PlayerScreen({
     const dx = e.clientX - g.startX;
     const dyTotal = e.clientY - g.startY;
 
-    if (Math.abs(dx) > 8 || Math.abs(dyTotal) > 8) {
+    if (Math.abs(dx) > 18 || Math.abs(dyTotal) > 18) {
       g.moved = true;
     }
 

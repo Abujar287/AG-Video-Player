@@ -29,7 +29,9 @@ import com.example.data.repository.MediaMutationOutcome
 import com.example.data.repository.PlaybackRepository
 import com.example.data.repository.UserPreferencesRepository
 import com.example.data.repository.VideoLibraryRepository
+import com.example.updater.ApkInstallResult
 import com.example.updater.GitHubUpdateManager
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -87,6 +89,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     private val _showUpdateDialog = MutableStateFlow(false)
     val showUpdateDialog: StateFlow<Boolean> = _showUpdateDialog.asStateFlow()
+
+    private var downloadPollJob: Job? = null
+    private var lastCheckedRelease: GitHubReleaseInfo? = null
 
     val preferences: StateFlow<UserPreferences> = prefsRepo.preferencesFlow.stateIn(
         viewModelScope,
@@ -177,6 +182,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             preferences.map { it.showHiddenFiles }.distinctUntilChanged().collect {
                 refreshLibrary()
+            }
+        }
+        viewModelScope.launch {
+            val slug = preferences.value.githubRepoSlug.ifBlank { BuildConfig.GITHUB_REPO_SLUG }
+            val result = GitHubUpdateManager.checkForUpdate(slug)
+            if (result is UpdateUiState.Available) {
+                lastCheckedRelease = result.release
+                _updateState.value = result
             }
         }
     }
@@ -438,70 +451,114 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     // GitHub Updates
     fun openUpdateCheck() {
         _showUpdateDialog.value = true
+        val current = _updateState.value
+        if (current is UpdateUiState.Downloading || current is UpdateUiState.ReadyToInstall) {
+            return
+        }
         viewModelScope.launch {
             _updateState.value = UpdateUiState.Checking
-            _updateState.value = GitHubUpdateManager.checkForUpdate(preferences.value.githubRepoSlug)
+            val slug = preferences.value.githubRepoSlug.ifBlank { BuildConfig.GITHUB_REPO_SLUG }
+            val result = GitHubUpdateManager.checkForUpdate(slug)
+            if (result is UpdateUiState.Available) {
+                lastCheckedRelease = result.release
+            }
+            _updateState.value = result
         }
     }
 
     fun startUpdateDownload(release: GitHubReleaseInfo) {
         val context = getApplication<Application>()
+        lastCheckedRelease = release
         val downloadId = GitHubUpdateManager.startApkDownload(context, release)
         if (downloadId <= 0L) {
             _updateState.value = UpdateUiState.Error("Could not start download.")
             return
         }
-        viewModelScope.launch {
-            val dm = context.getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager
+        downloadPollJob?.cancel()
+        _updateState.value = UpdateUiState.Downloading(downloadId, 0, 0L, release.apkSizeBytes)
+        downloadPollJob = viewModelScope.launch {
+            val dm = context.getSystemService(Context.DOWNLOAD_SERVICE) as? DownloadManager
+            if (dm == null) {
+                _updateState.value = UpdateUiState.Error("Download manager is unavailable on this device.")
+                return@launch
+            }
+            var emptyPolls = 0
             while (true) {
                 val query = DownloadManager.Query().setFilterById(downloadId)
-                val cursor = dm.query(query)
+                val cursor = runCatching { dm.query(query) }.getOrNull()
                 if (cursor != null && cursor.moveToFirst()) {
+                    emptyPolls = 0
                     val statusCol = cursor.getColumnIndex(DownloadManager.COLUMN_STATUS)
                     val downloadedCol = cursor.getColumnIndex(DownloadManager.COLUMN_BYTES_DOWNLOADED_SO_FAR)
                     val totalCol = cursor.getColumnIndex(DownloadManager.COLUMN_TOTAL_SIZE_BYTES)
+                    val localUriCol = cursor.getColumnIndex(DownloadManager.COLUMN_LOCAL_URI)
 
                     val status = if (statusCol >= 0) cursor.getInt(statusCol) else DownloadManager.STATUS_FAILED
                     val bytesDownloaded = if (downloadedCol >= 0) cursor.getLong(downloadedCol) else 0L
                     val bytesTotal = if (totalCol >= 0) cursor.getLong(totalCol) else 0L
+                    val localUri = if (localUriCol >= 0) cursor.getString(localUriCol) else null
 
                     cursor.close()
 
                     when (status) {
                         DownloadManager.STATUS_SUCCESSFUL -> {
-                            val file = File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS), release.apkFileName.ifBlank { "AG Video Player.apk" })
-                            _updateState.value = UpdateUiState.ReadyToInstall(file.absolutePath)
+                            val uriPath = localUri?.let { runCatching { Uri.parse(it).path }.getOrNull() }
+                            val resolvedFile = uriPath?.let(::File)?.takeIf { it.exists() && it.length() > 0L }
+                                ?: GitHubUpdateManager.getExpectedApkFile(context, release)
+                            if (resolvedFile.exists() && resolvedFile.length() > 0L) {
+                                _updateState.value = UpdateUiState.ReadyToInstall(resolvedFile.absolutePath)
+                            } else {
+                                _updateState.value = UpdateUiState.Error("Downloaded APK file could not be verified.")
+                            }
                             break
                         }
                         DownloadManager.STATUS_FAILED -> {
                             _updateState.value = UpdateUiState.Error("Download failed. Please check connection.")
                             break
                         }
-                        DownloadManager.STATUS_RUNNING, DownloadManager.STATUS_PENDING -> {
-                            val percent = if (bytesTotal > 0L) ((bytesDownloaded * 100L) / bytesTotal).toInt().coerceIn(0, 100) else 0
-                            _updateState.value = UpdateUiState.Downloading(downloadId, percent, bytesDownloaded, bytesTotal)
+                        DownloadManager.STATUS_RUNNING, DownloadManager.STATUS_PENDING, DownloadManager.STATUS_PAUSED -> {
+                            val effectiveTotal = if (bytesTotal > 0L) bytesTotal else release.apkSizeBytes
+                            val percent = if (effectiveTotal > 0L) {
+                                ((bytesDownloaded * 100L) / effectiveTotal).toInt().coerceIn(0, 100)
+                            } else 0
+                            _updateState.value = UpdateUiState.Downloading(downloadId, percent, bytesDownloaded, effectiveTotal)
                         }
                     }
                 } else {
                     cursor?.close()
+                    emptyPolls++
+                    if (emptyPolls >= 3) {
+                        _updateState.value = UpdateUiState.Error("Download was canceled.")
+                        break
+                    }
                 }
-                delay(1000L)
+                delay(800L)
             }
         }
     }
 
     fun installUpdate(filePath: String) {
         val context = getApplication<Application>()
-        val file = File(filePath)
-        if (file.exists()) {
-            GitHubUpdateManager.installDownloadedApk(context, file)
-        } else {
-            // Fallback to Downloads directory file lookup
-            val fallbackFile = File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS), "AG Video Player.apk")
-            if (fallbackFile.exists()) {
-                GitHubUpdateManager.installDownloadedApk(context, fallbackFile)
-            } else {
-                _updateState.value = UpdateUiState.Error("Downloaded APK file not found.")
+        val primaryFile = File(filePath)
+        val fallbackFile = lastCheckedRelease?.let { GitHubUpdateManager.getExpectedApkFile(context, it) }
+        val targetFile = when {
+            primaryFile.exists() && primaryFile.length() > 0L -> primaryFile
+            fallbackFile != null && fallbackFile.exists() && fallbackFile.length() > 0L -> fallbackFile
+            else -> null
+        }
+
+        if (targetFile == null) {
+            _updateState.value = UpdateUiState.Error("Downloaded APK file not found.")
+            return
+        }
+
+        when (GitHubUpdateManager.installDownloadedApk(context, targetFile)) {
+            ApkInstallResult.LAUNCHED -> Unit
+            ApkInstallResult.PERMISSION_NEEDED -> {
+                _actionMessage.value = "Allow 'Install unknown apps' in Settings, then tap Install Update Now."
+            }
+            ApkInstallResult.FAILED -> {
+                _updateState.value = UpdateUiState.Error("Could not launch installer for the downloaded APK.")
             }
         }
     }
