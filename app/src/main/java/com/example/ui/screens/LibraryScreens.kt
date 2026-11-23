@@ -218,7 +218,8 @@ fun LibraryBrowserScreen(
         }
     }
 
-    val displayedVideos = if (destination == BrowserDestination.Folders && preferences.mainDisplayMode == "files") {
+    val isSearching = searchQuery.isNotBlank()
+    val displayedVideos = if (destination == BrowserDestination.Folders && (preferences.mainDisplayMode == "files" || isSearching)) {
         sortedAllVideos
     } else {
         currentVideos
@@ -238,6 +239,10 @@ fun LibraryBrowserScreen(
     }
 
     val subtitleText = when {
+        destination == BrowserDestination.Folders && isSearching -> {
+            val unit = if (displayedVideos.size == 1) "video" else "videos"
+            "${displayedVideos.size} matching $unit"
+        }
         selectedFolder != null -> {
             val unit = if (selectedFolder.videoCount == 1) "video" else "videos"
             "${selectedFolder.videoCount} $unit · ${FormatUtils.formatFileSize(selectedFolder.totalSizeBytes)}"
@@ -430,7 +435,7 @@ fun LibraryBrowserScreen(
                 onValueChange = onSearchQueryChange,
                 modifier = Modifier.fillMaxWidth(),
                 singleLine = true,
-                placeholder = { Text("Search folders or videos…", style = MaterialTheme.typography.bodyMedium) },
+                placeholder = { Text("Search video files…", style = MaterialTheme.typography.bodyMedium) },
                 leadingIcon = {
                     Icon(Icons.Rounded.Search, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
                 },
@@ -454,7 +459,7 @@ fun LibraryBrowserScreen(
                     .fillMaxWidth()
             ) {
             Column(modifier = Modifier.fillMaxSize()) {
-            if (destination == BrowserDestination.Folders && preferences.mainDisplayMode == "folders") {
+            if (destination == BrowserDestination.Folders && preferences.mainDisplayMode == "folders" && !isSearching) {
                 if (!searchQuery.isNotBlank() && (favoriteVideosCount > 0 || preferences.playlists.isNotEmpty())) {
                     Row(
                         modifier = Modifier

@@ -231,11 +231,12 @@ export function useLibraryState() {
 
   const selectAllVisible = useCallback(() => {
     const list =
-      destination.type === 'folders' && preferences.mainDisplayMode === 'files'
+      destination.type === 'folders' &&
+      (preferences.mainDisplayMode === 'files' || searchQuery.trim().length > 0)
         ? sortedAllVideos
         : currentVideos;
     setSelectedVideoUris(new Set(list.map((v) => v.uriString)));
-  }, [destination.type, preferences.mainDisplayMode, sortedAllVideos, currentVideos]);
+  }, [destination.type, preferences.mainDisplayMode, searchQuery, sortedAllVideos, currentVideos]);
 
   const clearSelection = useCallback(() => {
     setSelectedVideoUris(new Set());

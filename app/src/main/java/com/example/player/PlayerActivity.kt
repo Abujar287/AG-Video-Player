@@ -1,10 +1,15 @@
 package com.example.player
 
+import android.app.PendingIntent
 import android.app.PictureInPictureParams
+import android.app.RemoteAction
+import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
+import android.content.IntentFilter
 import android.content.pm.ActivityInfo
 import android.content.res.Configuration
+import android.graphics.drawable.Icon
 import android.media.AudioManager
 import android.media.audiofx.LoudnessEnhancer
 import android.net.Uri
@@ -16,6 +21,7 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.annotation.OptIn
+import androidx.annotation.RequiresApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
@@ -33,6 +39,7 @@ import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.core.content.ContextCompat
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
@@ -47,6 +54,7 @@ import androidx.media3.common.TrackSelectionOverride
 import androidx.media3.common.Tracks
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.session.MediaSession
 import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.PlayerView
 import com.example.data.model.MediaTrackOption
@@ -67,14 +75,43 @@ class PlayerActivity : ComponentActivity() {
     private lateinit var prefsRepo: UserPreferencesRepository
 
     private var exoPlayer: ExoPlayer? = null
+    private var mediaSession: MediaSession? = null
     private var loudnessEnhancer: LoudnessEnhancer? = null
 
     private var playlist: List<PlaylistEntry> = emptyList()
     private var currentIndex: Int = 0
+    private var isPlayingForPip: Boolean = true
     private var useSoftwareDecoderState by mutableStateOf(false)
     private var isInPipModeState by mutableStateOf(false)
     private var externalSubUri: Uri? = null
     private var onSubtitleAddedBanner: ((String) -> Unit)? = null
+
+    private val pipActionReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context?, intent: Intent?) {
+            if (intent?.action != ACTION_PIP_CONTROL) return
+            val player = exoPlayer ?: return
+            when (intent.getIntExtra(EXTRA_CONTROL_TYPE, 0)) {
+                CONTROL_TYPE_PREVIOUS -> {
+                    if (player.hasPreviousMediaItem()) {
+                        player.seekToPreviousMediaItem()
+                    } else if (currentIndex > 0) {
+                        player.seekToDefaultPosition(currentIndex - 1)
+                    }
+                }
+                CONTROL_TYPE_PLAY_PAUSE -> {
+                    if (player.isPlaying) player.pause() else player.play()
+                }
+                CONTROL_TYPE_NEXT -> {
+                    if (player.hasNextMediaItem()) {
+                        player.seekToNextMediaItem()
+                    } else if (currentIndex < playlist.lastIndex) {
+                        player.seekToDefaultPosition(currentIndex + 1)
+                    }
+                }
+            }
+            updatePipParamsIfNeeded()
+        }
+    }
 
     private val subtitlePickerLauncher = registerForActivityResult(
         ActivityResultContracts.OpenDocument()
@@ -94,6 +131,13 @@ class PlayerActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         WindowCompat.setDecorFitsSystemWindows(window, false)
         hideSystemBars()
+
+        ContextCompat.registerReceiver(
+            this,
+            pipActionReceiver,
+            IntentFilter(ACTION_PIP_CONTROL),
+            ContextCompat.RECEIVER_NOT_EXPORTED
+        )
 
         playbackRepo = PlaybackRepository(this)
         prefsRepo = UserPreferencesRepository(this)
@@ -135,6 +179,8 @@ class PlayerActivity : ComponentActivity() {
             onSubtitleAddedBanner = { msg -> statusBanner = msg }
 
             fun rebuildPlayer(software: Boolean, seekPosMs: Long = -1L) {
+                mediaSession?.release()
+                mediaSession = null
                 exoPlayer?.release()
                 loudnessEnhancer?.release()
                 loudnessEnhancer = null
@@ -145,6 +191,19 @@ class PlayerActivity : ComponentActivity() {
 
                 exoPlayer = player
                 playerViewRef?.player = player
+
+                val sessionLaunch = PendingIntent.getActivity(
+                    this@PlayerActivity,
+                    0,
+                    Intent(this@PlayerActivity, PlayerActivity::class.java).apply {
+                        flags = Intent.FLAG_ACTIVITY_SINGLE_TOP
+                    },
+                    PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+                )
+                mediaSession = MediaSession.Builder(this@PlayerActivity, player)
+                    .setId("ag_player_activity")
+                    .setSessionActivity(sessionLaunch)
+                    .build()
 
                 val mediaItems = playlist.map { entry ->
                     MediaItem.Builder()
@@ -164,11 +223,14 @@ class PlayerActivity : ComponentActivity() {
                 player.addListener(object : Player.Listener {
                     override fun onIsPlayingChanged(playing: Boolean) {
                         isPlaying = playing
+                        isPlayingForPip = playing
+                        updatePipParamsIfNeeded()
                     }
 
                     override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
                         currentIndex = player.currentMediaItemIndex
                         PlayerSessionManager.updateCurrentIndex(currentIndex)
+                        updatePipParamsIfNeeded()
                         val entry = playlist.getOrNull(currentIndex) ?: return
                         lifecycleScope.launch { prefsRepo.markVideoPlayed(entry.uriString) }
                     }
@@ -428,6 +490,9 @@ class PlayerActivity : ComponentActivity() {
                                 quickZoomScale = next
                                 statusBanner = if (next == 1.0f) "Zoom Reset (1.0x)" else "Quick Zoom ${next}x"
                             },
+                            onPinchZoomChange = { scale ->
+                                quickZoomScale = scale.coerceIn(0.75f, 3.0f)
+                            },
                             onEnterPip = { enterPipSafe() },
                             onToggleDecoder = {
                                 val nextSw = !useSoftwareDecoderState
@@ -536,6 +601,9 @@ class PlayerActivity : ComponentActivity() {
     override fun onPictureInPictureModeChanged(isInPictureInPictureMode: Boolean, newConfig: Configuration) {
         super.onPictureInPictureModeChanged(isInPictureInPictureMode, newConfig)
         isInPipModeState = isInPictureInPictureMode
+        if (isInPictureInPictureMode) {
+            updatePipParamsIfNeeded()
+        }
     }
 
     override fun onStop() {
@@ -550,6 +618,9 @@ class PlayerActivity : ComponentActivity() {
     }
 
     override fun onDestroy() {
+        runCatching { unregisterReceiver(pipActionReceiver) }
+        mediaSession?.release()
+        mediaSession = null
         loudnessEnhancer?.release()
         loudnessEnhancer = null
         exoPlayer?.release()
@@ -597,13 +668,76 @@ class PlayerActivity : ComponentActivity() {
 
     private fun enterPipSafe() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            isPlayingForPip = exoPlayer?.isPlaying ?: isPlayingForPip
             runCatching {
-                val params = PictureInPictureParams.Builder()
-                    .setAspectRatio(Rational(16, 9))
-                    .build()
-                enterPictureInPictureMode(params)
+                enterPictureInPictureMode(buildPipParams())
             }
         }
+    }
+
+    private fun updatePipParamsIfNeeded() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && isInPipModeState) {
+            runCatching {
+                setPictureInPictureParams(buildPipParams())
+            }
+        }
+    }
+
+    @RequiresApi(Build.VERSION_CODES.O)
+    private fun buildPipParams(): PictureInPictureParams {
+        val player = exoPlayer
+        val playingNow = player?.isPlaying ?: isPlayingForPip
+        val hasPrevious = (player?.hasPreviousMediaItem() == true) || currentIndex > 0
+        val hasNext = (player?.hasNextMediaItem() == true) || currentIndex < playlist.lastIndex
+
+        val prevAction = RemoteAction(
+            Icon.createWithResource(this, android.R.drawable.ic_media_previous),
+            "Previous",
+            "Previous video",
+            pipControlPendingIntent(CONTROL_TYPE_PREVIOUS, 101)
+        ).apply { isEnabled = hasPrevious }
+
+        val playPauseAction = RemoteAction(
+            Icon.createWithResource(
+                this,
+                if (playingNow) android.R.drawable.ic_media_pause else android.R.drawable.ic_media_play
+            ),
+            if (playingNow) "Pause" else "Play",
+            if (playingNow) "Pause playback" else "Resume playback",
+            pipControlPendingIntent(CONTROL_TYPE_PLAY_PAUSE, 102)
+        )
+
+        val nextAction = RemoteAction(
+            Icon.createWithResource(this, android.R.drawable.ic_media_next),
+            "Next",
+            "Next video",
+            pipControlPendingIntent(CONTROL_TYPE_NEXT, 103)
+        ).apply { isEnabled = hasNext }
+
+        val aspect = player?.videoSize?.let { vs ->
+            if (vs.width > 0 && vs.height > 0) {
+                val r = (vs.width.toFloat() / vs.height.toFloat()).coerceIn(0.45f, 2.35f)
+                Rational((r * 100f).toInt(), 100)
+            } else null
+        } ?: Rational(16, 9)
+
+        return PictureInPictureParams.Builder()
+            .setAspectRatio(aspect)
+            .setActions(listOf(prevAction, playPauseAction, nextAction))
+            .build()
+    }
+
+    private fun pipControlPendingIntent(controlType: Int, requestCode: Int): PendingIntent {
+        val intent = Intent(ACTION_PIP_CONTROL).apply {
+            setPackage(packageName)
+            putExtra(EXTRA_CONTROL_TYPE, controlType)
+        }
+        return PendingIntent.getBroadcast(
+            this,
+            requestCode,
+            intent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
     }
 
     private suspend fun persistPlaybackSnapshot(speed: Float) {
@@ -627,5 +761,13 @@ class PlayerActivity : ComponentActivity() {
         val controller = WindowInsetsControllerCompat(window, window.decorView)
         controller.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
         controller.hide(WindowInsetsCompat.Type.systemBars())
+    }
+
+    companion object {
+        private const val ACTION_PIP_CONTROL = "com.example.player.ACTION_PIP_CONTROL"
+        private const val EXTRA_CONTROL_TYPE = "control_type"
+        private const val CONTROL_TYPE_PREVIOUS = 1
+        private const val CONTROL_TYPE_PLAY_PAUSE = 2
+        private const val CONTROL_TYPE_NEXT = 3
     }
 }

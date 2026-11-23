@@ -6,6 +6,8 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.horizontalScroll
@@ -97,6 +99,7 @@ import com.example.ui.theme.BoostOrange
 import com.example.ui.theme.DarkSecondary
 import com.example.util.FormatUtils
 import kotlin.math.abs
+import kotlin.math.hypot
 import kotlin.math.roundToInt
 
 private enum class DragMode { NONE, SEEK, BRIGHTNESS, VOLUME }
@@ -138,6 +141,7 @@ fun PlayerOverlay(
     onToggleLock: () -> Unit,
     onCycleAspectMode: () -> Unit,
     onCycleQuickZoom: () -> Unit,
+    onPinchZoomChange: (Float) -> Unit,
     onEnterPip: () -> Unit,
     onToggleDecoder: () -> Unit,
     onToggleRotation: () -> Unit,
@@ -154,13 +158,8 @@ fun PlayerOverlay(
 ) {
     var boxSize by remember { mutableStateOf(IntSize.Zero) }
     var dragMode by remember { mutableStateOf(DragMode.NONE) }
-    var dragStartPosMs by remember { mutableLongStateOf(0L) }
     var previewSeekMs by remember { mutableLongStateOf(0L) }
     var dragSeekDeltaMs by remember { mutableLongStateOf(0L) }
-    var dragStartBrightness by remember { mutableIntStateOf(75) }
-    var dragStartVolume by remember { mutableIntStateOf(100) }
-    var dragAccumX by remember { mutableFloatStateOf(0f) }
-    var dragAccumY by remember { mutableFloatStateOf(0f) }
 
     val latestLocked by rememberUpdatedState(isLocked)
     val latestPrefs by rememberUpdatedState(preferences)
@@ -168,11 +167,13 @@ fun PlayerOverlay(
     val latestDurationMs by rememberUpdatedState(durationMs)
     val latestBrightness by rememberUpdatedState(brightnessPercent)
     val latestVolume by rememberUpdatedState(volumePercent)
+    val latestQuickZoom by rememberUpdatedState(quickZoomScale)
     val latestOnToggleControls by rememberUpdatedState(onToggleControls)
     val latestOnPlayPause by rememberUpdatedState(onPlayPause)
     val latestOnToggleMute by rememberUpdatedState(onToggleMute)
     val latestOnSeekTo by rememberUpdatedState(onSeekTo)
     val latestOnSeekBy by rememberUpdatedState(onSeekBy)
+    val latestOnPinchZoomChange by rememberUpdatedState(onPinchZoomChange)
     val latestOnChangeBrightness by rememberUpdatedState(onChangeBrightness)
     val latestOnChangeVolume by rememberUpdatedState(onChangeVolume)
 
@@ -181,6 +182,8 @@ fun PlayerOverlay(
     var showSleepDialog by remember { mutableStateOf(false) }
     var isScrubbingBar by remember { mutableStateOf(false) }
     var scrubMs by remember { mutableLongStateOf(0L) }
+    var isPinching by remember { mutableStateOf(false) }
+    var pinchDisplayScale by remember { mutableFloatStateOf(quickZoomScale) }
 
     val allTopTools = remember(preferences.hiddenButtons) {
         buildList {
@@ -207,6 +210,147 @@ fun PlayerOverlay(
         modifier = Modifier
             .fillMaxSize()
             .onSizeChanged { boxSize = it }
+            .pointerInput(Unit) {
+                awaitEachGesture {
+                    val firstDown = awaitFirstDown(requireUnconsumed = false)
+                    var gestureDragMode = DragMode.NONE
+                    var hadMultiTouch = false
+                    var prevPinchSpan = 0f
+                    val startPos = firstDown.position
+                    val startPosMs = latestPosMs
+                    var localPreviewSeekMs = latestPosMs
+                    val startBrightness = latestBrightness
+                    val startVolume = latestVolume
+                    var currentZoom = latestQuickZoom
+                    var accumX = 0f
+                    var accumY = 0f
+                    var prevSinglePos = startPos
+                    var gesturePinching = false
+
+                    while (true) {
+                        val event = awaitPointerEvent()
+                        val pressed = event.changes.filter { it.pressed }
+                        if (pressed.isEmpty()) {
+                            if (hadMultiTouch || gestureDragMode != DragMode.NONE) {
+                                event.changes.forEach { it.consume() }
+                            }
+                            break
+                        }
+
+                        if (pressed.size >= 2) {
+                            if (!hadMultiTouch) {
+                                hadMultiTouch = true
+                                // Revert any accidental brief single-finger adjustment if 2nd finger landed
+                                if (gestureDragMode == DragMode.BRIGHTNESS) {
+                                    latestOnChangeBrightness(startBrightness)
+                                } else if (gestureDragMode == DragMode.VOLUME) {
+                                    latestOnChangeVolume(startVolume)
+                                }
+                                gestureDragMode = DragMode.NONE
+                                dragMode = DragMode.NONE
+                                currentZoom = latestQuickZoom
+                            }
+
+                            if (pressed.size == 2 && !latestLocked && latestPrefs.twoFingerGesture != "None") {
+                                val p0 = pressed[0].position
+                                val p1 = pressed[1].position
+                                val span = hypot(p0.x - p1.x, p0.y - p1.y)
+                                if (prevPinchSpan > 12f && span > 12f) {
+                                    gesturePinching = true
+                                    isPinching = true
+                                    val ratio = span / prevPinchSpan
+                                    val rawNext = (currentZoom * ratio).coerceIn(0.75f, 3.0f)
+                                    currentZoom = rawNext
+                                    val snapped = if (abs(rawNext - 1.0f) < 0.03f) 1.0f else rawNext
+                                    pinchDisplayScale = snapped
+                                    latestOnPinchZoomChange(snapped)
+                                }
+                                prevPinchSpan = span
+                            } else {
+                                prevPinchSpan = 0f
+                            }
+                            event.changes.forEach { it.consume() }
+                            continue
+                        }
+
+                        // Single finger active: ignore remainder of gesture once multi-touch happened
+                        prevPinchSpan = 0f
+                        if (hadMultiTouch) {
+                            event.changes.forEach { it.consume() }
+                            continue
+                        }
+
+                        val pointer = pressed[0]
+                        val dx = pointer.position.x - prevSinglePos.x
+                        val dy = pointer.position.y - prevSinglePos.y
+                        prevSinglePos = pointer.position
+
+                        if (latestLocked || !latestPrefs.enableSwipeGestures || latestPrefs.oneFingerGesture == "None") {
+                            continue
+                        }
+
+                        accumX += dx
+                        accumY += dy
+
+                        if (gestureDragMode == DragMode.NONE) {
+                            if (abs(accumX) > 22f && abs(accumX) > abs(accumY) * 1.15f) {
+                                gestureDragMode = DragMode.SEEK
+                            } else if (
+                                latestPrefs.oneFingerGesture != "Seek & Controls" &&
+                                abs(accumY) > 18f &&
+                                abs(accumY) > abs(accumX) * 1.15f
+                            ) {
+                                gestureDragMode = if (startPos.x < boxSize.width / 2f) {
+                                    DragMode.BRIGHTNESS
+                                } else {
+                                    DragMode.VOLUME
+                                }
+                            }
+                            dragMode = gestureDragMode
+                        }
+
+                        if (gestureDragMode != DragMode.NONE) {
+                            pointer.consume()
+                            when (gestureDragMode) {
+                                DragMode.SEEK -> {
+                                    val widthPx = boxSize.width.coerceAtLeast(300).toFloat()
+                                    val realDur = latestDurationMs.coerceAtLeast(1_000L)
+                                    val rawDelta = if (latestPrefs.gestureSeekStepSeconds <= 0) {
+                                        val spanMs = realDur.coerceIn(15_000L, 120_000L)
+                                        ((accumX / widthPx) * spanMs).toLong()
+                                    } else {
+                                        val stepMs = latestPrefs.gestureSeekStepSeconds * 1000L
+                                        val steps = (accumX / (widthPx * 0.14f)).toInt()
+                                        steps * stepMs
+                                    }
+                                    dragSeekDeltaMs = rawDelta
+                                    localPreviewSeekMs = (startPosMs + rawDelta).coerceIn(0L, realDur)
+                                    previewSeekMs = localPreviewSeekMs
+                                }
+                                DragMode.BRIGHTNESS -> {
+                                    val heightPx = (boxSize.height * 0.45f).coerceAtLeast(180f)
+                                    val deltaPct = ((-accumY / heightPx) * 100f).roundToInt()
+                                    latestOnChangeBrightness((startBrightness + deltaPct).coerceIn(5, 100))
+                                }
+                                DragMode.VOLUME -> {
+                                    val heightPx = (boxSize.height * 0.45f).coerceAtLeast(180f)
+                                    val deltaPct = ((-accumY / heightPx) * 200f).roundToInt()
+                                    latestOnChangeVolume((startVolume + deltaPct).coerceIn(0, 200))
+                                }
+                                DragMode.NONE -> Unit
+                            }
+                        }
+                    }
+
+                    if (gesturePinching) {
+                        isPinching = false
+                    }
+                    if (gestureDragMode == DragMode.SEEK && !hadMultiTouch) {
+                        latestOnSeekTo(localPreviewSeekMs)
+                    }
+                    dragMode = DragMode.NONE
+                }
+            }
             .pointerInput(doubleTapEnabled) {
                 detectTapGestures(
                     onTap = {
@@ -235,79 +379,6 @@ fun PlayerOverlay(
                             }
                         }
                     } else null
-                )
-            }
-            .pointerInput(Unit) {
-                detectDragGestures(
-                    onDragStart = { _ ->
-                        dragMode = DragMode.NONE
-                        dragAccumX = 0f
-                        dragAccumY = 0f
-                        dragStartPosMs = latestPosMs
-                        previewSeekMs = latestPosMs
-                        dragSeekDeltaMs = 0L
-                        dragStartBrightness = latestBrightness
-                        dragStartVolume = latestVolume
-                    },
-                    onDrag = { change, dragAmount ->
-                        if (latestLocked || !latestPrefs.enableSwipeGestures || latestPrefs.oneFingerGesture == "None") {
-                            return@detectDragGestures
-                        }
-                        change.consume()
-                        dragAccumX += dragAmount.x
-                        dragAccumY += dragAmount.y
-
-                        if (dragMode == DragMode.NONE) {
-                            if (abs(dragAccumX) > 20f && abs(dragAccumX) > abs(dragAccumY) * 1.15f) {
-                                dragMode = DragMode.SEEK
-                            } else if (
-                                latestPrefs.oneFingerGesture != "Seek & Controls" &&
-                                abs(dragAccumY) > 16f &&
-                                abs(dragAccumY) > abs(dragAccumX) * 1.15f
-                            ) {
-                                dragMode = if (change.position.x < boxSize.width / 2f) {
-                                    DragMode.BRIGHTNESS
-                                } else {
-                                    DragMode.VOLUME
-                                }
-                            }
-                        }
-
-                        when (dragMode) {
-                            DragMode.SEEK -> {
-                                val widthPx = boxSize.width.coerceAtLeast(300).toFloat()
-                                val realDur = latestDurationMs.coerceAtLeast(1_000L)
-                                val rawDelta = if (latestPrefs.gestureSeekStepSeconds <= 0) {
-                                    val spanMs = realDur.coerceIn(15_000L, 120_000L)
-                                    ((dragAccumX / widthPx) * spanMs).toLong()
-                                } else {
-                                    val stepMs = latestPrefs.gestureSeekStepSeconds * 1000L
-                                    val steps = (dragAccumX / (widthPx * 0.14f)).toInt()
-                                    steps * stepMs
-                                }
-                                dragSeekDeltaMs = rawDelta
-                                previewSeekMs = (dragStartPosMs + rawDelta).coerceIn(0L, realDur)
-                            }
-                            DragMode.BRIGHTNESS -> {
-                                val heightPx = (boxSize.height * 0.45f).coerceAtLeast(180f)
-                                val deltaPct = ((-dragAccumY / heightPx) * 100f).roundToInt()
-                                latestOnChangeBrightness((dragStartBrightness + deltaPct).coerceIn(5, 100))
-                            }
-                            DragMode.VOLUME -> {
-                                val heightPx = (boxSize.height * 0.45f).coerceAtLeast(180f)
-                                val deltaPct = ((-dragAccumY / heightPx) * 200f).roundToInt()
-                                latestOnChangeVolume((dragStartVolume + deltaPct).coerceIn(0, 200))
-                            }
-                            DragMode.NONE -> Unit
-                        }
-                    },
-                    onDragEnd = {
-                        if (dragMode == DragMode.SEEK) {
-                            latestOnSeekTo(previewSeekMs)
-                        }
-                        dragMode = DragMode.NONE
-                    },
-                    onDragCancel = { dragMode = DragMode.NONE }
                 )
             }
     ) {
@@ -714,8 +785,20 @@ fun PlayerOverlay(
             )
         }
 
-        // Status Feedback Pill
-        if (!statusBanner.isNullOrBlank() && dragMode == DragMode.NONE) {
+        // Status Feedback Pill & Live Pinch Zoom HUD
+        if (isPinching) {
+            Text(
+                text = "Zoom ${(pinchDisplayScale * 100f).roundToInt()}%",
+                color = MaterialTheme.colorScheme.primary,
+                fontSize = 14.sp,
+                fontWeight = FontWeight.Bold,
+                modifier = Modifier
+                    .align(Alignment.Center)
+                    .clip(CircleShape)
+                    .background(Color(0xFF0B0E14).copy(alpha = 0.85f))
+                    .padding(horizontal = 18.dp, vertical = 9.dp)
+            )
+        } else if (!statusBanner.isNullOrBlank() && dragMode == DragMode.NONE) {
             Text(
                 text = statusBanner,
                 color = MaterialTheme.colorScheme.primary,

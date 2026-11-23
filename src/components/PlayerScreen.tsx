@@ -125,6 +125,7 @@ export function PlayerScreen({
   const [subtitleTracks, setSubtitleTracks] = useState<MediaTrackOption[]>([]);
   const [activeSubtitleId, setActiveSubtitleId] = useState<string | null>(null);
   const [pinchScale, setPinchScale] = useState(1);
+  const [isPinching, setIsPinching] = useState(false);
 
   // Gesture HUD state
   const [dragMode, setDragMode] = useState<DragMode>('NONE');
@@ -157,7 +158,13 @@ export function PlayerScreen({
 
   const singleTapTimerRef = useRef<number | null>(null);
   const lastTapTimeRef = useRef(0);
-  const pinchRef = useRef<{ initialDist: number | null; initialScale: number }>({
+  const activePointersRef = useRef(new Map<number, { x: number; y: number }>());
+  const multiTouchRef = useRef<{
+    active: boolean;
+    initialDist: number | null;
+    initialScale: number;
+  }>({
+    active: false,
     initialDist: null,
     initialScale: 1,
   });
@@ -439,6 +446,54 @@ export function PlayerScreen({
     setCurrentIndex((i) => Math.min(playlist.length - 1, i + 1));
   }, [currentIndex, playlist.length, persistCurrentSnapshot]);
 
+  // Register MediaSession controls (Previous, Play/Pause, Next) for Picture-in-Picture & OS media controls
+  useEffect(() => {
+    if (!('mediaSession' in navigator)) return;
+    const ms = navigator.mediaSession;
+    try {
+      ms.metadata = new MediaMetadata({
+        title: currentEntry?.title ?? 'Video',
+        artist: 'AG Video Player',
+      });
+    } catch {
+      // ignore if MediaMetadata constructor is unsupported
+    }
+    ms.playbackState = isPlaying ? 'playing' : 'paused';
+
+    const trySetHandler = (
+      action: MediaSessionAction,
+      handler: MediaSessionActionHandler | null
+    ) => {
+      try {
+        ms.setActionHandler(action, handler);
+      } catch {
+        // unsupported action in browser
+      }
+    };
+
+    trySetHandler('play', () => {
+      const video = videoRef.current;
+      if (video && video.paused) {
+        void video.play().catch(() => {});
+      }
+    });
+    trySetHandler('pause', () => {
+      const video = videoRef.current;
+      if (video && !video.paused) {
+        video.pause();
+      }
+    });
+    trySetHandler('previoustrack', currentIndex > 0 ? handlePrevious : null);
+    trySetHandler('nexttrack', currentIndex < playlist.length - 1 ? handleNext : null);
+
+    return () => {
+      trySetHandler('play', null);
+      trySetHandler('pause', null);
+      trySetHandler('previoustrack', null);
+      trySetHandler('nexttrack', null);
+    };
+  }, [currentEntry?.title, isPlaying, currentIndex, playlist.length, handlePrevious, handleNext]);
+
   const handleBackClick = useCallback(() => {
     persistCurrentSnapshot();
     const video = videoRef.current;
@@ -684,6 +739,41 @@ export function PlayerScreen({
     } catch {
       // ignore if unsupported
     }
+
+    activePointersRef.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    const count = activePointersRef.current.size;
+
+    if (count >= 2) {
+      // Multi-touch started: cancel any incipient single-finger swipe and revert brightness/volume change
+      const g = gestureRef.current;
+      if (!multiTouchRef.current.active) {
+        if (g.active && g.mode === 'BRIGHTNESS') {
+          setBrightnessPercent(g.startBrightness);
+        } else if (g.active && g.mode === 'VOLUME') {
+          applyVolume(g.startVolume);
+        }
+        g.active = false;
+        g.mode = 'NONE';
+        setDragMode('NONE');
+        multiTouchRef.current.active = true;
+      }
+
+      if (count === 3 && !isLocked) {
+        if (preferences.threeFingerGesture === 'Play / Pause') handlePlayPause();
+        else if (preferences.threeFingerGesture === 'Lock / Unlock') handleToggleLock();
+        else if (preferences.threeFingerGesture === 'Mute Audio') handleToggleMute();
+      } else if (count === 2 && !isLocked && preferences.twoFingerGesture !== 'None') {
+        const pts = Array.from(activePointersRef.current.values());
+        multiTouchRef.current.initialDist = Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y);
+        multiTouchRef.current.initialScale = pinchScale;
+      }
+      return;
+    }
+
+    if (multiTouchRef.current.active) {
+      return;
+    }
+
     gestureRef.current = {
       active: true,
       pointerId: e.pointerId,
@@ -699,6 +789,31 @@ export function PlayerScreen({
   };
 
   const handlePointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (activePointersRef.current.has(e.pointerId)) {
+      activePointersRef.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    }
+
+    const count = activePointersRef.current.size;
+    if (count >= 2 || multiTouchRef.current.active) {
+      if (count === 2 && !isLocked && preferences.twoFingerGesture !== 'None') {
+        const pts = Array.from(activePointersRef.current.values());
+        const dist = Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y);
+        if (!multiTouchRef.current.initialDist || multiTouchRef.current.initialDist <= 12) {
+          multiTouchRef.current.initialDist = dist;
+          multiTouchRef.current.initialScale = pinchScale;
+        } else if (dist > 12) {
+          const rawNext = Math.max(
+            0.75,
+            Math.min(3.0, multiTouchRef.current.initialScale * (dist / multiTouchRef.current.initialDist))
+          );
+          const snapped = Math.abs(rawNext - 1.0) < 0.03 ? 1.0 : rawNext;
+          setIsPinching(true);
+          setPinchScale(snapped);
+        }
+      }
+      return;
+    }
+
     const g = gestureRef.current;
     if (!g.active || g.pointerId !== e.pointerId) return;
     if (isLocked || !preferences.enableSwipeGestures || preferences.oneFingerGesture === 'None') {
@@ -757,9 +872,7 @@ export function PlayerScreen({
   };
 
   const handlePointerUp = (e: React.PointerEvent<HTMLDivElement>) => {
-    const g = gestureRef.current;
-    if (!g.active || g.pointerId !== e.pointerId) return;
-    g.active = false;
+    activePointersRef.current.delete(e.pointerId);
     try {
       if (e.currentTarget.hasPointerCapture(e.pointerId)) {
         e.currentTarget.releasePointerCapture(e.pointerId);
@@ -767,47 +880,27 @@ export function PlayerScreen({
     } catch {
       // ignore
     }
-    if (g.mode === 'SEEK') {
-      handleSeekTo(g.previewSeekMs);
-    } else if (!g.moved) {
-      triggerTap(e.clientX);
-    }
-    g.mode = 'NONE';
-    setDragMode('NONE');
-  };
 
-  // Multi-touch 2-finger pinch & 3-finger tap
-  const handleTouchStart = (e: React.TouchEvent<HTMLDivElement>) => {
-    if (e.touches.length === 3 && !isLocked) {
-      if (preferences.threeFingerGesture === 'Play / Pause') handlePlayPause();
-      else if (preferences.threeFingerGesture === 'Lock / Unlock') handleToggleLock();
-      else if (preferences.threeFingerGesture === 'Mute Audio') handleToggleMute();
-    } else if (
-      e.touches.length === 2 &&
-      !isLocked &&
-      preferences.twoFingerGesture === 'Zoom / Scale'
-    ) {
-      const dx = e.touches[0].clientX - e.touches[1].clientX;
-      const dy = e.touches[0].clientY - e.touches[1].clientY;
-      pinchRef.current = { initialDist: Math.hypot(dx, dy), initialScale: pinchScale };
+    const remaining = activePointersRef.current.size;
+    if (remaining < 2) {
+      multiTouchRef.current.initialDist = null;
+      setIsPinching(false);
     }
-  };
 
-  const handleTouchMove = (e: React.TouchEvent<HTMLDivElement>) => {
-    if (
-      e.touches.length === 2 &&
-      pinchRef.current.initialDist &&
-      !isLocked &&
-      preferences.twoFingerGesture === 'Zoom / Scale'
-    ) {
-      const dx = e.touches[0].clientX - e.touches[1].clientX;
-      const dy = e.touches[0].clientY - e.touches[1].clientY;
-      const dist = Math.hypot(dx, dy);
-      const scale = Math.max(
-        0.75,
-        Math.min(2.5, pinchRef.current.initialScale * (dist / pinchRef.current.initialDist))
-      );
-      setPinchScale(scale);
+    if (remaining === 0) {
+      const wasMultiTouch = multiTouchRef.current.active;
+      multiTouchRef.current.active = false;
+      const g = gestureRef.current;
+      if (!wasMultiTouch && g.active && g.pointerId === e.pointerId && e.type !== 'pointercancel') {
+        if (g.mode === 'SEEK') {
+          handleSeekTo(g.previewSeekMs);
+        } else if (!g.moved) {
+          triggerTap(e.clientX);
+        }
+      }
+      g.active = false;
+      g.mode = 'NONE';
+      setDragMode('NONE');
     }
   };
 
@@ -894,8 +987,6 @@ export function PlayerScreen({
     <div
       ref={containerRef}
       className="fixed inset-0 z-50 flex select-none items-center justify-center overflow-hidden bg-black text-white"
-      onTouchStart={handleTouchStart}
-      onTouchMove={handleTouchMove}
     >
       {/* Hidden Subtitle File Picker */}
       <input
@@ -913,7 +1004,7 @@ export function PlayerScreen({
         src={currentEntry ? resolvePlayableUrl(currentEntry.uriString) : undefined}
         playsInline
         preload="auto"
-        className={`h-full w-full transition-transform duration-150 ${objectFitClass}`}
+        className={`h-full w-full ${isPinching ? '' : 'transition-transform duration-150 '}${objectFitClass}`}
         style={{
           filter: `brightness(${0.35 + (brightnessPercent / 100) * 0.65})`,
           transform: `${isRotated ? 'rotate(90deg) ' : ''}scale(${pinchScale})`,
@@ -1298,11 +1389,18 @@ export function PlayerScreen({
         />
       )}
 
-      {/* Status Banner */}
-      {statusBanner && dragMode === 'NONE' && (
-        <div className="pointer-events-none absolute top-16 left-1/2 -translate-x-1/2 rounded-full bg-[#0B0E14]/85 px-4 py-2 text-xs font-medium text-[var(--primary)] shadow-lg">
-          {statusBanner}
+      {/* Live Pinch Zoom HUD & Status Banner */}
+      {isPinching ? (
+        <div className="pointer-events-none absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 rounded-full bg-[#0B0E14]/85 px-4 py-2 text-sm font-bold text-[var(--primary)] shadow-lg tabular-nums">
+          Zoom {Math.round(pinchScale * 100)}%
         </div>
+      ) : (
+        statusBanner &&
+        dragMode === 'NONE' && (
+          <div className="pointer-events-none absolute top-16 left-1/2 -translate-x-1/2 rounded-full bg-[#0B0E14]/85 px-4 py-2 text-xs font-medium text-[var(--primary)] shadow-lg">
+            {statusBanner}
+          </div>
+        )
       )}
 
       {/* Audio & Subtitles Track Dialog */}

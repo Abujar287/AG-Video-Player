@@ -247,7 +247,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun selectAllVisible() {
-        val list = if (_destination.value == BrowserDestination.Folders && preferences.value.mainDisplayMode == "files") {
+        val list = if (_destination.value == BrowserDestination.Folders && (preferences.value.mainDisplayMode == "files" || _searchQuery.value.isNotBlank())) {
             sortedAllVideos.value
         } else {
             currentVideos.value

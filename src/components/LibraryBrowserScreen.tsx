@@ -172,8 +172,10 @@ export function LibraryBrowserScreen(props: LibraryBrowserScreenProps) {
     return () => window.clearTimeout(t);
   }, [actionMessage, props]);
 
+  const isSearching = searchQuery.trim().length > 0;
+
   const displayedVideos =
-    destination.type === 'folders' && preferences.mainDisplayMode === 'files'
+    destination.type === 'folders' && (preferences.mainDisplayMode === 'files' || isSearching)
       ? sortedAllVideos
       : currentVideos;
 
@@ -197,9 +199,11 @@ export function LibraryBrowserScreen(props: LibraryBrowserScreenProps) {
     ? `${selectedFolder.videoCount} ${selectedFolder.videoCount === 1 ? 'video' : 'videos'} · ${formatFileSize(selectedFolder.totalSizeBytes)}`
     : destination.type === 'favorites' || destination.type === 'playlist'
       ? `${displayedVideos.length} ${displayedVideos.length === 1 ? 'video' : 'videos'}`
-      : folders.length > 0
-        ? `${folders.length} folders · ${allVideos.length} videos`
-        : '';
+      : isSearching
+        ? `${displayedVideos.length} matching ${displayedVideos.length === 1 ? 'video' : 'videos'}`
+        : folders.length > 0
+          ? `${folders.length} folders · ${allVideos.length} videos`
+          : '';
 
   const availableUriSet = new Set(allVideos.map((v) => v.uriString));
   const favoriteVideosCount = preferences.favoriteUris.filter((u) => availableUriSet.has(u)).length;
@@ -386,7 +390,7 @@ export function LibraryBrowserScreen(props: LibraryBrowserScreenProps) {
             type="text"
             value={searchQuery}
             onChange={(e) => props.onSearchQueryChange(e.target.value)}
-            placeholder="Search folders or videos…"
+            placeholder="Search video files…"
             className="w-full rounded-[14px] border border-[var(--outline)]/55 bg-[var(--bg-surface)] py-2.5 pr-10 pl-10 text-sm text-[var(--text-primary)] placeholder-[var(--text-muted)] outline-none transition-colors focus:border-[var(--primary)]"
           />
           {searchQuery && (
@@ -402,7 +406,7 @@ export function LibraryBrowserScreen(props: LibraryBrowserScreenProps) {
         </div>
 
         {/* Folders View */}
-        {destination.type === 'folders' && preferences.mainDisplayMode === 'folders' ? (
+        {destination.type === 'folders' && preferences.mainDisplayMode === 'folders' && !isSearching ? (
           <>
             {!searchQuery.trim() &&
               (favoriteVideosCount > 0 || Object.keys(preferences.playlists).length > 0) && (
