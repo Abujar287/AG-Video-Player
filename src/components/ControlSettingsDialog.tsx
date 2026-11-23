@@ -1,5 +1,6 @@
 import { useState, type ReactNode } from 'react';
 import {
+  ArrowLeft,
   Captions,
   Check,
   CheckSquare,
@@ -20,7 +21,6 @@ import {
   Sun,
   Touchpad,
   Volume2,
-  X,
   ZoomIn,
 } from 'lucide-react';
 import {
@@ -132,14 +132,14 @@ function renderButtonIcon(btn: PlayerControlButton, className = 'h-4 w-4') {
 }
 
 const QUICK_SHORTCUT_BUTTONS: PlayerControlButton[] = [
-  PlayerControlButton.ZOOM,
-  PlayerControlButton.MUTE,
   PlayerControlButton.ROTATE,
   PlayerControlButton.SPEED,
   PlayerControlButton.LOOP,
+  PlayerControlButton.MUTE,
   PlayerControlButton.SLEEP,
   PlayerControlButton.BG_PLAY,
   PlayerControlButton.TRACKS,
+  PlayerControlButton.ZOOM,
 ];
 
 const SCREEN_OVERLAY_BUTTONS: PlayerControlButton[] = [
@@ -225,43 +225,39 @@ export function ControlSettingsDialog({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/65 p-4 backdrop-blur-[2px]"
-      onClick={onDismiss}
+      className="fixed inset-0 z-50 flex flex-col bg-[var(--bg-canvas)] text-[var(--text-primary)]"
+      role="dialog"
+      aria-modal="true"
+      aria-label="Settings"
     >
-      <div
-        className="flex max-h-[86vh] w-full max-w-lg flex-col overflow-hidden rounded-3xl border border-[var(--outline)]/40 bg-[var(--bg-surface)] text-[var(--text-primary)] shadow-2xl"
-        onClick={(e) => e.stopPropagation()}
-        role="dialog"
-        aria-modal="true"
-        aria-label="Settings"
-      >
-        {/* Header */}
-        <div className="flex items-center gap-3 px-5 py-4">
-          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[var(--primary)]/15 text-[var(--primary)]">
-            <HeaderIcon className="h-5 w-5" />
-          </div>
-          <div className="min-w-0 flex-1">
-            <h2 className="truncate text-base font-bold">
-              {activeTabMeta?.title ?? 'Settings'}
-            </h2>
-            <p className="truncate text-xs text-[var(--text-muted)]">
-              {activeTabMeta?.subtitle ?? `Tap a tab below to configure · ${currentVersionLabel}`}
-            </p>
-          </div>
+      {/* Full-Page Top Header */}
+      <header className="sticky top-0 z-10 border-b border-[var(--outline)]/30 bg-[var(--bg-surface)]">
+        <div className="mx-auto flex w-full max-w-3xl items-center gap-3 px-3 py-3 md:px-5">
           <button
             type="button"
             onClick={() => (activeTab ? setActiveTab(null) : onDismiss())}
-            aria-label="Close"
-            className="flex h-9 w-9 items-center justify-center rounded-full text-[var(--text-muted)] transition-colors hover:bg-[var(--bg-surface-variant)] hover:text-[var(--text-primary)]"
+            aria-label="Back"
+            className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-[var(--text-primary)] transition-colors hover:bg-[var(--bg-surface-variant)]"
           >
-            <X className="h-5 w-5" />
+            <ArrowLeft className="h-5 w-5" />
           </button>
+          <div className="min-w-0 flex-1">
+            <h2 className="truncate text-lg font-bold">
+              {activeTabMeta?.title ?? 'Settings'}
+            </h2>
+            <p className="truncate text-xs text-[var(--text-muted)]">
+              {activeTabMeta?.subtitle ?? `Tap a category to configure · ${currentVersionLabel}`}
+            </p>
+          </div>
+          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[var(--primary)]/15 text-[var(--primary)]">
+            <HeaderIcon className="h-5 w-5" />
+          </div>
         </div>
+      </header>
 
-        <div className="h-px bg-[var(--outline)]/30" />
-
-        {/* Body */}
-        <div className="flex-1 space-y-3.5 overflow-y-auto px-4 py-4">
+      {/* Spacious Full-Page Body */}
+      <div className="flex-1 overflow-y-auto">
+        <div className="mx-auto w-full max-w-3xl space-y-4 px-4 py-5 md:px-6">
           {activeTab === null && (
             <div className="space-y-2.5">
               {SETTINGS_TABS.map((tab) => {
@@ -690,11 +686,11 @@ export function ControlSettingsDialog({
             </SettingsGroup>
           )}
         </div>
+      </div>
 
-        <div className="h-px bg-[var(--outline)]/30" />
-
-        {/* Footer */}
-        <div className="flex items-center justify-between px-4 py-3">
+      {/* Footer */}
+      <footer className="border-t border-[var(--outline)]/30 bg-[var(--bg-surface)]">
+        <div className="mx-auto flex w-full max-w-3xl items-center justify-between px-4 py-3 md:px-6">
           {activeTab !== null ? (
             <button
               type="button"
@@ -709,12 +705,12 @@ export function ControlSettingsDialog({
           <button
             type="button"
             onClick={onDismiss}
-            className="rounded-xl bg-[var(--primary)] px-4 py-2 text-xs font-semibold text-[var(--on-primary)] transition-opacity hover:opacity-90"
+            className="rounded-xl bg-[var(--primary)] px-5 py-2 text-xs font-semibold text-[var(--on-primary)] transition-opacity hover:opacity-90"
           >
             Done
           </button>
         </div>
-      </div>
+      </footer>
     </div>
   );
 }

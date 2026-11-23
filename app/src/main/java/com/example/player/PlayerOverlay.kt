@@ -14,11 +14,13 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.displayCutoutPadding
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -29,7 +31,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
-import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
 import androidx.compose.material.icons.automirrored.rounded.VolumeOff
 import androidx.compose.material.icons.automirrored.rounded.VolumeUp
 import androidx.compose.material.icons.rounded.BrightnessHigh
@@ -73,7 +74,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -176,7 +176,6 @@ fun PlayerOverlay(
     val latestOnChangeBrightness by rememberUpdatedState(onChangeBrightness)
     val latestOnChangeVolume by rememberUpdatedState(onChangeVolume)
 
-    var showMoreTools by remember { mutableStateOf(false) }
     var showSpeedPicker by remember { mutableStateOf(false) }
     var showTrackDialog by remember { mutableStateOf(false) }
     var showSleepDialog by remember { mutableStateOf(false) }
@@ -185,19 +184,16 @@ fun PlayerOverlay(
 
     val allTopTools = remember(preferences.hiddenButtons) {
         buildList {
-            if (preferences.isButtonVisible(PlayerControlButton.ZOOM)) add(TopToolItem.ZOOM)
-            if (preferences.isButtonVisible(PlayerControlButton.MUTE)) add(TopToolItem.MUTE)
             if (preferences.isButtonVisible(PlayerControlButton.ROTATE)) add(TopToolItem.ROTATE)
             if (preferences.isButtonVisible(PlayerControlButton.SPEED)) add(TopToolItem.SPEED)
             if (preferences.isButtonVisible(PlayerControlButton.LOOP)) add(TopToolItem.LOOP)
+            if (preferences.isButtonVisible(PlayerControlButton.MUTE)) add(TopToolItem.MUTE)
             if (preferences.isButtonVisible(PlayerControlButton.SLEEP)) add(TopToolItem.SLEEP)
             if (preferences.isButtonVisible(PlayerControlButton.BG_PLAY)) add(TopToolItem.BG_PLAY)
             if (preferences.isButtonVisible(PlayerControlButton.TRACKS)) add(TopToolItem.TRACKS)
+            if (preferences.isButtonVisible(PlayerControlButton.ZOOM)) add(TopToolItem.ZOOM)
         }
     }
-
-    val displayedTools = allTopTools.take(4)
-    val overflowTools = allTopTools.drop(4)
 
     androidx.compose.runtime.LaunchedEffect(controlsVisible) {
         if (!controlsVisible) {
@@ -401,7 +397,7 @@ fun PlayerOverlay(
                             horizontalArrangement = Arrangement.spacedBy(6.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            displayedTools.forEach { tool ->
+                            allTopTools.forEach { tool ->
                                 TopToolChip(
                                     tool = tool,
                                     playbackSpeed = playbackSpeed,
@@ -421,47 +417,6 @@ fun PlayerOverlay(
                                     onBgPlayClick = onToggleBackgroundPlay,
                                     onTracksClick = { showTrackDialog = true }
                                 )
-                            }
-                            if (overflowTools.isNotEmpty()) {
-                                Box(
-                                    modifier = Modifier
-                                        .clip(RoundedCornerShape(10.dp))
-                                        .background(if (showMoreTools) MaterialTheme.colorScheme.primary.copy(alpha = 0.22f) else Color.White.copy(alpha = 0.12f))
-                                        .clickable { showMoreTools = !showMoreTools }
-                                        .padding(horizontal = 10.dp, vertical = 8.dp)
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.AutoMirrored.Rounded.KeyboardArrowRight,
-                                        contentDescription = "More tools",
-                                        tint = if (showMoreTools) MaterialTheme.colorScheme.primary else Color.White,
-                                        modifier = Modifier
-                                            .size(18.dp)
-                                            .rotate(if (showMoreTools) 180f else 0f)
-                                    )
-                                }
-                                if (showMoreTools) {
-                                    overflowTools.forEach { tool ->
-                                        TopToolChip(
-                                            tool = tool,
-                                            playbackSpeed = playbackSpeed,
-                                            repeatMode = repeatMode,
-                                            quickZoomScale = quickZoomScale,
-                                            isRotated = isRotated,
-                                            isMuted = isMuted,
-                                            sleepMinutesRemaining = sleepMinutesRemaining,
-                                            isBackgroundPlayEnabled = isBackgroundPlayEnabled,
-                                            showSpeedPicker = showSpeedPicker,
-                                            onZoomClick = onCycleQuickZoom,
-                                            onRotate = onToggleRotation,
-                                            onSpeedClick = { showSpeedPicker = !showSpeedPicker },
-                                            onLoopClick = onCycleRepeat,
-                                            onMuteClick = onToggleMute,
-                                            onSleepClick = { showSleepDialog = true },
-                                            onBgPlayClick = onToggleBackgroundPlay,
-                                            onTracksClick = { showTrackDialog = true }
-                                        )
-                                    }
-                                }
                             }
                         }
                     }
@@ -687,12 +642,14 @@ fun PlayerOverlay(
                 }
                 }
 
-                // Right-side middle back button (hides/shows with controls on single click)
+                // Right-side back button shifted slightly downward with safe-area padding for one-handed reach
                 IconButton(
                     onClick = onBack,
                     modifier = Modifier
                         .align(Alignment.CenterEnd)
-                        .padding(end = 14.dp)
+                        .navigationBarsPadding()
+                        .displayCutoutPadding()
+                        .padding(end = 16.dp, top = 64.dp)
                         .size(46.dp)
                         .clip(CircleShape)
                         .background(Color.Black.copy(alpha = 0.65f))
@@ -883,7 +840,11 @@ private fun TopToolChip(
             abs(quickZoomScale - 1.0f) > 0.05f
         )
         TopToolItem.ROTATE -> Triple(Icons.Rounded.ScreenRotation, "Rotate", isRotated)
-        TopToolItem.SPEED -> Triple(Icons.Rounded.Speed, "${playbackSpeed}x", abs(playbackSpeed - 1f) > 0.01f || showSpeedPicker)
+        TopToolItem.SPEED -> Triple(
+            Icons.Rounded.Speed,
+            if (abs(playbackSpeed - 1f) > 0.01f) "${playbackSpeed}x" else "Speed",
+            abs(playbackSpeed - 1f) > 0.01f || showSpeedPicker
+        )
         TopToolItem.LOOP -> Triple(
             if (repeatMode == Player.REPEAT_MODE_ONE) Icons.Rounded.RepeatOne else Icons.Rounded.Repeat,
             when (repeatMode) {
@@ -904,7 +865,7 @@ private fun TopToolChip(
             sleepMinutesRemaining != null
         )
         TopToolItem.BG_PLAY -> Triple(Icons.Rounded.Headphones, "BG Play", isBackgroundPlayEnabled)
-        TopToolItem.TRACKS -> Triple(Icons.Rounded.Subtitles, "Tracks", false)
+        TopToolItem.TRACKS -> Triple(Icons.Rounded.Subtitles, "Track", false)
     }
 
     val onClick = when (tool) {
@@ -928,7 +889,7 @@ private fun TopToolChip(
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
         Icon(icon, contentDescription = label, tint = if (active) accent else Color.White, modifier = Modifier.size(17.dp))
-        Text(label, color = if (active) accent else Color.White, fontSize = 9.5.sp, maxLines = 1)
+        Text(label, color = if (active) accent else Color.White, fontSize = 9.5.sp, maxLines = 1, softWrap = false)
     }
 }
 

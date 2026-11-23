@@ -66,6 +66,11 @@ jobs:
               NEXT_CODE=$((MAJOR * 10000 + MINOR * 100 + NEXT_PATCH))
             fi
           fi
+          PREV_BODY=$(gh api "repos/${{ github.repository }}/releases/latest" --jq '.body' 2>/dev/null) || PREV_BODY=""
+          PREV_CODE=$(echo "$PREV_BODY" | grep -iE 'versionCode[[:space:]]*[:=][[:space:]]*[0-9]+' | grep -oE '[0-9]+' | head -n 1 || true)
+          if [ -n "$PREV_CODE" ] && [ "$NEXT_CODE" -le "$PREV_CODE" ]; then
+            NEXT_CODE=$((PREV_CODE + 1))
+          fi
           if [ "$NEXT_CODE" -lt 1 ]; then
             NEXT_CODE=1
           fi
@@ -79,6 +84,8 @@ jobs:
         with:
           path: my-upload-key.jks
           key: ag-release-keystore-${{ github.repository }}-v1
+          restore-keys: |
+            ag-release-keystore-${{ github.repository }}-
 
       - name: Prepare persistent release signing keystore
         id: signing
@@ -110,7 +117,12 @@ jobs:
             echo "KEY_PASSWORD=android123" >> "$GITHUB_ENV"
             echo "KEY_ALIAS=upload" >> "$GITHUB_ENV"
           fi
+          if [ ! -s my-upload-key.jks ]; then
+            echo "ERROR: Signing keystore my-upload-key.jks is missing or empty!"
+            exit 1
+          fi
           echo "KEYSTORE_PATH=${{ github.workspace }}/my-upload-key.jks" >> "$GITHUB_ENV"
+          keytool -list -keystore my-upload-key.jks -storepass "${STORE_PASSWORD:-android123}" -alias "${KEY_ALIAS:-upload}" | grep -E "Alias|SHA1|SHA256" || true
 
       - name: Setup Gradle 9.3.1
         uses: gradle/actions/setup-gradle@v4
@@ -150,7 +162,6 @@ jobs:
               --key-pass "env:KEY_PASSWORD" \
               --v1-signing-enabled true \
               --v2-signing-enabled true \
-              --v3-signing-enabled true \
               --out "AG Video Player.apk" \
               "aligned-release.apk"
             rm -f "aligned-release.apk"

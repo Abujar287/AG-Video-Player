@@ -503,12 +503,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     when (status) {
                         DownloadManager.STATUS_SUCCESSFUL -> {
                             val uriPath = localUri?.let { runCatching { Uri.parse(it).path }.getOrNull() }
-                            val resolvedFile = uriPath?.let(::File)?.takeIf { it.exists() && it.length() > 0L }
+                            val resolvedFile = uriPath?.let(::File)?.takeIf { GitHubUpdateManager.isValidApkFile(context, it) }
                                 ?: GitHubUpdateManager.getExpectedApkFile(context, release)
-                            if (resolvedFile.exists() && resolvedFile.length() > 0L) {
+                            if (GitHubUpdateManager.isValidApkFile(context, resolvedFile)) {
                                 _updateState.value = UpdateUiState.ReadyToInstall(resolvedFile.absolutePath)
                             } else {
-                                _updateState.value = UpdateUiState.Error("Downloaded APK file could not be verified.")
+                                _updateState.value = UpdateUiState.Error("Downloaded APK is incomplete or invalid. Please retry.")
                             }
                             break
                         }
@@ -542,13 +542,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         val primaryFile = File(filePath)
         val fallbackFile = lastCheckedRelease?.let { GitHubUpdateManager.getExpectedApkFile(context, it) }
         val targetFile = when {
-            primaryFile.exists() && primaryFile.length() > 0L -> primaryFile
-            fallbackFile != null && fallbackFile.exists() && fallbackFile.length() > 0L -> fallbackFile
+            GitHubUpdateManager.isValidApkFile(context, primaryFile) -> primaryFile
+            fallbackFile != null && GitHubUpdateManager.isValidApkFile(context, fallbackFile) -> fallbackFile
             else -> null
         }
 
         if (targetFile == null) {
-            _updateState.value = UpdateUiState.Error("Downloaded APK file not found.")
+            _updateState.value = UpdateUiState.Error("Downloaded APK file is invalid or missing. Please download again.")
             return
         }
 

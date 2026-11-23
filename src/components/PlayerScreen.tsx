@@ -3,7 +3,6 @@ import {
   ArrowLeft,
   Captions,
   Check,
-  ChevronRight,
   Cpu,
   FileText,
   Gauge,
@@ -117,7 +116,6 @@ export function PlayerScreen({
   const [isMuted, setIsMuted] = useState(false);
   const [statusBanner, setStatusBanner] = useState<string | null>(null);
 
-  const [showMoreTools, setShowMoreTools] = useState(false);
   const [showSpeedPicker, setShowSpeedPicker] = useState(false);
   const [showTrackDialog, setShowTrackDialog] = useState(false);
   const [showSleepDialog, setShowSleepDialog] = useState(false);
@@ -172,19 +170,16 @@ export function PlayerScreen({
 
   const allTopTools = useMemo<TopToolItem[]>(() => {
     const list: TopToolItem[] = [];
-    if (isBtnVisible(PlayerControlButton.ZOOM)) list.push('ZOOM');
-    if (isBtnVisible(PlayerControlButton.MUTE)) list.push('MUTE');
     if (isBtnVisible(PlayerControlButton.ROTATE)) list.push('ROTATE');
     if (isBtnVisible(PlayerControlButton.SPEED)) list.push('SPEED');
     if (isBtnVisible(PlayerControlButton.LOOP)) list.push('LOOP');
+    if (isBtnVisible(PlayerControlButton.MUTE)) list.push('MUTE');
     if (isBtnVisible(PlayerControlButton.SLEEP)) list.push('SLEEP');
     if (isBtnVisible(PlayerControlButton.BG_PLAY)) list.push('BG_PLAY');
     if (isBtnVisible(PlayerControlButton.TRACKS)) list.push('TRACKS');
+    if (isBtnVisible(PlayerControlButton.ZOOM)) list.push('ZOOM');
     return list;
   }, [isBtnVisible]);
-
-  const displayedTools = allTopTools.slice(0, 4);
-  const overflowTools = allTopTools.slice(4);
 
   const ensureAudioBoostGraph = useCallback(() => {
     const video = videoRef.current;
@@ -1008,7 +1003,7 @@ export function PlayerScreen({
 
           {allTopTools.length > 0 && (
             <div className="mt-2 flex items-center gap-1.5 overflow-x-auto pb-1">
-              {displayedTools.map((tool) => (
+              {allTopTools.map((tool) => (
                 <TopToolChip
                   key={tool}
                   tool={tool}
@@ -1037,55 +1032,6 @@ export function PlayerScreen({
                   onTracksClick={() => setShowTrackDialog(true)}
                 />
               ))}
-
-              {overflowTools.length > 0 && (
-                <>
-                  <button
-                    type="button"
-                    onClick={() => setShowMoreTools((s) => !s)}
-                    aria-label="More tools"
-                    className={`flex h-[42px] shrink-0 items-center justify-center rounded-xl px-2.5 transition-colors ${
-                      showMoreTools ? 'bg-[var(--primary)]/25 text-[var(--primary)]' : 'bg-white/10 text-white'
-                    }`}
-                  >
-                    <ChevronRight
-                      className={`h-4 w-4 transition-transform ${showMoreTools ? 'rotate-180' : ''}`}
-                    />
-                  </button>
-                  {showMoreTools &&
-                    overflowTools.map((tool) => (
-                      <TopToolChip
-                        key={tool}
-                        tool={tool}
-                        playbackSpeed={playbackSpeed}
-                        repeatMode={repeatMode}
-                        isRotated={isRotated}
-                        isMuted={isMuted}
-                        pinchScale={pinchScale}
-                        sleepMinutesRemaining={sleepMinutesRemaining}
-                        isBackgroundPlayEnabled={isBackgroundPlayEnabled}
-                        showSpeedPicker={showSpeedPicker}
-                        onZoomClick={handleCycleQuickZoom}
-                        onRotate={handleToggleRotation}
-                        onSpeedClick={() => setShowSpeedPicker((s) => !s)}
-                        onLoopClick={handleCycleRepeat}
-                        onMuteClick={handleToggleMute}
-                        onSleepClick={() => setShowSleepDialog(true)}
-                        onBgPlayClick={() => {
-                          const next = !isBackgroundPlayEnabled;
-                          setIsBackgroundPlayEnabled(next);
-                          onSetAlwaysBackgroundPlay(next);
-                          setStatusBanner(
-                            next
-                              ? 'Background Audio Play Enabled'
-                              : 'Background Audio Play Disabled'
-                          );
-                        }}
-                        onTracksClick={() => setShowTrackDialog(true)}
-                      />
-                    ))}
-                </>
-              )}
             </div>
           )}
 
@@ -1284,14 +1230,18 @@ export function PlayerScreen({
           </div>
         </div>
 
-        {/* Right-Side Middle Back Button (hides/shows with controls on single click) */}
+        {/* Right-Side Back Button shifted slightly downward with safe-area padding for one-handed reach */}
         <button
           type="button"
           onClick={handleBackClick}
           onPointerDown={(e) => e.stopPropagation()}
           aria-label="Turn off video and return"
           title="Turn off video and return"
-          className={`absolute top-1/2 right-3 flex h-11 w-11 -translate-y-1/2 items-center justify-center rounded-full bg-black/65 text-white shadow-lg transition-colors hover:bg-white/20 active:scale-95 md:right-5 ${
+          style={{
+            marginRight: 'env(safe-area-inset-right, 0px)',
+            marginBottom: 'env(safe-area-inset-bottom, 0px)',
+          }}
+          className={`absolute top-[58%] right-4 flex h-11 w-11 -translate-y-1/2 items-center justify-center rounded-full bg-black/65 text-white shadow-lg transition-colors hover:bg-white/20 active:scale-95 md:right-6 ${
             controlsVisible && !isLocked ? 'pointer-events-auto' : 'pointer-events-none'
           }`}
         >
@@ -1533,7 +1483,7 @@ function TopToolChip({
       break;
     case 'SPEED':
       Icon = Gauge;
-      label = `${playbackSpeed}x`;
+      label = Math.abs(playbackSpeed - 1) > 0.01 ? `${playbackSpeed}x` : 'Speed';
       active = Math.abs(playbackSpeed - 1) > 0.01 || showSpeedPicker;
       onClick = onSpeedClick;
       break;
@@ -1568,7 +1518,7 @@ function TopToolChip({
       break;
     case 'TRACKS':
       Icon = Captions;
-      label = 'Tracks';
+      label = 'Track';
       active = false;
       onClick = onTracksClick;
       break;

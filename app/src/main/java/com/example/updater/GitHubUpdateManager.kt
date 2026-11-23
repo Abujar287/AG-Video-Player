@@ -3,6 +3,7 @@ package com.example.updater
 import android.app.DownloadManager
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
 import android.os.Environment
@@ -214,6 +215,8 @@ object GitHubUpdateManager {
                 .setDescription("Downloading $fileName")
                 .setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
                 .setMimeType("application/vnd.android.package-archive")
+                .setAllowedOverMetered(true)
+                .setAllowedOverRoaming(true)
 
             if (appDownloadsDir != null) {
                 appDownloadsDir.mkdirs()
@@ -233,8 +236,38 @@ object GitHubUpdateManager {
         }.getOrDefault(-1L)
     }
 
+    fun isValidApkFile(context: Context, apkFile: File): Boolean {
+        if (!apkFile.exists() || !apkFile.isFile || apkFile.length() < 500_000L) {
+            return false
+        }
+        val hasZipHeader = runCatching {
+            apkFile.inputStream().use { input ->
+                val header = ByteArray(4)
+                input.read(header) == 4 &&
+                    header[0] == 0x50.toByte() &&
+                    header[1] == 0x4B.toByte() &&
+                    header[2] == 0x03.toByte() &&
+                    header[3] == 0x04.toByte()
+            }
+        }.getOrDefault(false)
+        if (!hasZipHeader) return false
+
+        val pkgInfo = runCatching {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                context.packageManager.getPackageArchiveInfo(
+                    apkFile.absolutePath,
+                    PackageManager.PackageInfoFlags.of(0L)
+                )
+            } else {
+                @Suppress("DEPRECATION")
+                context.packageManager.getPackageArchiveInfo(apkFile.absolutePath, 0)
+            }
+        }.getOrNull()
+        return pkgInfo != null && pkgInfo.packageName == context.packageName
+    }
+
     fun installDownloadedApk(context: Context, apkFile: File): ApkInstallResult {
-        if (!apkFile.exists() || apkFile.length() <= 0L) {
+        if (!isValidApkFile(context, apkFile)) {
             return ApkInstallResult.FAILED
         }
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O &&
@@ -266,7 +299,10 @@ object GitHubUpdateManager {
         remoteVersionName: String,
         remoteVersionCode: Int?
     ): Boolean {
-        if (remoteVersionCode != null && remoteVersionCode > currentVersionCode) return true
+        if (remoteVersionCode != null) {
+            if (remoteVersionCode > currentVersionCode) return true
+            if (remoteVersionCode < currentVersionCode) return false
+        }
         val currParts = currentVersionName.split('.').map { it.filter(Char::isDigit).toIntOrNull() ?: 0 }
         val remParts = remoteVersionName.split('.').map { it.filter(Char::isDigit).toIntOrNull() ?: 0 }
         val maxLen = maxOf(currParts.size, remParts.size)
