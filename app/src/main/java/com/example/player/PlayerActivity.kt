@@ -29,7 +29,9 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
@@ -113,11 +115,18 @@ class PlayerActivity : ComponentActivity() {
             }
             var controlsVisible by remember { mutableStateOf(true) }
             var aspectMode by remember { mutableStateOf(PlayerAspectMode.FIT) }
+            var quickZoomScale by remember { mutableFloatStateOf(1.0f) }
             var isRotated by remember { mutableStateOf(false) }
             var brightnessPercent by remember { mutableIntStateOf(75) }
-            var volumePercent by remember { mutableIntStateOf(100) }
-            var lastNonZeroVolume by remember { mutableIntStateOf(100) }
-            var isMuted by remember { mutableStateOf(false) }
+            val initialAudioPct = remember {
+                val am = getSystemService(Context.AUDIO_SERVICE) as AudioManager
+                val maxSys = am.getStreamMaxVolume(AudioManager.STREAM_MUSIC).coerceAtLeast(1)
+                val curSys = am.getStreamVolume(AudioManager.STREAM_MUSIC)
+                ((curSys.toFloat() / maxSys.toFloat()) * 100f).toInt().coerceIn(0, 100)
+            }
+            var volumePercent by remember { mutableIntStateOf(initialAudioPct) }
+            var lastNonZeroVolume by remember { mutableIntStateOf(initialAudioPct.coerceAtLeast(50)) }
+            var isMuted by remember { mutableStateOf(initialAudioPct == 0) }
             var statusBanner by remember { mutableStateOf<String?>(null) }
             var audioTracks by remember { mutableStateOf<List<MediaTrackOption>>(emptyList()) }
             var subtitleTracks by remember { mutableStateOf<List<MediaTrackOption>>(emptyList()) }
@@ -322,7 +331,13 @@ class PlayerActivity : ComponentActivity() {
                                 PlayerAspectMode.ZOOM -> AspectRatioFrameLayout.RESIZE_MODE_ZOOM
                             }
                         },
-                        modifier = Modifier.fillMaxSize()
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .clipToBounds()
+                            .graphicsLayer(
+                                scaleX = quickZoomScale,
+                                scaleY = quickZoomScale
+                            )
                     )
 
                     if (!isInPipModeState) {
@@ -340,6 +355,7 @@ class PlayerActivity : ComponentActivity() {
                             isBackgroundPlayEnabled = isBackgroundPlayEnabled,
                             controlsVisible = controlsVisible,
                             aspectMode = aspectMode,
+                            quickZoomScale = quickZoomScale,
                             isRotated = isRotated,
                             brightnessPercent = brightnessPercent,
                             volumePercent = volumePercent,
@@ -394,7 +410,15 @@ class PlayerActivity : ComponentActivity() {
                             onCycleAspectMode = {
                                 val order = PlayerAspectMode.entries
                                 aspectMode = order[(order.indexOf(aspectMode) + 1) % order.size]
+                                quickZoomScale = 1.0f
                                 statusBanner = "Screen: ${aspectMode.label}"
+                            },
+                            onCycleQuickZoom = {
+                                val steps = listOf(1.0f, 1.25f, 1.5f, 2.0f)
+                                val idx = steps.indexOfFirst { kotlin.math.abs(it - quickZoomScale) < 0.08f }
+                                val next = steps[(idx + 1) % steps.size]
+                                quickZoomScale = next
+                                statusBanner = if (next == 1.0f) "Zoom Reset (1.0x)" else "Quick Zoom ${next}x"
                             },
                             onEnterPip = { enterPipSafe() },
                             onToggleDecoder = {

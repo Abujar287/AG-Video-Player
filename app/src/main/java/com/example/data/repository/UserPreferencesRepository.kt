@@ -12,6 +12,7 @@ import androidx.datastore.preferences.preferencesDataStore
 import com.example.BuildConfig
 import com.example.data.model.DoubleClickAction
 import com.example.data.model.PlayerControlButton
+import com.example.data.model.ProgressBarStyle
 import com.example.data.model.SingleClickAction
 import com.example.data.model.UserPreferences
 import kotlinx.coroutines.flow.Flow
@@ -44,6 +45,7 @@ class UserPreferencesRepository(private val context: Context) {
         val ENABLE_SWIPE_GESTURES = booleanPreferencesKey("enable_swipe_gestures")
         val GESTURE_SEEK_STEP = intPreferencesKey("gesture_seek_step")
         val HIDDEN_BUTTONS = stringSetPreferencesKey("hidden_buttons")
+        val PROGRESS_BAR_STYLE = stringPreferencesKey("progress_bar_style")
     }
 
     val preferencesFlow: Flow<UserPreferences> = context.dataStore.data.map { prefs ->
@@ -60,6 +62,9 @@ class UserPreferencesRepository(private val context: Context) {
             showHiddenFiles = prefs[Keys.SHOW_HIDDEN_FILES] ?: false,
             mainDisplayMode = prefs[Keys.MAIN_DISPLAY_MODE] ?: "folders",
             mainViewLayout = layout,
+            progressBarStyle = runCatching {
+                ProgressBarStyle.valueOf(prefs[Keys.PROGRESS_BAR_STYLE] ?: ProgressBarStyle.MATERIAL.name)
+            }.getOrDefault(ProgressBarStyle.MATERIAL),
             oneFingerGesture = prefs[Keys.ONE_FINGER_GESTURE] ?: "Brightness / Volume Swipe",
             twoFingerGesture = prefs[Keys.TWO_FINGER_GESTURE] ?: "Zoom / Scale",
             threeFingerGesture = prefs[Keys.THREE_FINGER_GESTURE] ?: "Play / Pause",
@@ -103,6 +108,7 @@ class UserPreferencesRepository(private val context: Context) {
     suspend fun setAlwaysBackgroundPlay(enabled: Boolean) = update { it[Keys.ALWAYS_BG_PLAY] = enabled }
     suspend fun setEnableSwipeGestures(enabled: Boolean) = update { it[Keys.ENABLE_SWIPE_GESTURES] = enabled }
     suspend fun setGestureSeekStepSeconds(seconds: Int) = update { it[Keys.GESTURE_SEEK_STEP] = seconds }
+    suspend fun setProgressBarStyle(style: ProgressBarStyle) = update { it[Keys.PROGRESS_BAR_STYLE] = style.name }
 
     suspend fun setPlayerButtonVisible(button: PlayerControlButton, visible: Boolean) = update { prefs ->
         val current = (prefs[Keys.HIDDEN_BUTTONS] ?: emptySet()).toMutableSet()

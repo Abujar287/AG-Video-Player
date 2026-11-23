@@ -199,7 +199,8 @@ class MainActivity : ComponentActivity() {
                     onTwoFingerGestureChange = vm::setTwoFingerGesture,
                     onThreeFingerGestureChange = vm::setThreeFingerGesture,
                     onTogglePlayerButtonVisibility = vm::setPlayerButtonVisible,
-                    onShowAllButtons = vm::showAllPlayerButtons
+                    onShowAllButtons = vm::showAllPlayerButtons,
+                    onProgressBarStyleChange = vm::setProgressBarStyle
                 )
             }
         }

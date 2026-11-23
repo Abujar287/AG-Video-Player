@@ -13,6 +13,7 @@ import com.example.data.model.BrowserDestination
 import com.example.data.model.DoubleClickAction
 import com.example.data.model.PlayerControlButton
 import com.example.data.model.PlaylistEntry
+import com.example.data.model.ProgressBarStyle
 import com.example.data.model.SingleClickAction
 import com.example.data.model.SortDirection
 import com.example.data.model.SortField
@@ -403,6 +404,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         prefsRepo.setPlayerButtonVisible(b, v)
     }
     fun showAllPlayerButtons() = viewModelScope.launch { prefsRepo.showAllPlayerButtons() }
+    fun setProgressBarStyle(style: ProgressBarStyle) = viewModelScope.launch { prefsRepo.setProgressBarStyle(style) }
 
     // GitHub Updates
     fun openUpdateCheck() {

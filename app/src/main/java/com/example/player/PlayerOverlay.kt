@@ -39,7 +39,6 @@ import androidx.compose.material.icons.rounded.Lock
 import androidx.compose.material.icons.rounded.LockOpen
 import androidx.compose.material.icons.rounded.Memory
 import androidx.compose.material.icons.rounded.NightsStay
-import androidx.compose.material.icons.rounded.OpenInFull
 import androidx.compose.material.icons.rounded.Pause
 import androidx.compose.material.icons.rounded.PictureInPictureAlt
 import androidx.compose.material.icons.rounded.PlayArrow
@@ -50,6 +49,7 @@ import androidx.compose.material.icons.rounded.SkipNext
 import androidx.compose.material.icons.rounded.SkipPrevious
 import androidx.compose.material.icons.rounded.Speed
 import androidx.compose.material.icons.rounded.Subtitles
+import androidx.compose.material.icons.rounded.ZoomIn
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -62,9 +62,11 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -85,17 +87,20 @@ import com.example.data.model.DoubleClickAction
 import com.example.data.model.MediaTrackOption
 import com.example.data.model.PlayerAspectMode
 import com.example.data.model.PlayerControlButton
+import com.example.data.model.ProgressBarStyle
 import com.example.data.model.SingleClickAction
 import com.example.data.model.UserPreferences
+import com.example.ui.components.FitScreenIcon
 import com.example.ui.theme.BoostOrange
 import com.example.ui.theme.DarkPrimary
 import com.example.ui.theme.DarkSecondary
 import com.example.util.FormatUtils
 import kotlin.math.abs
+import kotlin.math.roundToInt
 
 private enum class DragMode { NONE, SEEK, BRIGHTNESS, VOLUME }
 
-private enum class TopToolItem { ROTATE, SPEED, LOOP, MUTE, SLEEP, BG_PLAY, TRACKS }
+private enum class TopToolItem { ZOOM, MUTE, ROTATE, SPEED, LOOP, SLEEP, BG_PLAY, TRACKS }
 
 @Composable
 fun PlayerOverlay(
@@ -111,6 +116,7 @@ fun PlayerOverlay(
     isBackgroundPlayEnabled: Boolean,
     controlsVisible: Boolean,
     aspectMode: PlayerAspectMode,
+    quickZoomScale: Float,
     isRotated: Boolean,
     brightnessPercent: Int,
     volumePercent: Int,
@@ -130,6 +136,7 @@ fun PlayerOverlay(
     onNext: () -> Unit,
     onToggleLock: () -> Unit,
     onCycleAspectMode: () -> Unit,
+    onCycleQuickZoom: () -> Unit,
     onEnterPip: () -> Unit,
     onToggleDecoder: () -> Unit,
     onToggleRotation: () -> Unit,
@@ -149,8 +156,20 @@ fun PlayerOverlay(
     var dragStartPosMs by remember { mutableLongStateOf(0L) }
     var previewSeekMs by remember { mutableLongStateOf(0L) }
     var dragSeekDeltaMs by remember { mutableLongStateOf(0L) }
+    var dragStartBrightness by remember { mutableIntStateOf(75) }
+    var dragStartVolume by remember { mutableIntStateOf(100) }
     var dragAccumX by remember { mutableFloatStateOf(0f) }
     var dragAccumY by remember { mutableFloatStateOf(0f) }
+
+    val latestLocked by rememberUpdatedState(isLocked)
+    val latestPrefs by rememberUpdatedState(preferences)
+    val latestPosMs by rememberUpdatedState(currentPosMs)
+    val latestDurationMs by rememberUpdatedState(durationMs)
+    val latestBrightness by rememberUpdatedState(brightnessPercent)
+    val latestVolume by rememberUpdatedState(volumePercent)
+    val latestOnSeekTo by rememberUpdatedState(onSeekTo)
+    val latestOnChangeBrightness by rememberUpdatedState(onChangeBrightness)
+    val latestOnChangeVolume by rememberUpdatedState(onChangeVolume)
 
     var showMoreTools by remember { mutableStateOf(false) }
     var showSpeedPicker by remember { mutableStateOf(false) }
@@ -161,10 +180,11 @@ fun PlayerOverlay(
 
     val allTopTools = remember(preferences.hiddenButtons) {
         buildList {
+            if (preferences.isButtonVisible(PlayerControlButton.ZOOM)) add(TopToolItem.ZOOM)
+            if (preferences.isButtonVisible(PlayerControlButton.MUTE)) add(TopToolItem.MUTE)
             if (preferences.isButtonVisible(PlayerControlButton.ROTATE)) add(TopToolItem.ROTATE)
             if (preferences.isButtonVisible(PlayerControlButton.SPEED)) add(TopToolItem.SPEED)
             if (preferences.isButtonVisible(PlayerControlButton.LOOP)) add(TopToolItem.LOOP)
-            if (preferences.isButtonVisible(PlayerControlButton.MUTE)) add(TopToolItem.MUTE)
             if (preferences.isButtonVisible(PlayerControlButton.SLEEP)) add(TopToolItem.SLEEP)
             if (preferences.isButtonVisible(PlayerControlButton.BG_PLAY)) add(TopToolItem.BG_PLAY)
             if (preferences.isButtonVisible(PlayerControlButton.TRACKS)) add(TopToolItem.TRACKS)
@@ -206,27 +226,34 @@ fun PlayerOverlay(
                     }
                 )
             }
-            .pointerInput(isLocked, preferences.enableSwipeGestures, durationMs) {
+            .pointerInput(Unit) {
                 detectDragGestures(
-                    onDragStart = { startOffset ->
+                    onDragStart = { _ ->
                         dragMode = DragMode.NONE
                         dragAccumX = 0f
                         dragAccumY = 0f
-                        dragStartPosMs = currentPosMs
-                        previewSeekMs = currentPosMs
+                        dragStartPosMs = latestPosMs
+                        previewSeekMs = latestPosMs
                         dragSeekDeltaMs = 0L
-                        if (isLocked || !preferences.enableSwipeGestures) return@detectDragGestures
+                        dragStartBrightness = latestBrightness
+                        dragStartVolume = latestVolume
                     },
                     onDrag = { change, dragAmount ->
-                        if (isLocked || !preferences.enableSwipeGestures) return@detectDragGestures
+                        if (latestLocked || !latestPrefs.enableSwipeGestures || latestPrefs.oneFingerGesture == "None") {
+                            return@detectDragGestures
+                        }
                         change.consume()
                         dragAccumX += dragAmount.x
                         dragAccumY += dragAmount.y
 
                         if (dragMode == DragMode.NONE) {
-                            if (abs(dragAccumX) > 22f && abs(dragAccumX) > abs(dragAccumY) * 1.15f) {
+                            if (abs(dragAccumX) > 20f && abs(dragAccumX) > abs(dragAccumY) * 1.15f) {
                                 dragMode = DragMode.SEEK
-                            } else if (abs(dragAccumY) > 18f && abs(dragAccumY) > abs(dragAccumX) * 1.15f) {
+                            } else if (
+                                latestPrefs.oneFingerGesture != "Seek & Controls" &&
+                                abs(dragAccumY) > 16f &&
+                                abs(dragAccumY) > abs(dragAccumX) * 1.15f
+                            ) {
                                 dragMode = if (change.position.x < boxSize.width / 2f) {
                                     DragMode.BRIGHTNESS
                                 } else {
@@ -238,14 +265,12 @@ fun PlayerOverlay(
                         when (dragMode) {
                             DragMode.SEEK -> {
                                 val widthPx = boxSize.width.coerceAtLeast(300).toFloat()
-                                val realDur = durationMs.coerceAtLeast(1_000L)
-                                val rawDelta = if (preferences.gestureSeekStepSeconds <= 0) {
-                                    // Normal / Auto: smooth proportional scrubbing across duration (max 120s full-width on long videos)
+                                val realDur = latestDurationMs.coerceAtLeast(1_000L)
+                                val rawDelta = if (latestPrefs.gestureSeekStepSeconds <= 0) {
                                     val spanMs = realDur.coerceIn(15_000L, 120_000L)
                                     ((dragAccumX / widthPx) * spanMs).toLong()
                                 } else {
-                                    // Fixed 10s / 20s step increments per drag segment
-                                    val stepMs = preferences.gestureSeekStepSeconds * 1000L
+                                    val stepMs = latestPrefs.gestureSeekStepSeconds * 1000L
                                     val steps = (dragAccumX / (widthPx * 0.14f)).toInt()
                                     steps * stepMs
                                 }
@@ -253,21 +278,21 @@ fun PlayerOverlay(
                                 previewSeekMs = (dragStartPosMs + rawDelta).coerceIn(0L, realDur)
                             }
                             DragMode.BRIGHTNESS -> {
-                                val heightPx = (boxSize.height * 0.5f).coerceAtLeast(220f)
-                                val deltaPct = ((-dragAmount.y / heightPx) * 100f).toInt()
-                                if (deltaPct != 0) onChangeBrightness((brightnessPercent + deltaPct).coerceIn(2, 100))
+                                val heightPx = (boxSize.height * 0.45f).coerceAtLeast(180f)
+                                val deltaPct = ((-dragAccumY / heightPx) * 100f).roundToInt()
+                                latestOnChangeBrightness((dragStartBrightness + deltaPct).coerceIn(5, 100))
                             }
                             DragMode.VOLUME -> {
-                                val heightPx = (boxSize.height * 0.5f).coerceAtLeast(220f)
-                                val deltaPct = ((-dragAmount.y / heightPx) * 200f).toInt()
-                                if (deltaPct != 0) onChangeVolume((volumePercent + deltaPct).coerceIn(0, 200))
+                                val heightPx = (boxSize.height * 0.45f).coerceAtLeast(180f)
+                                val deltaPct = ((-dragAccumY / heightPx) * 200f).roundToInt()
+                                latestOnChangeVolume((dragStartVolume + deltaPct).coerceIn(0, 200))
                             }
                             DragMode.NONE -> Unit
                         }
                     },
                     onDragEnd = {
                         if (dragMode == DragMode.SEEK) {
-                            onSeekTo(previewSeekMs)
+                            latestOnSeekTo(previewSeekMs)
                         }
                         dragMode = DragMode.NONE
                     },
@@ -368,11 +393,13 @@ fun PlayerOverlay(
                                     tool = tool,
                                     playbackSpeed = playbackSpeed,
                                     repeatMode = repeatMode,
+                                    quickZoomScale = quickZoomScale,
                                     isRotated = isRotated,
                                     isMuted = isMuted,
                                     sleepMinutesRemaining = sleepMinutesRemaining,
                                     isBackgroundPlayEnabled = isBackgroundPlayEnabled,
                                     showSpeedPicker = showSpeedPicker,
+                                    onZoomClick = onCycleQuickZoom,
                                     onRotate = onToggleRotation,
                                     onSpeedClick = { showSpeedPicker = !showSpeedPicker },
                                     onLoopClick = onCycleRepeat,
@@ -405,11 +432,13 @@ fun PlayerOverlay(
                                             tool = tool,
                                             playbackSpeed = playbackSpeed,
                                             repeatMode = repeatMode,
+                                            quickZoomScale = quickZoomScale,
                                             isRotated = isRotated,
                                             isMuted = isMuted,
                                             sleepMinutesRemaining = sleepMinutesRemaining,
                                             isBackgroundPlayEnabled = isBackgroundPlayEnabled,
                                             showSpeedPicker = showSpeedPicker,
+                                            onZoomClick = onCycleQuickZoom,
                                             onRotate = onToggleRotation,
                                             onSpeedClick = { showSpeedPicker = !showSpeedPicker },
                                             onLoopClick = onCycleRepeat,
@@ -478,23 +507,75 @@ fun PlayerOverlay(
                             fontSize = 11.sp,
                             modifier = Modifier.width(46.dp)
                         )
-                        Slider(
-                            value = (activePos.toFloat() / dur.toFloat()).coerceIn(0f, 1f),
-                            onValueChange = { frac ->
-                                isScrubbingBar = true
-                                scrubMs = (frac * dur).toLong()
-                            },
-                            onValueChangeFinished = {
-                                isScrubbingBar = false
-                                onSeekTo(scrubMs)
-                            },
-                            colors = SliderDefaults.colors(
-                                thumbColor = DarkPrimary,
-                                activeTrackColor = DarkPrimary,
-                                inactiveTrackColor = Color.White.copy(alpha = 0.25f)
-                            ),
-                            modifier = Modifier.weight(1f)
-                        )
+                        val progressFrac = (activePos.toFloat() / dur.toFloat()).coerceIn(0f, 1f)
+                        if (preferences.progressBarStyle == ProgressBarStyle.FLAT) {
+                            var flatBarWidth by remember { mutableFloatStateOf(1f) }
+                            Box(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .height(28.dp)
+                                    .padding(horizontal = 8.dp)
+                                    .onSizeChanged { flatBarWidth = it.width.coerceAtLeast(1).toFloat() }
+                                    .pointerInput(dur) {
+                                        detectTapGestures { offset ->
+                                            val target = ((offset.x / flatBarWidth).coerceIn(0f, 1f) * dur).toLong()
+                                            onSeekTo(target)
+                                        }
+                                    }
+                                    .pointerInput(dur) {
+                                        detectDragGestures(
+                                            onDragStart = { offset ->
+                                                isScrubbingBar = true
+                                                scrubMs = ((offset.x / flatBarWidth).coerceIn(0f, 1f) * dur).toLong()
+                                            },
+                                            onDrag = { change, _ ->
+                                                change.consume()
+                                                scrubMs = ((change.position.x / flatBarWidth).coerceIn(0f, 1f) * dur).toLong()
+                                            },
+                                            onDragEnd = {
+                                                isScrubbingBar = false
+                                                onSeekTo(scrubMs)
+                                            },
+                                            onDragCancel = { isScrubbingBar = false }
+                                        )
+                                    },
+                                contentAlignment = Alignment.CenterStart
+                            ) {
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .height(5.dp)
+                                        .clip(RoundedCornerShape(3.dp))
+                                        .background(Color.White.copy(alpha = 0.25f))
+                                ) {
+                                    Box(
+                                        modifier = Modifier
+                                            .fillMaxWidth(progressFrac)
+                                            .fillMaxHeight()
+                                            .clip(RoundedCornerShape(3.dp))
+                                            .background(DarkPrimary)
+                                    )
+                                }
+                            }
+                        } else {
+                            Slider(
+                                value = progressFrac,
+                                onValueChange = { frac ->
+                                    isScrubbingBar = true
+                                    scrubMs = (frac * dur).toLong()
+                                },
+                                onValueChangeFinished = {
+                                    isScrubbingBar = false
+                                    onSeekTo(scrubMs)
+                                },
+                                colors = SliderDefaults.colors(
+                                    thumbColor = DarkPrimary,
+                                    activeTrackColor = DarkPrimary,
+                                    inactiveTrackColor = Color.White.copy(alpha = 0.25f)
+                                ),
+                                modifier = Modifier.weight(1f)
+                            )
+                        }
                         Text(
                             text = FormatUtils.formatDuration(durationMs),
                             color = Color.White.copy(alpha = 0.85f),
@@ -576,10 +657,9 @@ fun PlayerOverlay(
                         ) {
                             if (preferences.isButtonVisible(PlayerControlButton.FIT)) {
                                 IconButton(onClick = onCycleAspectMode) {
-                                    Icon(
-                                        Icons.Rounded.OpenInFull,
-                                        contentDescription = "Aspect Mode",
-                                        tint = if (aspectMode != PlayerAspectMode.FIT) DarkPrimary else Color.White
+                                    FitScreenIcon(
+                                        tint = if (aspectMode != PlayerAspectMode.FIT) DarkPrimary else Color.White,
+                                        size = 21.dp
                                     )
                                 }
                             }
@@ -748,11 +828,13 @@ private fun TopToolChip(
     tool: TopToolItem,
     playbackSpeed: Float,
     repeatMode: Int,
+    quickZoomScale: Float,
     isRotated: Boolean,
     isMuted: Boolean,
     sleepMinutesRemaining: Int?,
     isBackgroundPlayEnabled: Boolean,
     showSpeedPicker: Boolean,
+    onZoomClick: () -> Unit,
     onRotate: () -> Unit,
     onSpeedClick: () -> Unit,
     onLoopClick: () -> Unit,
@@ -762,6 +844,11 @@ private fun TopToolChip(
     onTracksClick: () -> Unit
 ) {
     val (icon, label, active) = when (tool) {
+        TopToolItem.ZOOM -> Triple(
+            Icons.Rounded.ZoomIn,
+            if (abs(quickZoomScale - 1.0f) > 0.05f) "${quickZoomScale}x" else "Zoom",
+            abs(quickZoomScale - 1.0f) > 0.05f
+        )
         TopToolItem.ROTATE -> Triple(Icons.Rounded.ScreenRotation, "Rotate", isRotated)
         TopToolItem.SPEED -> Triple(Icons.Rounded.Speed, "${playbackSpeed}x", abs(playbackSpeed - 1f) > 0.01f || showSpeedPicker)
         TopToolItem.LOOP -> Triple(
@@ -788,6 +875,7 @@ private fun TopToolChip(
     }
 
     val onClick = when (tool) {
+        TopToolItem.ZOOM -> onZoomClick
         TopToolItem.ROTATE -> onRotate
         TopToolItem.SPEED -> onSpeedClick
         TopToolItem.LOOP -> onLoopClick

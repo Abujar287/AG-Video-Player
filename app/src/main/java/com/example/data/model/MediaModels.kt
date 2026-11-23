@@ -65,6 +65,7 @@ enum class DoubleClickAction(val label: String) {
 }
 
 enum class PlayerControlButton(val label: String) {
+    ZOOM("Quick Zoom"),
     FIT("Fit / Full"),
     ROTATE("Rotate"),
     SPEED("Speed"),
@@ -77,6 +78,11 @@ enum class PlayerControlButton(val label: String) {
     LOCK("Lock"),
     PREV_NEXT("Prev / Next"),
     PIP("PiP")
+}
+
+enum class ProgressBarStyle(val label: String) {
+    MATERIAL("Material"),
+    FLAT("Flat")
 }
 
 enum class PlayerAspectMode(val label: String) {
@@ -104,6 +110,7 @@ data class UserPreferences(
     val showHiddenFiles: Boolean = false,
     val mainDisplayMode: String = "folders",
     val mainViewLayout: String = "list",
+    val progressBarStyle: ProgressBarStyle = ProgressBarStyle.MATERIAL,
     val oneFingerGesture: String = "Brightness / Volume Swipe",
     val twoFingerGesture: String = "Zoom / Scale",
     val threeFingerGesture: String = "Play / Pause",

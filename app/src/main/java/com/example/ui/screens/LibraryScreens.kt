@@ -183,7 +183,8 @@ fun LibraryBrowserScreen(
     onTwoFingerGestureChange: (String) -> Unit,
     onThreeFingerGestureChange: (String) -> Unit,
     onTogglePlayerButtonVisibility: (com.example.data.model.PlayerControlButton, Boolean) -> Unit,
-    onShowAllButtons: () -> Unit
+    onShowAllButtons: () -> Unit,
+    onProgressBarStyleChange: (com.example.data.model.ProgressBarStyle) -> Unit
 ) {
     val context = LocalContext.current
     val snackbarHostState = remember { SnackbarHostState() }
@@ -632,7 +633,9 @@ fun LibraryBrowserScreen(
             hasAvailableUpdate = hasAvailableUpdate,
             onDismiss = { showControlSettings = false },
             onRefreshLibrary = onRefresh,
+            onToggleTheme = onToggleTheme,
             onOpenUpdateCheck = onOpenUpdateCheck,
+            onProgressBarStyleChange = onProgressBarStyleChange,
             onSingleClickActionChange = onSingleClickActionChange,
             onDoubleClickActionChange = onDoubleClickActionChange,
             onAlwaysBackgroundPlayChange = onAlwaysBackgroundPlayChange,

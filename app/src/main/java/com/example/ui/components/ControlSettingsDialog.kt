@@ -1,6 +1,8 @@
 package com.example.ui.components
 
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -9,7 +11,6 @@ import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -19,18 +20,19 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
+import androidx.compose.material.icons.automirrored.rounded.VolumeUp
+import androidx.compose.material.icons.rounded.ArrowDropDown
 import androidx.compose.material.icons.rounded.Check
-import androidx.compose.material.icons.rounded.CheckCircle
-import androidx.compose.material.icons.rounded.Close
-import androidx.compose.material.icons.rounded.FastForward
+import androidx.compose.material.icons.rounded.CheckBox
+import androidx.compose.material.icons.rounded.CheckBoxOutlineBlank
+import androidx.compose.material.icons.rounded.DarkMode
 import androidx.compose.material.icons.rounded.Headphones
+import androidx.compose.material.icons.rounded.LightMode
 import androidx.compose.material.icons.rounded.Lock
 import androidx.compose.material.icons.rounded.Memory
 import androidx.compose.material.icons.rounded.Menu
 import androidx.compose.material.icons.rounded.NightsStay
-import androidx.compose.material.icons.rounded.OpenInFull
 import androidx.compose.material.icons.rounded.PictureInPictureAlt
-import androidx.compose.material.icons.rounded.RadioButtonUnchecked
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.Repeat
 import androidx.compose.material.icons.rounded.ScreenRotation
@@ -39,8 +41,9 @@ import androidx.compose.material.icons.rounded.Speed
 import androidx.compose.material.icons.rounded.Subtitles
 import androidx.compose.material.icons.rounded.TouchApp
 import androidx.compose.material.icons.rounded.Tune
-import androidx.compose.material.icons.rounded.Visibility
-import androidx.compose.material.icons.rounded.VolumeUp
+import androidx.compose.material.icons.rounded.ZoomIn
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -57,14 +60,24 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.StrokeJoin
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import com.example.data.model.DoubleClickAction
 import com.example.data.model.PlayerControlButton
+import com.example.data.model.ProgressBarStyle
 import com.example.data.model.SingleClickAction
 import com.example.data.model.UserPreferences
 
@@ -73,11 +86,73 @@ private enum class SettingsTab(
     val subtitle: String,
     val icon: ImageVector
 ) {
-    MENU("Menu", "Default entry mode, layout & hidden files", Icons.Rounded.Menu),
-    UPDATE("Check Update", "GitHub version & APK download", Icons.Rounded.Refresh),
-    PLAYBACK("Playback & Background", "Background play, PiP & SW decoder", Icons.Rounded.Headphones),
-    GESTURES("Tap & Swipe Control", "Finger gestures, single/double click & swipe", Icons.Rounded.TouchApp),
-    BUTTONS("Play Screen Buttons", "Show or hide video overlay buttons", Icons.Rounded.Visibility)
+    MENU("Menu", "Theme, entry mode, layout & hidden files", Icons.Rounded.Menu),
+    CONTROLS("Controls", "Progress bar style, screen buttons, shortcuts & gestures", Icons.Rounded.TouchApp),
+    PLAYBACK("Playback & Background", "Background audio play, PiP & SW decoder", Icons.Rounded.Headphones),
+    UPDATE("Check Update", "GitHub version & APK download", Icons.Rounded.Refresh)
+}
+
+private val QUICK_SHORTCUT_BUTTONS = listOf(
+    PlayerControlButton.ZOOM,
+    PlayerControlButton.MUTE,
+    PlayerControlButton.ROTATE,
+    PlayerControlButton.SPEED,
+    PlayerControlButton.LOOP,
+    PlayerControlButton.SLEEP,
+    PlayerControlButton.BG_PLAY,
+    PlayerControlButton.TRACKS
+)
+
+private val SCREEN_OVERLAY_BUTTONS = listOf(
+    PlayerControlButton.FIT,
+    PlayerControlButton.PIP,
+    PlayerControlButton.LOCK,
+    PlayerControlButton.PREV_NEXT,
+    PlayerControlButton.DECODER
+)
+
+@Composable
+fun FitScreenIcon(
+    tint: Color,
+    modifier: Modifier = Modifier,
+    size: Dp = 20.dp
+) {
+    Canvas(modifier = modifier.size(size)) {
+        val w = this.size.width
+        val h = this.size.height
+        val strokeWidth = w * 0.09f
+        val stroke = Stroke(width = strokeWidth, cap = StrokeCap.Round, join = StrokeJoin.Round)
+
+        // Outer screen frame
+        drawRoundRect(
+            color = tint,
+            topLeft = Offset(w * 0.08f, h * 0.17f),
+            size = Size(w * 0.84f, h * 0.66f),
+            cornerRadius = CornerRadius(w * 0.12f, w * 0.12f),
+            style = stroke
+        )
+
+        // 4 crisp corner fit brackets inside the frame
+        val path = Path().apply {
+            // Top-left
+            moveTo(w * 0.25f, h * 0.43f)
+            lineTo(w * 0.25f, h * 0.33f)
+            lineTo(w * 0.35f, h * 0.33f)
+            // Top-right
+            moveTo(w * 0.65f, h * 0.33f)
+            lineTo(w * 0.75f, h * 0.33f)
+            lineTo(w * 0.75f, h * 0.43f)
+            // Bottom-left
+            moveTo(w * 0.25f, h * 0.57f)
+            lineTo(w * 0.25f, h * 0.67f)
+            lineTo(w * 0.35f, h * 0.67f)
+            // Bottom-right
+            moveTo(w * 0.65f, h * 0.67f)
+            lineTo(w * 0.75f, h * 0.67f)
+            lineTo(w * 0.75f, h * 0.57f)
+        }
+        drawPath(path = path, color = tint, style = stroke)
+    }
 }
 
 @Composable
@@ -87,7 +162,9 @@ fun ControlSettingsDialog(
     hasAvailableUpdate: Boolean,
     onDismiss: () -> Unit,
     onRefreshLibrary: () -> Unit,
+    onToggleTheme: () -> Unit,
     onOpenUpdateCheck: () -> Unit,
+    onProgressBarStyleChange: (ProgressBarStyle) -> Unit,
     onSingleClickActionChange: (SingleClickAction) -> Unit,
     onDoubleClickActionChange: (DoubleClickAction) -> Unit,
     onAlwaysBackgroundPlayChange: (Boolean) -> Unit,
@@ -105,6 +182,7 @@ fun ControlSettingsDialog(
     onShowAllButtons: () -> Unit
 ) {
     var activeTab by remember { mutableStateOf<SettingsTab?>(null) }
+    var styleDropdownExpanded by remember { mutableStateOf(false) }
 
     Dialog(
         onDismissRequest = onDismiss,
@@ -113,7 +191,7 @@ fun ControlSettingsDialog(
         Surface(
             modifier = Modifier
                 .fillMaxWidth(0.92f)
-                .heightIn(max = 620.dp),
+                .heightIn(max = 640.dp),
             shape = RoundedCornerShape(24.dp),
             color = MaterialTheme.colorScheme.surface,
             tonalElevation = 6.dp
@@ -157,19 +235,24 @@ fun ControlSettingsDialog(
                         )
                     }
                     IconButton(onClick = { if (activeTab != null) activeTab = null else onDismiss() }) {
-                        Icon(Icons.Rounded.Close, contentDescription = "Close")
+                        Icon(
+                            imageVector = Icons.Rounded.Refresh,
+                            contentDescription = null,
+                            modifier = Modifier.size(0.dp)
+                        )
+                        Text("✕", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onSurface)
                     }
                 }
 
                 HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.25f))
 
-                // Body (clean normal PlusJakartaSans font throughout)
+                // Body
                 Column(
                     modifier = Modifier
                         .weight(1f, fill = false)
                         .verticalScroll(rememberScrollState())
                         .padding(horizontal = 16.dp, vertical = 14.dp),
-                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
                     when (activeTab) {
                         null -> {
@@ -239,6 +322,40 @@ fun ControlSettingsDialog(
                         }
 
                         SettingsTab.MENU -> {
+                            SettingsGroup(title = "Appearance") {
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clickable { onToggleTheme() }
+                                        .padding(horizontal = 14.dp, vertical = 12.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = if (preferences.isDarkMode) Icons.Rounded.DarkMode else Icons.Rounded.LightMode,
+                                        contentDescription = null,
+                                        tint = MaterialTheme.colorScheme.primary,
+                                        modifier = Modifier.size(20.dp)
+                                    )
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(
+                                            text = "Dark / Light Mode",
+                                            style = MaterialTheme.typography.bodyMedium,
+                                            fontWeight = FontWeight.Medium
+                                        )
+                                        Text(
+                                            text = if (preferences.isDarkMode) "Cinema Dark theme active" else "Crisp Light theme active",
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                    }
+                                    Switch(
+                                        checked = preferences.isDarkMode,
+                                        onCheckedChange = { onToggleTheme() }
+                                    )
+                                }
+                            }
+
                             SettingsGroup(title = "Main Interface & Layout") {
                                 Row(
                                     modifier = Modifier
@@ -298,33 +415,107 @@ fun ControlSettingsDialog(
                             }
                         }
 
-                        SettingsTab.PLAYBACK -> {
-                            SettingsGroup(title = "Playback & Background") {
-                                SettingsSwitchRow(
-                                    title = "Always Background Play",
-                                    subtitle = "Keep playing audio when navigating back or minimizing player",
-                                    checked = preferences.alwaysBackgroundPlay,
-                                    onCheckedChange = onAlwaysBackgroundPlayChange
-                                )
-                                SettingsDivider()
-                                SettingsSwitchRow(
-                                    title = "Auto PiP on Home",
-                                    subtitle = "Open mini player window when pressing Home",
-                                    checked = preferences.autoPipOnHome,
-                                    onCheckedChange = onAutoPipChange
-                                )
-                                SettingsDivider()
-                                SettingsSwitchRow(
-                                    title = "Default SW Decoder",
-                                    subtitle = "Prefer Software decoder instead of Hardware",
-                                    checked = preferences.defaultSoftwareDecoder,
-                                    onCheckedChange = onDefaultSoftwareDecoderChange
+                        SettingsTab.CONTROLS -> {
+                            // 1. Progress Bar Style Dropdown (Material / Flat)
+                            SettingsGroup(title = "Style & Progress Bar") {
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(horizontal = 14.dp, vertical = 12.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                                ) {
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(
+                                            text = "Style Progress Bar",
+                                            style = MaterialTheme.typography.bodyMedium,
+                                            fontWeight = FontWeight.Medium
+                                        )
+                                        Text(
+                                            text = "Choose Material slider or Flat bar in player",
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                    }
+                                    Box {
+                                        Row(
+                                            modifier = Modifier
+                                                .clip(RoundedCornerShape(10.dp))
+                                                .border(
+                                                    width = 1.dp,
+                                                    color = MaterialTheme.colorScheme.outline.copy(alpha = 0.45f),
+                                                    shape = RoundedCornerShape(10.dp)
+                                                )
+                                                .background(MaterialTheme.colorScheme.surface)
+                                                .clickable { styleDropdownExpanded = true }
+                                                .padding(horizontal = 12.dp, vertical = 8.dp),
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                        ) {
+                                            Text(
+                                                text = preferences.progressBarStyle.label,
+                                                style = MaterialTheme.typography.bodySmall,
+                                                fontWeight = FontWeight.SemiBold,
+                                                color = MaterialTheme.colorScheme.primary
+                                            )
+                                            Icon(
+                                                imageVector = Icons.Rounded.ArrowDropDown,
+                                                contentDescription = "Select progress bar style",
+                                                tint = MaterialTheme.colorScheme.primary,
+                                                modifier = Modifier.size(18.dp)
+                                            )
+                                        }
+                                        DropdownMenu(
+                                            expanded = styleDropdownExpanded,
+                                            onDismissRequest = { styleDropdownExpanded = false }
+                                        ) {
+                                            ProgressBarStyle.entries.forEach { style ->
+                                                DropdownMenuItem(
+                                                    text = {
+                                                        Row(
+                                                            verticalAlignment = Alignment.CenterVertically,
+                                                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                                        ) {
+                                                            Text(style.label)
+                                                            if (preferences.progressBarStyle == style) {
+                                                                Icon(
+                                                                    imageVector = Icons.Rounded.Check,
+                                                                    contentDescription = null,
+                                                                    tint = MaterialTheme.colorScheme.primary,
+                                                                    modifier = Modifier.size(16.dp)
+                                                                )
+                                                            }
+                                                        }
+                                                    },
+                                                    onClick = {
+                                                        onProgressBarStyleChange(style)
+                                                        styleDropdownExpanded = false
+                                                    }
+                                                )
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+
+                            // 2. Quick Shortcut Icons (paired above Tap & Swipe Gestures)
+                            SettingsGroup(
+                                title = "Quick Shortcut Icons",
+                                action = {
+                                    TextButton(onClick = onShowAllButtons) {
+                                        Text("Show All", style = MaterialTheme.typography.labelLarge)
+                                    }
+                                }
+                            ) {
+                                TickButtonGrid(
+                                    buttons = QUICK_SHORTCUT_BUTTONS,
+                                    preferences = preferences,
+                                    onToggle = onTogglePlayerButtonVisibility
                                 )
                             }
-                        }
 
-                        SettingsTab.GESTURES -> {
-                            SettingsGroup(title = "Tap & Swipe Controls") {
+                            // 3. Tap & Swipe Gestures
+                            SettingsGroup(title = "Tap & Swipe Gestures") {
                                 Column(
                                     modifier = Modifier.padding(14.dp),
                                     verticalArrangement = Arrangement.spacedBy(12.dp)
@@ -420,69 +611,73 @@ fun ControlSettingsDialog(
                                     }
                                 }
                             }
+
+                            // 4. On-Screen Buttons & Dedicated Toggles
+                            SettingsGroup(title = "On-Screen Buttons & Options") {
+                                TickButtonGrid(
+                                    buttons = SCREEN_OVERLAY_BUTTONS,
+                                    preferences = preferences,
+                                    onToggle = onTogglePlayerButtonVisibility
+                                )
+                                SettingsDivider()
+                                SettingsSwitchRow(
+                                    title = "Quick Zoom",
+                                    subtitle = "Show Quick Zoom button (1x → 1.25x → 1.5x → 2x)",
+                                    checked = preferences.isButtonVisible(PlayerControlButton.ZOOM),
+                                    onCheckedChange = { onTogglePlayerButtonVisibility(PlayerControlButton.ZOOM, it) }
+                                )
+                                SettingsDivider()
+                                SettingsSwitchRow(
+                                    title = "Mute Button",
+                                    subtitle = "Keep Mute / Unmute icon on the player screen",
+                                    checked = preferences.isButtonVisible(PlayerControlButton.MUTE),
+                                    onCheckedChange = { onTogglePlayerButtonVisibility(PlayerControlButton.MUTE, it) }
+                                )
+                                SettingsDivider()
+                                SettingsSwitchRow(
+                                    title = "Picture-in-Picture Mode",
+                                    subtitle = "Show PiP button & auto-enter mini window on Home",
+                                    checked = preferences.isButtonVisible(PlayerControlButton.PIP) && preferences.autoPipOnHome,
+                                    onCheckedChange = { enabled ->
+                                        onTogglePlayerButtonVisibility(PlayerControlButton.PIP, enabled)
+                                        onAutoPipChange(enabled)
+                                    }
+                                )
+                                SettingsDivider()
+                                SettingsSwitchRow(
+                                    title = "Background Play Audio",
+                                    subtitle = "Keep audio playing when leaving video screen",
+                                    checked = preferences.alwaysBackgroundPlay,
+                                    onCheckedChange = { enabled ->
+                                        onAlwaysBackgroundPlayChange(enabled)
+                                        onTogglePlayerButtonVisibility(PlayerControlButton.BG_PLAY, enabled)
+                                    }
+                                )
+                            }
                         }
 
-                        SettingsTab.BUTTONS -> {
-                            SettingsGroup(
-                                title = "Player Screen Buttons",
-                                action = {
-                                    TextButton(onClick = onShowAllButtons) {
-                                        Text("Show All", style = MaterialTheme.typography.labelLarge)
-                                    }
-                                }
-                            ) {
-                                Column(
-                                    modifier = Modifier.padding(10.dp),
-                                    verticalArrangement = Arrangement.spacedBy(6.dp)
-                                ) {
-                                    val buttons = PlayerControlButton.entries
-                                    buttons.chunked(2).forEach { pair ->
-                                        Row(
-                                            modifier = Modifier.fillMaxWidth(),
-                                            horizontalArrangement = Arrangement.spacedBy(6.dp)
-                                        ) {
-                                            pair.forEach { btn ->
-                                                val enabled = preferences.isButtonVisible(btn)
-                                                Row(
-                                                    modifier = Modifier
-                                                        .weight(1f)
-                                                        .clip(RoundedCornerShape(10.dp))
-                                                        .background(
-                                                            if (enabled) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.7f)
-                                                            else MaterialTheme.colorScheme.surface.copy(alpha = 0.7f)
-                                                        )
-                                                        .clickable { onTogglePlayerButtonVisibility(btn, !enabled) }
-                                                        .padding(horizontal = 10.dp, vertical = 10.dp),
-                                                    verticalAlignment = Alignment.CenterVertically,
-                                                    horizontalArrangement = Arrangement.spacedBy(6.dp)
-                                                ) {
-                                                    Icon(
-                                                        imageVector = iconForPlayerButton(btn),
-                                                        contentDescription = null,
-                                                        tint = if (enabled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
-                                                        modifier = Modifier.size(16.dp)
-                                                    )
-                                                    Text(
-                                                        text = btn.label,
-                                                        style = MaterialTheme.typography.bodySmall,
-                                                        fontWeight = if (enabled) FontWeight.SemiBold else FontWeight.Normal,
-                                                        color = if (enabled) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant,
-                                                        maxLines = 1,
-                                                        overflow = TextOverflow.Ellipsis,
-                                                        modifier = Modifier.weight(1f)
-                                                    )
-                                                    Icon(
-                                                        imageVector = if (enabled) Icons.Rounded.CheckCircle else Icons.Rounded.RadioButtonUnchecked,
-                                                        contentDescription = null,
-                                                        tint = if (enabled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
-                                                        modifier = Modifier.size(16.dp)
-                                                    )
-                                                }
-                                            }
-                                            if (pair.size == 1) Spacer(Modifier.weight(1f))
-                                        }
-                                    }
-                                }
+                        SettingsTab.PLAYBACK -> {
+                            SettingsGroup(title = "Playback & Background") {
+                                SettingsSwitchRow(
+                                    title = "Always Background Play",
+                                    subtitle = "Keep playing audio when navigating back or minimizing player",
+                                    checked = preferences.alwaysBackgroundPlay,
+                                    onCheckedChange = onAlwaysBackgroundPlayChange
+                                )
+                                SettingsDivider()
+                                SettingsSwitchRow(
+                                    title = "Auto PiP on Home",
+                                    subtitle = "Open mini player window when pressing Home",
+                                    checked = preferences.autoPipOnHome,
+                                    onCheckedChange = onAutoPipChange
+                                )
+                                SettingsDivider()
+                                SettingsSwitchRow(
+                                    title = "Default SW Decoder",
+                                    subtitle = "Prefer Software decoder instead of Hardware",
+                                    checked = preferences.defaultSoftwareDecoder,
+                                    onCheckedChange = onDefaultSoftwareDecoderChange
+                                )
                             }
                         }
 
@@ -526,12 +721,77 @@ fun ControlSettingsDialog(
     }
 }
 
+@Composable
+private fun TickButtonGrid(
+    buttons: List<PlayerControlButton>,
+    preferences: UserPreferences,
+    onToggle: (PlayerControlButton, Boolean) -> Unit
+) {
+    Column(
+        modifier = Modifier.padding(10.dp),
+        verticalArrangement = Arrangement.spacedBy(6.dp)
+    ) {
+        buttons.chunked(2).forEach { pair ->
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                pair.forEach { btn ->
+                    val enabled = preferences.isButtonVisible(btn)
+                    val iconTint = if (enabled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                    Row(
+                        modifier = Modifier
+                            .weight(1f)
+                            .clip(RoundedCornerShape(10.dp))
+                            .background(
+                                if (enabled) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.7f)
+                                else MaterialTheme.colorScheme.surface.copy(alpha = 0.7f)
+                            )
+                            .clickable { onToggle(btn, !enabled) }
+                            .padding(horizontal = 10.dp, vertical = 10.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        if (btn == PlayerControlButton.FIT) {
+                            FitScreenIcon(tint = iconTint, size = 16.dp)
+                        } else {
+                            Icon(
+                                imageVector = iconForPlayerButton(btn),
+                                contentDescription = null,
+                                tint = iconTint,
+                                modifier = Modifier.size(16.dp)
+                            )
+                        }
+                        Text(
+                            text = btn.label,
+                            style = MaterialTheme.typography.bodySmall,
+                            fontWeight = if (enabled) FontWeight.SemiBold else FontWeight.Normal,
+                            color = if (enabled) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.weight(1f)
+                        )
+                        Icon(
+                            imageVector = if (enabled) Icons.Rounded.CheckBox else Icons.Rounded.CheckBoxOutlineBlank,
+                            contentDescription = null,
+                            tint = if (enabled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
+                            modifier = Modifier.size(16.dp)
+                        )
+                    }
+                }
+                if (pair.size == 1) Spacer(Modifier.weight(1f))
+            }
+        }
+    }
+}
+
 private fun iconForPlayerButton(btn: PlayerControlButton): ImageVector = when (btn) {
-    PlayerControlButton.FIT -> Icons.Rounded.OpenInFull
+    PlayerControlButton.ZOOM -> Icons.Rounded.ZoomIn
+    PlayerControlButton.FIT -> Icons.Rounded.ZoomIn
     PlayerControlButton.ROTATE -> Icons.Rounded.ScreenRotation
     PlayerControlButton.SPEED -> Icons.Rounded.Speed
     PlayerControlButton.LOOP -> Icons.Rounded.Repeat
-    PlayerControlButton.MUTE -> Icons.Rounded.VolumeUp
+    PlayerControlButton.MUTE -> Icons.AutoMirrored.Rounded.VolumeUp
     PlayerControlButton.SLEEP -> Icons.Rounded.NightsStay
     PlayerControlButton.BG_PLAY -> Icons.Rounded.Headphones
     PlayerControlButton.TRACKS -> Icons.Rounded.Subtitles
