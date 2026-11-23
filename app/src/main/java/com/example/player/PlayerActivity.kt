@@ -49,6 +49,7 @@ import androidx.core.content.ContextCompat
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
+import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
 import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
@@ -72,6 +73,8 @@ import com.example.data.repository.PlaybackRepository
 import com.example.data.repository.UserPreferencesRepository
 import com.example.ui.theme.VeloPlayTheme
 import com.example.util.FormatUtils
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
@@ -90,6 +93,8 @@ class PlayerActivity : ComponentActivity() {
     private var isPlayingForPip: Boolean = true
     private var useSoftwareDecoderState by mutableStateOf(false)
     private var isInPipModeState by mutableStateOf(false)
+    private var wasInPipMode: Boolean = false
+    private var isClosingFromPipDismiss: Boolean = false
     private var externalSubUri: Uri? = null
     private var onSubtitleAddedBanner: ((String) -> Unit)? = null
 
@@ -99,19 +104,35 @@ class PlayerActivity : ComponentActivity() {
     private var hasAudioFocus: Boolean = false
     private var ownTransitionUntilMs: Long = 0L
     private var lastMediaPlaybackCount: Int = 0
+    private var isMutedForFocus: Boolean = false
+    private var isDuckedByFocus: Boolean = false
 
     private val audioFocusChangeListener = AudioManager.OnAudioFocusChangeListener { focusChange ->
         when (focusChange) {
-            AudioManager.AUDIOFOCUS_LOSS,
-            AudioManager.AUDIOFOCUS_LOSS_TRANSIENT,
+            AudioManager.AUDIOFOCUS_LOSS -> {
+                isDuckedByFocus = false
+                pauseImmediatelyFromAudioInterruption(abandonFocus = true)
+            }
+            AudioManager.AUDIOFOCUS_LOSS_TRANSIENT -> {
+                isDuckedByFocus = false
+                pauseImmediatelyFromAudioInterruption(abandonFocus = false)
+            }
             AudioManager.AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK -> {
-                pauseImmediatelyFromAudioInterruption(
-                    abandonFocus = (focusChange == AudioManager.AUDIOFOCUS_LOSS)
-                )
+                // Keep playing through short notification chimes; softly duck and restore on GAIN
+                runOnMainImmediate {
+                    isDuckedByFocus = true
+                    exoPlayer?.volume = if (isMutedForFocus) 0f else 0.25f
+                }
             }
             AudioManager.AUDIOFOCUS_GAIN -> {
-                // Keep paused so user resumes manually without fighting calls/other apps
-                hasAudioFocus = true
+                // Keep paused if paused by call/media; only restore volume if ducked
+                runOnMainImmediate {
+                    hasAudioFocus = true
+                    if (isDuckedByFocus) {
+                        isDuckedByFocus = false
+                        exoPlayer?.volume = if (isMutedForFocus) 0f else 1f
+                    }
+                }
             }
         }
     }
@@ -126,14 +147,12 @@ class PlayerActivity : ComponentActivity() {
                         val usage = cfg.audioAttributes.usage
                         usage == PlatformAudioAttributes.USAGE_VOICE_COMMUNICATION ||
                             usage == PlatformAudioAttributes.USAGE_VOICE_COMMUNICATION_SIGNALLING ||
-                            usage == PlatformAudioAttributes.USAGE_NOTIFICATION_RINGTONE ||
-                            usage == PlatformAudioAttributes.USAGE_ALARM
+                            usage == PlatformAudioAttributes.USAGE_NOTIFICATION_RINGTONE
                     }
                     val mediaCount = list.count { cfg ->
                         val usage = cfg.audioAttributes.usage
                         usage == PlatformAudioAttributes.USAGE_MEDIA ||
-                            usage == PlatformAudioAttributes.USAGE_GAME ||
-                            usage == PlatformAudioAttributes.USAGE_UNKNOWN
+                            usage == PlatformAudioAttributes.USAGE_GAME
                     }
                     val externalMediaAppeared = mediaCount >= 2 &&
                         mediaCount > lastMediaPlaybackCount &&
@@ -259,6 +278,8 @@ class PlayerActivity : ComponentActivity() {
                 loudnessEnhancer?.release()
                 loudnessEnhancer = null
 
+                isMutedForFocus = isMuted
+                isDuckedByFocus = false
                 val player = ExoPlayer.Builder(this@PlayerActivity)
                     .setRenderersFactory(DecoderModeSelector.buildRenderersFactory(this@PlayerActivity, software))
                     .setAudioAttributes(
@@ -270,6 +291,9 @@ class PlayerActivity : ComponentActivity() {
                     )
                     .setHandleAudioBecomingNoisy(true)
                     .build()
+                    .apply {
+                        volume = if (isMuted) 0f else 1f
+                    }
 
                 exoPlayer = player
                 playerViewRef?.player = player
@@ -332,6 +356,7 @@ class PlayerActivity : ComponentActivity() {
                     override fun onIsPlayingChanged(playing: Boolean) {
                         isPlaying = playing
                         isPlayingForPip = playing
+                        if (isClosingFromPipDismiss) return
                         updatePipParamsIfNeeded()
                         updateMediaNotification(playingNow = playing)
                     }
@@ -456,14 +481,20 @@ class PlayerActivity : ComponentActivity() {
                 val clamped = nextPct.coerceIn(0, 200)
                 if (clamped > 0) lastNonZeroVolume = clamped
                 volumePercent = clamped
-                isMuted = clamped == 0
+                val mutedNow = clamped == 0
+                isMuted = mutedNow
+                isMutedForFocus = mutedNow
 
                 val am = getSystemService(Context.AUDIO_SERVICE) as AudioManager
                 val maxSys = am.getStreamMaxVolume(AudioManager.STREAM_MUSIC).coerceAtLeast(1)
                 val targetSys = ((clamped.coerceAtMost(100) / 100f) * maxSys).toInt().coerceIn(0, maxSys)
                 runCatching { am.setStreamVolume(AudioManager.STREAM_MUSIC, targetSys, 0) }
 
-                exoPlayer?.volume = if (clamped == 0) 0f else 1f
+                exoPlayer?.volume = when {
+                    mutedNow -> 0f
+                    isDuckedByFocus -> 0.25f
+                    else -> 1f
+                }
                 runCatching {
                     loudnessEnhancer?.apply {
                         val gain = ((clamped - 100) * 15).coerceIn(0, 1500)
@@ -713,24 +744,81 @@ class PlayerActivity : ComponentActivity() {
         }
     }
 
+    override fun onResume() {
+        super.onResume()
+        wasInPipMode = false
+        isClosingFromPipDismiss = false
+        hideSystemBars()
+    }
+
     override fun onPictureInPictureModeChanged(isInPictureInPictureMode: Boolean, newConfig: Configuration) {
         super.onPictureInPictureModeChanged(isInPictureInPictureMode, newConfig)
         isInPipModeState = isInPictureInPictureMode
         if (isInPictureInPictureMode) {
+            wasInPipMode = true
+            isClosingFromPipDismiss = false
             updatePipParamsIfNeeded()
         } else {
-            hideSystemBars()
+            if (!lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED)) {
+                stopPlaybackOnPipDismissed()
+            } else {
+                hideSystemBars()
+            }
         }
     }
 
     override fun onStop() {
         super.onStop()
-        lifecycleScope.launch { persistPlaybackSnapshot(exoPlayer?.playbackParameters?.speed ?: 1f) }
+        val currentSpeed = exoPlayer?.playbackParameters?.speed ?: 1f
+        val inPipNow = isInPipModeState && (Build.VERSION.SDK_INT < Build.VERSION_CODES.N || isInPictureInPictureMode)
+        if (!inPipNow && wasInPipMode) {
+            stopPlaybackOnPipDismissed(currentSpeed)
+            return
+        }
+        lifecycleScope.launch { persistPlaybackSnapshot(currentSpeed) }
         val prefs = runCatching {
             kotlinx.coroutines.runBlocking { prefsRepo.preferencesFlow.first() }
         }.getOrNull()
-        if (!isInPipModeState && prefs?.alwaysBackgroundPlay != true) {
+        if (!inPipNow && prefs?.alwaysBackgroundPlay != true) {
             exoPlayer?.pause()
+            isPlayingForPip = false
+            updateMediaNotification(playingNow = false)
+        }
+    }
+
+    private fun stopPlaybackOnPipDismissed(speedOverride: Float? = null) {
+        if (isClosingFromPipDismiss) return
+        isClosingFromPipDismiss = true
+        wasInPipMode = false
+        isPlayingForPip = false
+        val player = exoPlayer
+        if (player != null) {
+            val speed = speedOverride ?: player.playbackParameters.speed
+            val entry = playlist.getOrNull(currentIndex)
+            val pos = player.currentPosition
+            val dur = player.duration
+            if (entry != null && dur > 0L) {
+                CoroutineScope(Dispatchers.IO).launch {
+                    runCatching {
+                        playbackRepo.savePlaybackState(
+                            videoUri = entry.uriString,
+                            title = entry.title,
+                            positionMs = pos,
+                            durationMs = dur,
+                            playbackSpeed = speed,
+                            useSoftwareDecoder = useSoftwareDecoderState
+                        )
+                    }
+                }
+            }
+            player.playWhenReady = false
+            player.pause()
+            player.stop()
+        }
+        abandonAppAudioFocus()
+        MediaNotificationHelper.clear(this)
+        if (!isFinishing && !isDestroyed) {
+            finish()
         }
     }
 
@@ -752,9 +840,18 @@ class PlayerActivity : ComponentActivity() {
         super.onDestroy()
     }
 
+    private inline fun runOnMainImmediate(crossinline block: () -> Unit) {
+        if (Looper.myLooper() == Looper.getMainLooper()) {
+            block()
+        } else {
+            mainHandler.postAtFrontOfQueue { block() }
+        }
+    }
+
     private fun pauseImmediatelyFromAudioInterruption(abandonFocus: Boolean) {
-        val action = Runnable {
+        runOnMainImmediate {
             hasAudioFocus = false
+            isDuckedByFocus = false
             val player = exoPlayer
             if (player != null && (player.isPlaying || player.playWhenReady)) {
                 player.pause()
@@ -766,14 +863,10 @@ class PlayerActivity : ComponentActivity() {
                 abandonAppAudioFocus()
             }
         }
-        if (Looper.myLooper() == Looper.getMainLooper()) {
-            action.run()
-        } else {
-            mainHandler.postAtFrontOfQueue(action)
-        }
     }
 
     private fun updateMediaNotification(playingNow: Boolean = exoPlayer?.isPlaying ?: isPlayingForPip) {
+        if (isClosingFromPipDismiss) return
         val entry = playlist.getOrNull(currentIndex) ?: return
         val player = exoPlayer
         val hasPrevious = (player?.hasPreviousMediaItem() == true) || currentIndex > 0

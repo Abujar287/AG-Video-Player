@@ -310,7 +310,16 @@ export function PlayerScreen({
     const video = videoRef.current;
     if (!video) return;
     const onEnterPip = () => setIsInPip(true);
-    const onLeavePip = () => setIsInPip(false);
+    const onLeavePip = () => {
+      setIsInPip(false);
+      if (document.hidden && !video.paused) {
+        video.pause();
+        setIsPlaying(false);
+        if ('mediaSession' in navigator) {
+          navigator.mediaSession.playbackState = 'paused';
+        }
+      }
+    };
     video.addEventListener('enterpictureinpicture', onEnterPip);
     video.addEventListener('leavepictureinpicture', onLeavePip);
     return () => {

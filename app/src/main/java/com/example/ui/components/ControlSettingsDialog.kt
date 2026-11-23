@@ -232,7 +232,7 @@ fun ControlSettingsDialog(
                             overflow = TextOverflow.Ellipsis
                         )
                         Text(
-                            text = activeTab?.subtitle ?: "Tap a category to configure · $currentVersionLabel",
+                            text = activeTab?.subtitle ?: currentVersionLabel,
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             maxLines = 1,

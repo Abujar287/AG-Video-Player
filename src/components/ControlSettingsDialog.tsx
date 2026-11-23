@@ -246,7 +246,7 @@ export function ControlSettingsDialog({
               {activeTabMeta?.title ?? 'Settings'}
             </h2>
             <p className="truncate text-xs text-[var(--text-muted)]">
-              {activeTabMeta?.subtitle ?? `Tap a category to configure · ${currentVersionLabel}`}
+              {activeTabMeta?.subtitle ?? currentVersionLabel}
             </p>
           </div>
           <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[var(--primary)]/15 text-[var(--primary)]">
