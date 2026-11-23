@@ -5,7 +5,6 @@ import {
   CheckSquare,
   ChevronRight,
   Cpu,
-  FolderOpen,
   Gauge,
   Headphones,
   Lock,
@@ -34,6 +33,22 @@ import {
   SingleClickAction,
   type UserPreferences,
 } from '../types/media';
+
+const THEME_PRESETS = [
+  { name: 'Teal Mint', primary: '#2dd4bf', container: '#0f3d39' },
+  { name: 'Emerald', primary: '#10b981', container: '#064e3b' },
+  { name: 'Amber', primary: '#f59e0b', container: '#452a04' },
+  { name: 'Purple', primary: '#a855f7', container: '#3b0764' },
+  { name: 'Neon Pink', primary: '#ec4899', container: '#500724' },
+  { name: 'Ocean Blue', primary: '#3b82f6', container: '#1e3a8a' },
+];
+
+function applyCustomTheme(primary: string, container: string) {
+  document.documentElement.style.setProperty('--primary', primary);
+  document.documentElement.style.setProperty('--primary-container', container);
+  localStorage.setItem('ag_custom_primary', primary);
+  localStorage.setItem('ag_custom_container', container);
+}
 
 type SettingsTab = 'MENU' | 'CONTROLS' | 'PLAYBACK' | 'UPDATE';
 
@@ -147,8 +162,6 @@ interface ControlSettingsDialogProps {
   currentVersionLabel: string;
   hasAvailableUpdate: boolean;
   onDismiss: () => void;
-  onRefreshLibrary: () => void;
-  onOpenDocumentPicker: () => void;
   onToggleTheme: () => void;
   onOpenUpdateCheck: () => void;
   onProgressBarStyleChange: (style: ProgressBarStyle) => void;
@@ -174,8 +187,6 @@ export function ControlSettingsDialog({
   currentVersionLabel,
   hasAvailableUpdate,
   onDismiss,
-  onRefreshLibrary,
-  onOpenDocumentPicker,
   onToggleTheme,
   onOpenUpdateCheck,
   onProgressBarStyleChange,
@@ -196,6 +207,24 @@ export function ControlSettingsDialog({
   onShowAllButtons,
 }: ControlSettingsDialogProps) {
   const [activeTab, setActiveTab] = useState<SettingsTab | null>(null);
+  const [selectedPrimary, setSelectedPrimary] = useState(() => 
+    localStorage.getItem('ag_custom_primary') || '#2dd4bf'
+  );
+
+  const applyCustomTheme = (primary: string, container: string) => {
+    document.documentElement.style.setProperty('--primary', primary);
+    document.documentElement.style.setProperty('--primary-container', container);
+    localStorage.setItem('ag_custom_primary', primary);
+    localStorage.setItem('ag_custom_container', container);
+    setSelectedPrimary(primary);
+  };
+
+  const applyRandomTheme = () => {
+    const hue = Math.floor(Math.random() * 360);
+    const primary = `hsl(${hue}, 85%, 55%)`;
+    const container = `hsl(${hue}, 80%, 20%)`;
+    applyCustomTheme(primary, container);
+  };
 
   const activeTabMeta = activeTab ? SETTINGS_TABS.find((t) => t.id === activeTab) ?? null : null;
   const HeaderIcon = activeTabMeta?.icon ?? SlidersHorizontal;
@@ -315,39 +344,40 @@ export function ControlSettingsDialog({
                 </div>
               </button>
               <SettingsDivider />
-              <button
-                type="button"
-                onClick={() => {
-                  onRefreshLibrary();
-                  onDismiss();
-                }}
-                className="flex w-full items-center gap-3 px-3.5 py-3 text-left transition-colors hover:bg-[var(--bg-surface)]/50"
-              >
-                <RefreshCw className="h-5 w-5 shrink-0 text-[var(--primary)]" />
-                <div className="min-w-0 flex-1">
-                  <div className="text-sm font-medium">Refresh Video Library</div>
-                  <div className="text-xs text-[var(--text-muted)]">
-                    Scan storage folders for new videos
-                  </div>
+              <div className="space-y-3 p-3.5">
+                <div className="flex items-center justify-between">
+                  <div className="text-sm font-semibold">Accent Theme & Randomizer</div>
+                  <button
+                    type="button"
+                    onClick={applyRandomTheme}
+                    className="flex items-center gap-1.5 rounded-xl bg-[var(--primary)] px-3 py-1.5 text-xs font-semibold text-[var(--on-primary)] transition-transform active:scale-95"
+                  >
+                    <span>🎲 Random Theme</span>
+                  </button>
                 </div>
-              </button>
-              <SettingsDivider />
-              <button
-                type="button"
-                onClick={() => {
-                  onDismiss();
-                  onOpenDocumentPicker();
-                }}
-                className="flex w-full items-center gap-3 px-3.5 py-3 text-left transition-colors hover:bg-[var(--bg-surface)]/50"
-              >
-                <FolderOpen className="h-5 w-5 shrink-0 text-[var(--primary)]" />
-                <div className="min-w-0 flex-1">
-                  <div className="text-sm font-medium">Open Local Video File(s)</div>
-                  <div className="text-xs text-[var(--text-muted)]">
-                    Import video files from your device into library
-                  </div>
+                <div className="grid grid-cols-3 gap-2 pt-1">
+                  {THEME_PRESETS.map((t) => {
+                    const isSelected = selectedPrimary.toLowerCase() === t.primary.toLowerCase();
+                    return (
+                      <button
+                        key={t.name}
+                        type="button"
+                        onClick={() => applyCustomTheme(t.primary, t.container)}
+                        className={`flex items-center gap-2 rounded-xl px-3 py-2 text-xs font-medium transition-all ${
+                          isSelected
+                            ? 'bg-[var(--primary)] text-[var(--on-primary)] ring-2 ring-white/40 shadow-md font-bold'
+                            : 'bg-[var(--bg-surface-variant)] text-[var(--text-primary)] hover:opacity-90'
+                        }`}
+                      >
+                        <span className="h-3.5 w-3.5 rounded-full shrink-0 border border-white/30" style={{ backgroundColor: t.primary }} />
+                        <span className="truncate flex-1 text-left">{t.name}</span>
+                        {isSelected && <Check className="h-3.5 w-3.5 shrink-0" />}
+                      </button>
+                    );
+                  })}
                 </div>
-              </button>
+              </div>
+
               <SettingsDivider />
               <div className="space-y-3 p-3.5">
                 <div className="text-sm font-semibold">Default Entry Mode</div>

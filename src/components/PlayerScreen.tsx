@@ -959,20 +959,6 @@ export function PlayerScreen({
         onPointerCancel={handlePointerUp}
       />
 
-      {/* Floating On-Screen Back Button when controls are hidden */}
-      {!isLocked && !controlsVisible && (
-        <button
-          type="button"
-          onClick={handleBackClick}
-          aria-label="Turn off video and return"
-          title="Turn off video and return"
-          className="absolute top-3 left-3 z-30 flex h-11 w-11 items-center justify-center rounded-full border border-white/25 bg-black/65 text-white shadow-xl backdrop-blur-md transition-all duration-200 hover:scale-105 hover:bg-black/90 active:scale-95"
-          onPointerDown={(e) => e.stopPropagation()}
-        >
-          <ArrowLeft className="h-5 w-5" />
-        </button>
-      )}
-
       {/* Controls Overlay */}
       <div
         className={`pointer-events-none absolute inset-0 flex flex-col justify-between transition-opacity duration-200 ${
@@ -1269,7 +1255,7 @@ export function PlayerScreen({
               )}
             </div>
 
-            <div className="flex w-24 items-center justify-end gap-1">
+            <div className="flex items-center justify-end gap-1">
               {isBtnVisible(PlayerControlButton.FIT) && (
                 <button
                   type="button"
@@ -1294,6 +1280,15 @@ export function PlayerScreen({
                   <PictureInPicture2 className="h-5 w-5" />
                 </button>
               )}
+              <button
+                type="button"
+                onClick={handleBackClick}
+                aria-label="Back"
+                title="Back"
+                className="flex h-10 w-10 items-center justify-center rounded-full text-white transition-colors hover:bg-white/10"
+              >
+                <ArrowLeft className="h-5 w-5" />
+              </button>
             </div>
           </div>
         </div>

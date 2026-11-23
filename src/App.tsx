@@ -34,6 +34,15 @@ export default function App() {
   const [showExitDialog, setShowExitDialog] = useState(false);
   const [hasExited, setHasExited] = useState(false);
 
+  useEffect(() => {
+    const savedPrimary = localStorage.getItem('ag_custom_primary');
+    const savedContainer = localStorage.getItem('ag_custom_container');
+    if (savedPrimary && savedContainer) {
+      document.documentElement.style.setProperty('--primary', savedPrimary);
+      document.documentElement.style.setProperty('--primary-container', savedContainer);
+    }
+  }, []);
+
   const playerSessionRef = useRef(playerSession);
   playerSessionRef.current = playerSession;
 
