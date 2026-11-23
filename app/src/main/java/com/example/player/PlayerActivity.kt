@@ -395,18 +395,22 @@ class PlayerActivity : ComponentActivity() {
                         },
                         update = { view ->
                             if (view.player !== exoPlayer) view.player = exoPlayer
-                            view.resizeMode = when (aspectMode) {
-                                PlayerAspectMode.FIT -> AspectRatioFrameLayout.RESIZE_MODE_FIT
-                                PlayerAspectMode.FILL -> AspectRatioFrameLayout.RESIZE_MODE_FILL
-                                PlayerAspectMode.ZOOM -> AspectRatioFrameLayout.RESIZE_MODE_ZOOM
+                            view.resizeMode = if (isInPipModeState) {
+                                AspectRatioFrameLayout.RESIZE_MODE_FIT
+                            } else {
+                                when (aspectMode) {
+                                    PlayerAspectMode.FIT -> AspectRatioFrameLayout.RESIZE_MODE_FIT
+                                    PlayerAspectMode.FILL -> AspectRatioFrameLayout.RESIZE_MODE_FILL
+                                    PlayerAspectMode.ZOOM -> AspectRatioFrameLayout.RESIZE_MODE_ZOOM
+                                }
                             }
                         },
                         modifier = Modifier
                             .fillMaxSize()
                             .clipToBounds()
                             .graphicsLayer(
-                                scaleX = quickZoomScale,
-                                scaleY = quickZoomScale
+                                scaleX = if (isInPipModeState) 1.0f else quickZoomScale,
+                                scaleY = if (isInPipModeState) 1.0f else quickZoomScale
                             )
                     )
 
@@ -603,6 +607,8 @@ class PlayerActivity : ComponentActivity() {
         isInPipModeState = isInPictureInPictureMode
         if (isInPictureInPictureMode) {
             updatePipParamsIfNeeded()
+        } else {
+            hideSystemBars()
         }
     }
 
@@ -714,17 +720,13 @@ class PlayerActivity : ComponentActivity() {
             pipControlPendingIntent(CONTROL_TYPE_NEXT, 103)
         ).apply { isEnabled = hasNext }
 
-        val aspect = player?.videoSize?.let { vs ->
-            if (vs.width > 0 && vs.height > 0) {
-                val r = (vs.width.toFloat() / vs.height.toFloat()).coerceIn(0.45f, 2.35f)
-                Rational((r * 100f).toInt(), 100)
-            } else null
-        } ?: Rational(16, 9)
-
-        return PictureInPictureParams.Builder()
-            .setAspectRatio(aspect)
+        val builder = PictureInPictureParams.Builder()
+            .setAspectRatio(PIP_FIXED_ASPECT_RATIO)
             .setActions(listOf(prevAction, playPauseAction, nextAction))
-            .build()
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            builder.setSeamlessResizeEnabled(true)
+        }
+        return builder.build()
     }
 
     private fun pipControlPendingIntent(controlType: Int, requestCode: Int): PendingIntent {
@@ -764,6 +766,7 @@ class PlayerActivity : ComponentActivity() {
     }
 
     companion object {
+        private val PIP_FIXED_ASPECT_RATIO = Rational(16, 9)
         private const val ACTION_PIP_CONTROL = "com.example.player.ACTION_PIP_CONTROL"
         private const val EXTRA_CONTROL_TYPE = "control_type"
         private const val CONTROL_TYPE_PREVIOUS = 1

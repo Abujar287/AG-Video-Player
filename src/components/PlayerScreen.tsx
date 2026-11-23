@@ -126,6 +126,7 @@ export function PlayerScreen({
   const [activeSubtitleId, setActiveSubtitleId] = useState<string | null>(null);
   const [pinchScale, setPinchScale] = useState(1);
   const [isPinching, setIsPinching] = useState(false);
+  const [isInPip, setIsInPip] = useState(false);
 
   // Gesture HUD state
   const [dragMode, setDragMode] = useState<DragMode>('NONE');
@@ -279,21 +280,38 @@ export function PlayerScreen({
         video.currentTime = resumeTargetMs / 1000;
         setCurrentPosMs(resumeTargetMs);
         setStatusBanner(`Resumed from ${formatDuration(resumeTargetMs)}`);
+      } else {
+        setCurrentPosMs(Math.round(video.currentTime * 1000));
       }
       void video.play().catch(() => {
         setIsPlaying(false);
       });
     };
 
-    if (video.readyState >= 1) {
+    const expectedUrl = resolvePlayableUrl(currentEntry.uriString);
+    video.addEventListener('loadedmetadata', handleLoadedMetadata, { once: true });
+    if (video.currentSrc === expectedUrl && video.readyState >= 1) {
+      video.removeEventListener('loadedmetadata', handleLoadedMetadata);
       handleLoadedMetadata();
-    } else {
-      video.addEventListener('loadedmetadata', handleLoadedMetadata, { once: true });
     }
     return () => {
       video.removeEventListener('loadedmetadata', handleLoadedMetadata);
     };
   }, [currentEntry?.uriString]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Track native Picture-in-Picture state to keep fit-center scaling and continuous playback
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!video) return;
+    const onEnterPip = () => setIsInPip(true);
+    const onLeavePip = () => setIsInPip(false);
+    video.addEventListener('enterpictureinpicture', onEnterPip);
+    video.addEventListener('leavepictureinpicture', onLeavePip);
+    return () => {
+      video.removeEventListener('enterpictureinpicture', onEnterPip);
+      video.removeEventListener('leavepictureinpicture', onLeavePip);
+    };
+  }, []);
 
   // Persist snapshot helper
   const persistCurrentSnapshot = useCallback(() => {
@@ -1000,14 +1018,17 @@ export function PlayerScreen({
       {/* Video Surface */}
       <video
         ref={videoRef}
-        key={currentEntry?.uriString}
         src={currentEntry ? resolvePlayableUrl(currentEntry.uriString) : undefined}
         playsInline
         preload="auto"
-        className={`h-full w-full ${isPinching ? '' : 'transition-transform duration-150 '}${objectFitClass}`}
+        className={`h-full w-full ${isPinching ? '' : 'transition-transform duration-150 '}${
+          isInPip ? 'object-contain' : objectFitClass
+        }`}
         style={{
           filter: `brightness(${0.35 + (brightnessPercent / 100) * 0.65})`,
-          transform: `${isRotated ? 'rotate(90deg) ' : ''}scale(${pinchScale})`,
+          transform: isInPip
+            ? 'scale(1)'
+            : `${isRotated ? 'rotate(90deg) ' : ''}scale(${pinchScale})`,
         }}
         onTimeUpdate={(e) => {
           const v = e.currentTarget;
