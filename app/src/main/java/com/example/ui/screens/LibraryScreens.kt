@@ -63,6 +63,7 @@ import androidx.compose.material.icons.rounded.SwapVert
 import androidx.compose.material.icons.rounded.ViewList
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -184,7 +185,9 @@ fun LibraryBrowserScreen(
     onThreeFingerGestureChange: (String) -> Unit,
     onTogglePlayerButtonVisibility: (com.example.data.model.PlayerControlButton, Boolean) -> Unit,
     onShowAllButtons: () -> Unit,
-    onProgressBarStyleChange: (com.example.data.model.ProgressBarStyle) -> Unit
+    onProgressBarStyleChange: (com.example.data.model.ProgressBarStyle) -> Unit,
+    onStartDownload: (com.example.data.model.GitHubReleaseInfo) -> Unit,
+    onInstallUpdate: (String) -> Unit
 ) {
     val context = LocalContext.current
     val snackbarHostState = remember { SnackbarHostState() }
@@ -659,7 +662,9 @@ fun LibraryBrowserScreen(
             currentVersionLabel = currentAppVersionLabel,
             state = updateState,
             onDismiss = onDismissUpdateDialog,
-            onRetryCheck = onOpenUpdateCheck
+            onRetryCheck = onOpenUpdateCheck,
+            onStartDownload = onStartDownload,
+            onInstallUpdate = onInstallUpdate
         )
     }
 
@@ -701,7 +706,11 @@ fun LibraryBrowserScreen(
     deleteTargetVideos?.let { list ->
         DeleteConfirmDialog(
             videos = list,
-            onConfirm = onDeleteVideos,
+            onConfirm = { targets ->
+                onDeleteVideos(targets)
+                onClearSelection()
+                deleteTargetVideos = null
+            },
             onDismiss = { deleteTargetVideos = null }
         )
     }
@@ -1461,12 +1470,16 @@ private fun DeleteConfirmDialog(
     onConfirm: (List<VideoItem>) -> Unit,
     onDismiss: () -> Unit
 ) {
+    val titleText = if (videos.size == 1) "Are you sure to delete file" else "Are you sure to delete ${videos.size} files"
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Delete ${videos.size} video(s)?", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold) },
-        text = { Text("Selected video files will be permanently removed from storage.") },
+        title = { Text(titleText, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold) },
+        text = { Text("This file will be permanently removed from storage.") },
         confirmButton = {
-            Button(onClick = { onConfirm(videos); onDismiss() }) { Text("Delete") }
+            Button(
+                onClick = { onConfirm(videos); onDismiss() },
+                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
+            ) { Text("Delete") }
         },
         dismissButton = {
             TextButton(onClick = onDismiss) { Text("Cancel") }

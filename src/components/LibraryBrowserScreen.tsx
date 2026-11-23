@@ -679,7 +679,11 @@ export function LibraryBrowserScreen(props: LibraryBrowserScreenProps) {
       {deleteTargetVideos && (
         <DeleteConfirmDialog
           videos={deleteTargetVideos}
-          onConfirm={props.onDeleteVideos}
+          onConfirm={(targets) => {
+            props.onDeleteVideos(targets);
+            props.onClearSelection();
+            setDeleteTargetVideos(null);
+          }}
           onDismiss={() => setDeleteTargetVideos(null)}
         />
       )}

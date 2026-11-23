@@ -1,9 +1,10 @@
-import { useRef, useState } from 'react';
-import { Headphones, Pause, Play, X } from 'lucide-react';
+import { useEffect, useRef, useState } from 'react';
+import { Headphones, LogOut, Pause, Play, RefreshCw, X } from 'lucide-react';
 import type { PlaylistEntry, VideoItem } from './types/media';
 import { useLibraryState } from './hooks/useLibraryState';
 import { LibraryBrowserScreen } from './components/LibraryBrowserScreen';
 import { PlayerScreen } from './components/PlayerScreen';
+import { ExitConfirmDialog } from './components/LibraryDialogs';
 import { resolvePlayableUrl } from './repositories/videoLibraryRepository';
 
 interface ActivePlayerSession {
@@ -30,6 +31,51 @@ export default function App() {
   const [playerSession, setPlayerSession] = useState<ActivePlayerSession | null>(null);
   const [bgSession, setBgSession] = useState<BackgroundAudioSession | null>(null);
   const [actionMessageOverride, setActionMessageOverride] = useState<string | null>(null);
+  const [showExitDialog, setShowExitDialog] = useState(false);
+  const [hasExited, setHasExited] = useState(false);
+
+  const playerSessionRef = useRef(playerSession);
+  playerSessionRef.current = playerSession;
+
+  const selectedUrisRef = useRef(lib.selectedVideoUris);
+  selectedUrisRef.current = lib.selectedVideoUris;
+
+  const destinationRef = useRef(lib.destination);
+  destinationRef.current = lib.destination;
+
+  // Intercept browser / mobile phone back gestures:
+  // 1. If player open -> close player and return to folder
+  // 2. If selection active -> clear selection
+  // 3. If in folder / playlist -> return to root folders
+  // 4. If at root -> show exit dialog ("Are you sure to exit AG Video Player?")
+  useEffect(() => {
+    // Ensure initial history state is marked as root
+    if (!window.history.state || window.history.state.screen !== 'root') {
+      window.history.replaceState({ screen: 'root' }, '');
+    }
+
+    const onPopState = () => {
+      if (playerSessionRef.current) {
+        // Stop video playback and return to the folder / list interface
+        setPlayerSession(null);
+        return;
+      }
+      if (selectedUrisRef.current.size > 0) {
+        lib.clearSelection();
+        return;
+      }
+      if (destinationRef.current.type !== 'folders') {
+        lib.navigateBackToFolders();
+        return;
+      }
+      // At root screen: do NOT exit directly! Prevent page unload and show Exit Dialog
+      window.history.pushState({ screen: 'root' }, '');
+      setShowExitDialog(true);
+    };
+
+    window.addEventListener('popstate', onPopState);
+    return () => window.removeEventListener('popstate', onPopState);
+  }, [lib]);
 
   const openPlayer = (video: VideoItem, list: VideoItem[], initialPositionMs?: number) => {
     // Stop background audio if running
@@ -39,11 +85,27 @@ export default function App() {
     setBgSession(null);
 
     const { entries, startIndex } = lib.buildPlaylistFor(video, list);
+    window.history.pushState({ screen: 'player' }, '');
     setPlayerSession({
       playlist: entries,
       startIndex,
       initialPositionMs,
     });
+  };
+
+  const handleOpenFolder = (folderName: string) => {
+    window.history.pushState({ screen: 'folder', folder: folderName }, '');
+    lib.openFolder(folderName);
+  };
+
+  const handleOpenPlaylist = (name: string) => {
+    window.history.pushState({ screen: 'playlist', playlist: name }, '');
+    lib.openPlaylist(name);
+  };
+
+  const handleOpenFavorites = () => {
+    window.history.pushState({ screen: 'favorites' }, '');
+    lib.openFavorites();
   };
 
   const handleFilesSelected = async (files: FileList | null) => {
@@ -162,9 +224,9 @@ export default function App() {
         onOpenUpdateCheck={() => void lib.openUpdateCheck()}
         onDismissUpdateDialog={lib.dismissUpdateDialog}
         onSearchQueryChange={lib.setSearchQuery}
-        onFolderClick={lib.openFolder}
-        onOpenFavorites={lib.openFavorites}
-        onOpenPlaylist={lib.openPlaylist}
+        onFolderClick={handleOpenFolder}
+        onOpenFavorites={handleOpenFavorites}
+        onOpenPlaylist={handleOpenPlaylist}
         onDeletePlaylist={lib.deletePlaylist}
         onBackToFolders={lib.navigateBackToFolders}
         onVideoClick={(video, list) => openPlayer(video, list)}
@@ -260,6 +322,46 @@ export default function App() {
           onSetDefaultSoftwareDecoder={lib.setDefaultSoftwareDecoder}
           onSetAlwaysBackgroundPlay={lib.setAlwaysBackgroundPlay}
         />
+      )}
+
+      {/* Exit Confirmation Dialog */}
+      {showExitDialog && (
+        <ExitConfirmDialog
+          onDismiss={() => setShowExitDialog(false)}
+          onConfirm={() => {
+            setShowExitDialog(false);
+            setHasExited(true);
+            try {
+              window.close();
+            } catch {
+              // ignore
+            }
+          }}
+        />
+      )}
+
+      {/* Exited View (if tab cannot be closed automatically) */}
+      {hasExited && (
+        <div className="fixed inset-0 z-50 flex flex-col items-center justify-center bg-[#0d1117] p-6 text-white">
+          <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-white/10 text-white mb-4">
+            <LogOut className="h-8 w-8 text-[var(--primary)]" />
+          </div>
+          <h1 className="text-xl font-bold">AG Video Player Exited</h1>
+          <p className="mt-2 text-sm text-[var(--text-muted)] text-center max-w-sm">
+            You have exited the application. You can now safely close this window or tab.
+          </p>
+          <button
+            type="button"
+            onClick={() => {
+              setHasExited(false);
+              window.history.pushState({ screen: 'root' }, '');
+            }}
+            className="mt-6 flex items-center gap-2 rounded-xl bg-[var(--primary)] px-5 py-2.5 text-sm font-semibold text-[var(--on-primary)] hover:opacity-90"
+          >
+            <RefreshCw className="h-4 w-4" />
+            <span>Reopen Player</span>
+          </button>
+        </div>
       )}
     </>
   );

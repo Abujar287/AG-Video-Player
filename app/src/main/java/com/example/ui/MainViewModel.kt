@@ -1,16 +1,19 @@
 package com.example.ui
 
 import android.app.Application
+import android.app.DownloadManager
 import android.content.IntentSender
 import android.net.Uri
 import android.os.Build
 import android.os.Environment
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import android.content.Context
 import com.example.BuildConfig
 import com.example.data.local.PlaybackHistoryEntity
 import com.example.data.model.BrowserDestination
 import com.example.data.model.DoubleClickAction
+import com.example.data.model.GitHubReleaseInfo
 import com.example.data.model.PlayerControlButton
 import com.example.data.model.PlaylistEntry
 import com.example.data.model.ProgressBarStyle
@@ -36,6 +39,8 @@ import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.delay
+import java.io.File
 
 data class PendingMoveRequest(
     val videos: List<VideoItem>,
@@ -318,6 +323,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun deleteVideos(videos: List<VideoItem>) {
+        _selectedVideoUris.value = emptySet()
         viewModelScope.launch {
             val outcome = libraryRepo.deleteVideos(videos)
             if (outcome is MediaMutationOutcome.Success) {
@@ -326,6 +332,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     prefsRepo.removeUriFromCollections(v.uriString)
                 }
             }
+            _selectedVideoUris.value = emptySet()
             handleMutationOutcome(outcome)
         }
     }
@@ -412,6 +419,68 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             _updateState.value = UpdateUiState.Checking
             _updateState.value = GitHubUpdateManager.checkForUpdate(preferences.value.githubRepoSlug)
+        }
+    }
+
+    fun startUpdateDownload(release: GitHubReleaseInfo) {
+        val context = getApplication<Application>()
+        val downloadId = GitHubUpdateManager.startApkDownload(context, release)
+        if (downloadId <= 0L) {
+            _updateState.value = UpdateUiState.Error("Could not start download.")
+            return
+        }
+        viewModelScope.launch {
+            val dm = context.getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager
+            while (true) {
+                val query = DownloadManager.Query().setFilterById(downloadId)
+                val cursor = dm.query(query)
+                if (cursor != null && cursor.moveToFirst()) {
+                    val statusCol = cursor.getColumnIndex(DownloadManager.COLUMN_STATUS)
+                    val downloadedCol = cursor.getColumnIndex(DownloadManager.COLUMN_BYTES_DOWNLOADED_SO_FAR)
+                    val totalCol = cursor.getColumnIndex(DownloadManager.COLUMN_TOTAL_SIZE_BYTES)
+
+                    val status = if (statusCol >= 0) cursor.getInt(statusCol) else DownloadManager.STATUS_FAILED
+                    val bytesDownloaded = if (downloadedCol >= 0) cursor.getLong(downloadedCol) else 0L
+                    val bytesTotal = if (totalCol >= 0) cursor.getLong(totalCol) else 0L
+
+                    cursor.close()
+
+                    when (status) {
+                        DownloadManager.STATUS_SUCCESSFUL -> {
+                            val file = File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS), release.apkFileName.ifBlank { "AG Video Player.apk" })
+                            _updateState.value = UpdateUiState.ReadyToInstall(file.absolutePath)
+                            break
+                        }
+                        DownloadManager.STATUS_FAILED -> {
+                            _updateState.value = UpdateUiState.Error("Download failed. Please check connection.")
+                            break
+                        }
+                        DownloadManager.STATUS_RUNNING, DownloadManager.STATUS_PENDING -> {
+                            val percent = if (bytesTotal > 0L) ((bytesDownloaded * 100L) / bytesTotal).toInt().coerceIn(0, 100) else 0
+                            _updateState.value = UpdateUiState.Downloading(downloadId, percent, bytesDownloaded, bytesTotal)
+                        }
+                    }
+                } else {
+                    cursor?.close()
+                }
+                delay(1000L)
+            }
+        }
+    }
+
+    fun installUpdate(filePath: String) {
+        val context = getApplication<Application>()
+        val file = File(filePath)
+        if (file.exists()) {
+            GitHubUpdateManager.installDownloadedApk(context, file)
+        } else {
+            // Fallback to Downloads directory file lookup
+            val fallbackFile = File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS), "AG Video Player.apk")
+            if (fallbackFile.exists()) {
+                GitHubUpdateManager.installDownloadedApk(context, fallbackFile)
+            } else {
+                _updateState.value = UpdateUiState.Error("Downloaded APK file not found.")
+            }
         }
     }
 

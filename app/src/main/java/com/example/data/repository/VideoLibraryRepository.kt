@@ -363,18 +363,34 @@ class VideoLibraryRepository(private val context: Context) {
     suspend fun deleteVideos(videos: List<VideoItem>): MediaMutationOutcome = withContext(Dispatchers.IO) {
         if (videos.isEmpty()) return@withContext MediaMutationOutcome.Failure("No videos selected.")
 
-        val previewVideos = videos.filter { it.bucketId.startsWith("preview_") || Uri.parse(it.uriString).scheme == "file" }
-        if (previewVideos.size == videos.size) {
-            var deleted = 0
-            for (v in previewVideos) {
-                val f = File(v.filePath ?: Uri.parse(v.uriString).path ?: "")
-                if (f.exists() && f.delete()) deleted++
+        // 1. First attempt direct filesystem deletion if files are accessible directly
+        var directDeletedCount = 0
+        val remainingVideos = mutableListOf<VideoItem>()
+        val scannedPaths = mutableListOf<String>()
+
+        for (v in videos) {
+            val path = v.filePath ?: if (Uri.parse(v.uriString).scheme == "file") Uri.parse(v.uriString).path else null
+            val file = if (!path.isNullOrBlank()) File(path) else null
+            if (file != null && file.exists() && file.delete()) {
+                directDeletedCount++
+                scannedPaths += file.absolutePath
+                runCatching { context.contentResolver.delete(Uri.parse(v.uriString), null, null) }
+            } else {
+                remainingVideos += v
             }
-            return@withContext MediaMutationOutcome.Success(deleted, "Deleted $deleted video(s)")
         }
 
-        val uris = videos.map { Uri.parse(it.uriString) }
-        var deletedCount = 0
+        if (scannedPaths.isNotEmpty()) {
+            MediaScannerConnection.scanFile(context, scannedPaths.toTypedArray(), null, null)
+        }
+
+        if (remainingVideos.isEmpty()) {
+            return@withContext MediaMutationOutcome.Success(directDeletedCount, "Deleted $directDeletedCount video(s)")
+        }
+
+        // 2. For remaining files, attempt MediaStore delete
+        val uris = remainingVideos.map { Uri.parse(it.uriString) }
+        var deletedCount = directDeletedCount
         for (uri in uris) {
             try {
                 val count = context.contentResolver.delete(uri, null, null)

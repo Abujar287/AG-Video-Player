@@ -449,6 +449,11 @@ export function DeleteConfirmDialog({
   onConfirm: (videos: VideoItem[]) => void;
   onDismiss: () => void;
 }) {
+  const title =
+    videos.length === 1
+      ? 'Are you sure to delete file'
+      : `Are you sure to delete ${videos.length} files`;
+
   return (
     <div
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/65 p-4 backdrop-blur-[2px]"
@@ -461,9 +466,9 @@ export function DeleteConfirmDialog({
         aria-modal="true"
         aria-label="Delete confirmation"
       >
-        <h2 className="text-base font-bold">Delete {videos.length} video(s)?</h2>
+        <h2 className="text-base font-bold">{title}</h2>
         <p className="mt-2 text-sm text-[var(--text-muted)]">
-          Selected video files will be permanently removed from storage.
+          This file will be permanently removed from storage.
         </p>
         <div className="mt-5 flex justify-end gap-2">
           <button
@@ -488,3 +493,48 @@ export function DeleteConfirmDialog({
     </div>
   );
 }
+
+export function ExitConfirmDialog({
+  onConfirm,
+  onDismiss,
+}: {
+  onConfirm: () => void;
+  onDismiss: () => void;
+}) {
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/65 p-4 backdrop-blur-[2px]"
+      onClick={onDismiss}
+    >
+      <div
+        className="w-full max-w-sm rounded-3xl border border-[var(--outline)]/40 bg-[var(--bg-surface)] p-5 text-[var(--text-primary)] shadow-2xl"
+        onClick={(e) => e.stopPropagation()}
+        role="dialog"
+        aria-modal="true"
+        aria-label="Exit confirmation"
+      >
+        <h2 className="text-base font-bold">Exit AG Video Player</h2>
+        <p className="mt-2 text-sm text-[var(--text-muted)]">
+          Are you sure you want to exit?
+        </p>
+        <div className="mt-5 flex justify-end gap-2">
+          <button
+            type="button"
+            onClick={onDismiss}
+            className="rounded-xl px-4 py-2 text-xs font-semibold text-[var(--text-muted)] hover:bg-[var(--bg-surface-variant)]"
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            onClick={onConfirm}
+            className="rounded-xl bg-[var(--error)] px-4 py-2 text-xs font-semibold text-white hover:opacity-90"
+          >
+            Exit
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+

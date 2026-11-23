@@ -335,6 +335,7 @@ export function useLibraryState() {
 
   const deleteVideos = useCallback(
     async (videos: VideoItem[]) => {
+      setSelectedVideoUris(new Set());
       const res = await deleteVideoItems(videos);
       if (res.ok) {
         const removedSet = new Set(videos.map((v) => v.uriString));

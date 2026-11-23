@@ -308,6 +308,14 @@ class PlayerActivity : ComponentActivity() {
                 window.attributes = lp
             }
 
+            androidx.activity.compose.BackHandler(enabled = true) {
+                lifecycleScope.launch { persistPlaybackSnapshot(playbackSpeed) }
+                if (!isBackgroundPlayEnabled) {
+                    exoPlayer?.pause()
+                }
+                finish()
+            }
+
             VeloPlayTheme(darkTheme = true) {
                 Box(
                     modifier = Modifier
