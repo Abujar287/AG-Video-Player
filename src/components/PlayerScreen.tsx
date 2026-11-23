@@ -470,7 +470,7 @@ export function PlayerScreen({
     setCurrentIndex((i) => Math.min(playlist.length - 1, i + 1));
   }, [currentIndex, playlist.length, persistCurrentSnapshot]);
 
-  // Register MediaSession controls (Previous, Play/Pause, Next) for Picture-in-Picture & OS media controls
+  // Register MediaSession controls (Previous, Play/Pause, Next, Stop) & metadata for system media shade / PiP
   useEffect(() => {
     if (!('mediaSession' in navigator)) return;
     const ms = navigator.mediaSession;
@@ -483,6 +483,17 @@ export function PlayerScreen({
       // ignore if MediaMetadata constructor is unsupported
     }
     ms.playbackState = isPlaying ? 'playing' : 'paused';
+    try {
+      if (durationMs > 0 && 'setPositionState' in ms) {
+        ms.setPositionState({
+          duration: durationMs / 1000,
+          playbackRate: playbackSpeed,
+          position: Math.max(0, Math.min(durationMs, currentPosMs)) / 1000,
+        });
+      }
+    } catch {
+      // ignore invalid positionState in browser
+    }
 
     const trySetHandler = (
       action: MediaSessionAction,
@@ -523,7 +534,16 @@ export function PlayerScreen({
       trySetHandler('previoustrack', null);
       trySetHandler('nexttrack', null);
     };
-  }, [currentEntry?.title, isPlaying, currentIndex, playlist.length, handlePrevious, handleNext]);
+  }, [
+    currentEntry?.title,
+    isPlaying,
+    currentIndex,
+    playlist.length,
+    durationMs,
+    playbackSpeed,
+    handlePrevious,
+    handleNext,
+  ]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Coordinate audio focus across browser tabs & external focus-loss events
   const playerInstanceIdRef = useRef(`player_${Math.random().toString(36).slice(2)}`);

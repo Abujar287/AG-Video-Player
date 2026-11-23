@@ -13,12 +13,14 @@ import android.graphics.drawable.Icon
 import android.media.AudioAttributes as PlatformAudioAttributes
 import android.media.AudioFocusRequest
 import android.media.AudioManager
+import android.media.AudioPlaybackConfiguration
 import android.media.audiofx.LoudnessEnhancer
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
+import android.os.SystemClock
 import android.util.Rational
 import android.view.WindowManager
 import androidx.activity.ComponentActivity
@@ -95,29 +97,57 @@ class PlayerActivity : ComponentActivity() {
     private val systemAudioManager by lazy { getSystemService(Context.AUDIO_SERVICE) as AudioManager }
     private var audioFocusRequest: AudioFocusRequest? = null
     private var hasAudioFocus: Boolean = false
+    private var ownTransitionUntilMs: Long = 0L
+    private var lastMediaPlaybackCount: Int = 0
 
     private val audioFocusChangeListener = AudioManager.OnAudioFocusChangeListener { focusChange ->
-        mainHandler.post {
-            when (focusChange) {
-                AudioManager.AUDIOFOCUS_LOSS,
-                AudioManager.AUDIOFOCUS_LOSS_TRANSIENT,
-                AudioManager.AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK -> {
-                    hasAudioFocus = false
-                    val player = exoPlayer
-                    if (player != null && (player.isPlaying || player.playWhenReady)) {
-                        player.pause()
-                    }
-                    if (focusChange == AudioManager.AUDIOFOCUS_LOSS) {
-                        abandonAppAudioFocus()
-                    }
-                }
-                AudioManager.AUDIOFOCUS_GAIN -> {
-                    // Keep paused so user resumes manually without fighting calls/other apps
-                    hasAudioFocus = true
-                }
+        when (focusChange) {
+            AudioManager.AUDIOFOCUS_LOSS,
+            AudioManager.AUDIOFOCUS_LOSS_TRANSIENT,
+            AudioManager.AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK -> {
+                pauseImmediatelyFromAudioInterruption(
+                    abandonFocus = (focusChange == AudioManager.AUDIOFOCUS_LOSS)
+                )
+            }
+            AudioManager.AUDIOFOCUS_GAIN -> {
+                // Keep paused so user resumes manually without fighting calls/other apps
+                hasAudioFocus = true
             }
         }
     }
+
+    private val audioPlaybackCallback: AudioManager.AudioPlaybackCallback? =
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            object : AudioManager.AudioPlaybackCallback() {
+                override fun onPlaybackConfigChanged(configs: MutableList<AudioPlaybackConfiguration>?) {
+                    val list = configs ?: return
+                    val now = SystemClock.elapsedRealtime()
+                    val hasCallOrRing = list.any { cfg ->
+                        val usage = cfg.audioAttributes.usage
+                        usage == PlatformAudioAttributes.USAGE_VOICE_COMMUNICATION ||
+                            usage == PlatformAudioAttributes.USAGE_VOICE_COMMUNICATION_SIGNALLING ||
+                            usage == PlatformAudioAttributes.USAGE_NOTIFICATION_RINGTONE ||
+                            usage == PlatformAudioAttributes.USAGE_ALARM
+                    }
+                    val mediaCount = list.count { cfg ->
+                        val usage = cfg.audioAttributes.usage
+                        usage == PlatformAudioAttributes.USAGE_MEDIA ||
+                            usage == PlatformAudioAttributes.USAGE_GAME ||
+                            usage == PlatformAudioAttributes.USAGE_UNKNOWN
+                    }
+                    val externalMediaAppeared = mediaCount >= 2 &&
+                        mediaCount > lastMediaPlaybackCount &&
+                        now > ownTransitionUntilMs
+                    lastMediaPlaybackCount = mediaCount
+
+                    if (hasCallOrRing || externalMediaAppeared) {
+                        pauseImmediatelyFromAudioInterruption(abandonFocus = false)
+                    }
+                }
+            }
+        } else {
+            null
+        }
 
     private val pipActionReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
@@ -140,6 +170,12 @@ class PlayerActivity : ComponentActivity() {
                     } else if (currentIndex < playlist.lastIndex) {
                         player.seekToDefaultPosition(currentIndex + 1)
                     }
+                }
+                MediaNotificationHelper.CONTROL_TYPE_STOP -> {
+                    player.pause()
+                    abandonAppAudioFocus()
+                    isPlayingForPip = false
+                    MediaNotificationHelper.clear(this@PlayerActivity)
                 }
             }
             updatePipParamsIfNeeded()
@@ -171,6 +207,11 @@ class PlayerActivity : ComponentActivity() {
             IntentFilter(ACTION_PIP_CONTROL),
             ContextCompat.RECEIVER_NOT_EXPORTED
         )
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            audioPlaybackCallback?.let { cb ->
+                systemAudioManager.registerAudioPlaybackCallback(cb, mainHandler)
+            }
+        }
 
         playbackRepo = PlaybackRepository(this)
         prefsRepo = UserPreferencesRepository(this)
@@ -252,31 +293,38 @@ class PlayerActivity : ComponentActivity() {
                         .setMediaMetadata(MediaMetadata.Builder().setTitle(entry.title).build())
                         .build()
                 }
+                ownTransitionUntilMs = SystemClock.elapsedRealtime() + 500L
                 if (mediaItems.isNotEmpty()) {
                     val startIdx = currentIndex.coerceIn(0, mediaItems.lastIndex)
                     player.setMediaItems(mediaItems, startIdx, seekPosMs.coerceAtLeast(0L))
                     player.repeatMode = repeatMode
                     player.playbackParameters = PlaybackParameters(playbackSpeed)
                     player.prepare()
-                    player.playWhenReady = requestAppAudioFocus()
+                    val granted = requestAppAudioFocus()
+                    player.playWhenReady = granted
+                    updateMediaNotification(playingNow = granted)
                 }
 
                 player.addListener(object : Player.Listener {
                     override fun onPlayWhenReadyChanged(playWhenReady: Boolean, reason: Int) {
                         if (playWhenReady) {
+                            ownTransitionUntilMs = SystemClock.elapsedRealtime() + 500L
                             if (!requestAppAudioFocus()) {
                                 player.pause()
                                 if (isPhoneCallActive()) {
                                     statusBanner = "Playback paused during call"
                                 }
                             }
-                        } else if (!player.isPlaying) {
+                        } else {
                             abandonAppAudioFocus()
                         }
                     }
 
                     override fun onPlaybackStateChanged(playbackState: Int) {
-                        if (playbackState == Player.STATE_ENDED || playbackState == Player.STATE_IDLE) {
+                        if (playbackState == Player.STATE_ENDED) {
+                            abandonAppAudioFocus()
+                            MediaNotificationHelper.clear(this@PlayerActivity)
+                        } else if (playbackState == Player.STATE_IDLE) {
                             abandonAppAudioFocus()
                         }
                     }
@@ -285,12 +333,15 @@ class PlayerActivity : ComponentActivity() {
                         isPlaying = playing
                         isPlayingForPip = playing
                         updatePipParamsIfNeeded()
+                        updateMediaNotification(playingNow = playing)
                     }
 
                     override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
+                        ownTransitionUntilMs = SystemClock.elapsedRealtime() + 500L
                         currentIndex = player.currentMediaItemIndex
                         PlayerSessionManager.updateCurrentIndex(currentIndex)
                         updatePipParamsIfNeeded()
+                        updateMediaNotification(playingNow = player.isPlaying || player.playWhenReady)
                         val entry = playlist.getOrNull(currentIndex) ?: return
                         lifecycleScope.launch { prefsRepo.markVideoPlayed(entry.uriString) }
                     }
@@ -685,6 +736,12 @@ class PlayerActivity : ComponentActivity() {
 
     override fun onDestroy() {
         abandonAppAudioFocus()
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            audioPlaybackCallback?.let { cb ->
+                runCatching { systemAudioManager.unregisterAudioPlaybackCallback(cb) }
+            }
+        }
+        MediaNotificationHelper.clear(this)
         runCatching { unregisterReceiver(pipActionReceiver) }
         mediaSession?.release()
         mediaSession = null
@@ -693,6 +750,42 @@ class PlayerActivity : ComponentActivity() {
         exoPlayer?.release()
         exoPlayer = null
         super.onDestroy()
+    }
+
+    private fun pauseImmediatelyFromAudioInterruption(abandonFocus: Boolean) {
+        val action = Runnable {
+            hasAudioFocus = false
+            val player = exoPlayer
+            if (player != null && (player.isPlaying || player.playWhenReady)) {
+                player.pause()
+                isPlayingForPip = false
+                updatePipParamsIfNeeded()
+                updateMediaNotification(playingNow = false)
+            }
+            if (abandonFocus) {
+                abandonAppAudioFocus()
+            }
+        }
+        if (Looper.myLooper() == Looper.getMainLooper()) {
+            action.run()
+        } else {
+            mainHandler.postAtFrontOfQueue(action)
+        }
+    }
+
+    private fun updateMediaNotification(playingNow: Boolean = exoPlayer?.isPlaying ?: isPlayingForPip) {
+        val entry = playlist.getOrNull(currentIndex) ?: return
+        val player = exoPlayer
+        val hasPrevious = (player?.hasPreviousMediaItem() == true) || currentIndex > 0
+        val hasNext = (player?.hasNextMediaItem() == true) || currentIndex < playlist.lastIndex
+        MediaNotificationHelper.showOrUpdate(
+            context = this,
+            session = mediaSession,
+            title = entry.title,
+            isPlaying = playingNow,
+            hasPrevious = hasPrevious,
+            hasNext = hasNext
+        )
     }
 
     private fun isPhoneCallActive(): Boolean {
