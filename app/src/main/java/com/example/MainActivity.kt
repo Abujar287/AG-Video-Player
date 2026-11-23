@@ -77,11 +77,11 @@ class MainActivity : ComponentActivity() {
                 vm.onPermissionSenderHandled(res.resultCode == Activity.RESULT_OK)
             }
 
-            // All Files Access Settings launcher for direct cross-folder move without SAF primary: restriction
+            // All Files Access Settings launcher for direct file deletion / move without repeated OS dialogs
             val allFilesAccessLauncher = rememberLauncherForActivityResult(
                 ActivityResultContracts.StartActivityForResult()
             ) {
-                vm.retryMoveAfterAllFilesAccessResult()
+                vm.onAllFilesAccessResult()
             }
 
             // Open Document Video Picker (used only from Empty Library CTA)
@@ -114,6 +114,16 @@ class MainActivity : ComponentActivity() {
                 }
                 if (needed.isNotEmpty()) {
                     mediaPermLauncher.launch(needed.toTypedArray())
+                }
+
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R && !android.os.Environment.isExternalStorageManager()) {
+                    runCatching {
+                        val intent = Intent(
+                            Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION,
+                            Uri.parse("package:$packageName")
+                        )
+                        allFilesAccessLauncher.launch(intent)
+                    }
                 }
             }
 

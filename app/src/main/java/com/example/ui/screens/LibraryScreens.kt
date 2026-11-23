@@ -715,20 +715,25 @@ fun LibraryBrowserScreen(
         )
     }
 
-    // Popup asking user cleanly for File Access when moving directly to custom directories
+    // Popup asking user cleanly for File Access when needed
     pendingMoveAccessPrompt?.let { pending ->
+        val isDelete = pending.targetPath == "delete"
         AlertDialog(
             onDismissRequest = onDismissMoveAccessPrompt,
             icon = {
                 Icon(Icons.Rounded.Storage, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
             },
             title = {
-                Text("Storage Access Needed to Move", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                Text(if (isDelete) "Storage Access Needed" else "Storage Access Needed to Move", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
             },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text(
-                        text = "To move files directly to \"${pending.targetPath}\" without Android folder restrictions, grant File Management access in the popup, or move directly into Movies/${pending.targetPath.substringAfterLast('/')}.",
+                        text = if (isDelete) {
+                            "To delete videos without repeated system popups, please grant File Management access once."
+                        } else {
+                            "To move files directly to \"${pending.targetPath}\" without Android folder restrictions, grant File Management access in the popup, or move directly into Movies/${pending.targetPath.substringAfterLast('/')}."
+                        },
                         style = MaterialTheme.typography.bodyMedium
                     )
                 }
@@ -743,8 +748,10 @@ fun LibraryBrowserScreen(
                     TextButton(onClick = onDismissMoveAccessPrompt) {
                         Text("Cancel")
                     }
-                    OutlinedButton(onClick = { onMoveToScopedMovies(pending) }) {
-                        Text("Move to Movies")
+                    if (!isDelete) {
+                        OutlinedButton(onClick = { onMoveToScopedMovies(pending) }) {
+                            Text("Move to Movies")
+                        }
                     }
                 }
             }

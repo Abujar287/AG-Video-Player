@@ -289,6 +289,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    private var pendingMoveForRetry: PendingMoveRequest? = null
+    private var pendingDeleteForRetry: List<VideoItem>? = null
+
     fun moveVideos(videos: List<VideoItem>, targetPath: String) {
         viewModelScope.launch {
             pendingMoveForRetry = PendingMoveRequest(videos, targetPath)
@@ -303,17 +306,35 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun dismissMoveAccessPrompt() {
         _pendingMoveAccessPrompt.value = null
+        pendingMoveForRetry = null
+        pendingDeleteForRetry = null
+    }
+
+    fun onAllFilesAccessResult() {
+        val pendingDelete = pendingDeleteForRetry
+        if (pendingDelete != null) {
+            pendingDeleteForRetry = null
+            _pendingMoveAccessPrompt.value = null
+            deleteVideos(pendingDelete)
+            return
+        }
+        val pending = _pendingMoveAccessPrompt.value ?: pendingMoveForRetry
+        if (pending != null) {
+            _pendingMoveAccessPrompt.value = null
+            pendingMoveForRetry = null
+            val granted = Build.VERSION.SDK_INT < Build.VERSION_CODES.R || Environment.isExternalStorageManager()
+            if (granted) {
+                moveVideos(pending.videos, pending.targetPath)
+            } else {
+                _actionMessage.value = "File access not granted. Try moving under Movies/ or grant All Files Access."
+            }
+            return
+        }
+        refreshLibrary()
     }
 
     fun retryMoveAfterAllFilesAccessResult() {
-        val pending = _pendingMoveAccessPrompt.value ?: pendingMoveForRetry ?: return
-        _pendingMoveAccessPrompt.value = null
-        val granted = Build.VERSION.SDK_INT < Build.VERSION_CODES.R || Environment.isExternalStorageManager()
-        if (granted) {
-            moveVideos(pending.videos, pending.targetPath)
-        } else {
-            _actionMessage.value = "File access not granted. Try moving under Movies/ or grant All Files Access."
-        }
+        onAllFilesAccessResult()
     }
 
     fun moveToScopedMoviesSubfolder(pending: PendingMoveRequest) {
@@ -324,9 +345,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun deleteVideos(videos: List<VideoItem>) {
         _selectedVideoUris.value = emptySet()
+        pendingDeleteForRetry = videos
         viewModelScope.launch {
             val outcome = libraryRepo.deleteVideos(videos)
             if (outcome is MediaMutationOutcome.Success) {
+                pendingDeleteForRetry = null
                 for (v in videos) {
                     playbackRepo.clearPosition(v.uriString)
                     prefsRepo.removeUriFromCollections(v.uriString)
@@ -503,8 +526,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 val pending = pendingMoveForRetry
                 if (pending != null) {
                     _pendingMoveAccessPrompt.value = pending
+                } else if (pendingDeleteForRetry != null) {
+                    _pendingMoveAccessPrompt.value = PendingMoveRequest(pendingDeleteForRetry.orEmpty(), "delete")
                 } else {
-                    _actionMessage.value = "Storage permission required to move files."
+                    _actionMessage.value = "Storage permission required."
                 }
             }
             is MediaMutationOutcome.Failure -> {

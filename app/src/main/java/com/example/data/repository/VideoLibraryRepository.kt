@@ -363,19 +363,25 @@ class VideoLibraryRepository(private val context: Context) {
     suspend fun deleteVideos(videos: List<VideoItem>): MediaMutationOutcome = withContext(Dispatchers.IO) {
         if (videos.isEmpty()) return@withContext MediaMutationOutcome.Failure("No videos selected.")
 
-        // 1. First attempt direct filesystem deletion if files are accessible directly
+        // 1. First attempt direct filesystem deletion across all candidate paths
         var directDeletedCount = 0
         val remainingVideos = mutableListOf<VideoItem>()
         val scannedPaths = mutableListOf<String>()
 
         for (v in videos) {
-            val path = v.filePath ?: if (Uri.parse(v.uriString).scheme == "file") Uri.parse(v.uriString).path else null
-            val file = if (!path.isNullOrBlank()) File(path) else null
-            if (file != null && file.exists() && file.delete()) {
-                directDeletedCount++
-                scannedPaths += file.absolutePath
-                runCatching { context.contentResolver.delete(Uri.parse(v.uriString), null, null) }
-            } else {
+            val candidatePaths = resolveFilePathsForVideo(v)
+            var deleted = false
+            for (p in candidatePaths) {
+                val f = File(p)
+                if (f.exists() && f.delete()) {
+                    directDeletedCount++
+                    scannedPaths += f.absolutePath
+                    runCatching { context.contentResolver.delete(Uri.parse(v.uriString), null, null) }
+                    deleted = true
+                    break
+                }
+            }
+            if (!deleted) {
                 remainingVideos += v
             }
         }
@@ -388,7 +394,13 @@ class VideoLibraryRepository(private val context: Context) {
             return@withContext MediaMutationOutcome.Success(directDeletedCount, "Deleted $directDeletedCount video(s)")
         }
 
-        // 2. For remaining files, attempt MediaStore delete
+        // 2. On Android 11+ without MANAGE_EXTERNAL_STORAGE, request All Files Access ONCE
+        // so future deletions proceed directly without triggering repeated OS consent popups
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R && !Environment.isExternalStorageManager()) {
+            return@withContext MediaMutationOutcome.NeedsAllFilesAccess("delete")
+        }
+
+        // 3. For remaining files, attempt MediaStore delete
         val uris = remainingVideos.map { Uri.parse(it.uriString) }
         var deletedCount = directDeletedCount
         for (uri in uris) {
@@ -411,6 +423,29 @@ class VideoLibraryRepository(private val context: Context) {
             return@withContext MediaMutationOutcome.NeedsPermission(pending.intentSender)
         }
         return@withContext MediaMutationOutcome.Success(deletedCount, "Deleted $deletedCount video(s)")
+    }
+
+    private fun resolveFilePathsForVideo(video: VideoItem): List<String> {
+        val paths = mutableListOf<String>()
+        video.filePath?.takeIf { it.isNotBlank() }?.let { paths += it }
+        val uri = Uri.parse(video.uriString)
+        if (uri.scheme == "file") {
+            uri.path?.takeIf { it.isNotBlank() }?.let { paths += it }
+        }
+        queryFilePath(uri)?.takeIf { it.isNotBlank() }?.let { paths += it }
+
+        val ext = Environment.getExternalStorageDirectory()
+        if (ext != null) {
+            val rel = video.relativePath.trim().trim('/')
+            if (rel.isNotBlank()) {
+                paths += File(File(ext, rel), video.displayName).absolutePath
+            }
+            paths += File(ext, video.displayName).absolutePath
+            paths += File(File(ext, "Movies"), video.displayName).absolutePath
+            paths += File(File(ext, "Download"), video.displayName).absolutePath
+            paths += File(File(ext, "DCIM/Camera"), video.displayName).absolutePath
+        }
+        return paths.distinct()
     }
 
     private fun createWritePermissionOutcome(

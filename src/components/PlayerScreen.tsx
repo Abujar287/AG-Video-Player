@@ -959,16 +959,14 @@ export function PlayerScreen({
         onPointerCancel={handlePointerUp}
       />
 
-      {/* Dedicated On-Screen Back / Turn Off Video Button */}
-      {!isLocked && (
+      {/* Floating On-Screen Back Button when controls are hidden */}
+      {!isLocked && !controlsVisible && (
         <button
           type="button"
           onClick={handleBackClick}
           aria-label="Turn off video and return"
           title="Turn off video and return"
-          className={`absolute top-3 left-3 z-30 flex h-11 w-11 items-center justify-center rounded-full border border-white/25 bg-black/65 text-white shadow-xl backdrop-blur-md transition-all duration-200 hover:scale-105 hover:bg-black/90 active:scale-95 ${
-            controlsVisible ? 'opacity-100 pointer-events-auto' : 'opacity-70 hover:opacity-100 pointer-events-auto'
-          }`}
+          className="absolute top-3 left-3 z-30 flex h-11 w-11 items-center justify-center rounded-full border border-white/25 bg-black/65 text-white shadow-xl backdrop-blur-md transition-all duration-200 hover:scale-105 hover:bg-black/90 active:scale-95"
           onPointerDown={(e) => e.stopPropagation()}
         >
           <ArrowLeft className="h-5 w-5" />
@@ -988,7 +986,16 @@ export function PlayerScreen({
           }`}
           onPointerDown={(e) => e.stopPropagation()}
         >
-          <div className="flex items-center gap-2 pl-12 md:pl-14">
+          <div className="flex items-center gap-2.5">
+            <button
+              type="button"
+              onClick={handleBackClick}
+              aria-label="Turn off video and return"
+              title="Turn off video and return"
+              className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-white/10 text-white transition-colors hover:bg-white/25 active:scale-95"
+            >
+              <ArrowLeft className="h-5 w-5" />
+            </button>
             <h1 className="min-w-0 flex-1 truncate text-[15px] font-semibold">
               {currentEntry?.title ?? 'Video'}
             </h1>

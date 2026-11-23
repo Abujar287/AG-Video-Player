@@ -300,25 +300,6 @@ fun PlayerOverlay(
                 )
             }
     ) {
-        // Dedicated Always-Accessible On-Screen Back / Turn Off Video Button
-        if (!isLocked) {
-            IconButton(
-                onClick = onBack,
-                modifier = Modifier
-                    .align(Alignment.TopStart)
-                    .padding(top = 10.dp, start = 10.dp)
-                    .size(44.dp)
-                    .clip(CircleShape)
-                    .background(Color.Black.copy(alpha = if (controlsVisible) 0.65f else 0.45f))
-            ) {
-                Icon(
-                    imageVector = Icons.AutoMirrored.Rounded.ArrowBack,
-                    contentDescription = "Turn off video and return",
-                    tint = Color.White
-                )
-            }
-        }
-
         // Controls Overlay
         AnimatedVisibility(
             visible = controlsVisible && !isLocked,
@@ -341,11 +322,24 @@ fun PlayerOverlay(
                         .padding(horizontal = 12.dp, vertical = 10.dp)
                 ) {
                     Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(start = 48.dp),
+                        modifier = Modifier.fillMaxWidth(),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
+                        IconButton(
+                            onClick = onBack,
+                            modifier = Modifier
+                                .size(46.dp)
+                                .clip(CircleShape)
+                                .background(Color.Black.copy(alpha = 0.65f))
+                        ) {
+                            Icon(
+                                imageVector = Icons.AutoMirrored.Rounded.ArrowBack,
+                                contentDescription = "Back / Turn Off Video",
+                                tint = Color.White,
+                                modifier = Modifier.size(26.dp)
+                            )
+                        }
+                        Spacer(Modifier.width(8.dp))
                         Text(
                             text = title,
                             color = Color.White,
@@ -756,6 +750,26 @@ fun PlayerOverlay(
                     .background(Color(0xFF0B0E14).copy(alpha = 0.85f))
                     .padding(horizontal = 16.dp, vertical = 8.dp)
             )
+        }
+
+        // When controls are auto-hidden, keep a distinct floating circular back button at TopStart
+        if (!isLocked && !controlsVisible) {
+            IconButton(
+                onClick = onBack,
+                modifier = Modifier
+                    .align(Alignment.TopStart)
+                    .padding(top = 12.dp, start = 12.dp)
+                    .size(46.dp)
+                    .clip(CircleShape)
+                    .background(Color.Black.copy(alpha = 0.6f))
+            ) {
+                Icon(
+                    imageVector = Icons.AutoMirrored.Rounded.ArrowBack,
+                    contentDescription = "Turn off video and return",
+                    tint = Color.White,
+                    modifier = Modifier.size(26.dp)
+                )
+            }
         }
     }
 
