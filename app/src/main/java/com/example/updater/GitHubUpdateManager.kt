@@ -1,12 +1,15 @@
 package com.example.updater
 
 import android.app.DownloadManager
+import android.content.ContentValues
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.media.MediaScannerConnection
 import android.net.Uri
 import android.os.Build
 import android.os.Environment
+import android.provider.MediaStore
 import android.provider.Settings
 import androidx.core.content.FileProvider
 import com.example.BuildConfig
@@ -28,6 +31,13 @@ enum class ApkInstallResult {
     LAUNCHED,
     PERMISSION_NEEDED,
     FAILED
+}
+
+data class DownloadedApkTarget(
+    val file: File?,
+    val contentUri: Uri?
+) {
+    fun primaryIdentifier(): String = file?.absolutePath ?: contentUri?.toString().orEmpty()
 }
 
 object GitHubUpdateManager {
@@ -266,74 +276,118 @@ object GitHubUpdateManager {
         return "AG-Video-Player-v$safeVersion.apk"
     }
 
-    fun getExpectedApkFile(context: Context, release: GitHubReleaseInfo): File {
-        val fileName = buildUpdateFileName(release)
-        val appDownloadsDir = context.getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS)
-        return if (appDownloadsDir != null) {
-            File(appDownloadsDir, fileName)
-        } else {
-            File(context.cacheDir, fileName)
+    fun getPublicDownloadsDir(): File {
+        return Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
+    }
+
+    fun getExpectedApkFile(release: GitHubReleaseInfo): File {
+        return File(getPublicDownloadsDir(), buildUpdateFileName(release))
+    }
+
+    private fun resolveWritablePublicFileName(context: Context, baseFileName: String): String {
+        val publicDir = getPublicDownloadsDir()
+        val stem = baseFileName.removeSuffix(".apk")
+        var candidate = baseFileName
+        for (index in 1..20) {
+            candidate = if (index == 1) baseFileName else "$stem-$index.apk"
+            tryRemoveOwnedPublicDownload(context, candidate)
+            val existing = File(publicDir, candidate)
+            if (!existing.exists()) {
+                return candidate
+            }
+        }
+        return "$stem-${System.currentTimeMillis() % 10000}.apk"
+    }
+
+    private fun tryRemoveOwnedPublicDownload(context: Context, fileName: String) {
+        runCatching {
+            val publicFile = File(getPublicDownloadsDir(), fileName)
+            if (publicFile.exists()) {
+                publicFile.delete()
+            }
+        }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            runCatching {
+                context.contentResolver.delete(
+                    MediaStore.Downloads.EXTERNAL_CONTENT_URI,
+                    "${MediaStore.Downloads.DISPLAY_NAME} = ?",
+                    arrayOf(fileName)
+                )
+            }
         }
     }
 
-    fun clearPreviousUpdateApks(context: Context) {
+    fun clearLegacyPrivateUpdateApks(context: Context) {
         runCatching {
             context.getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS)?.listFiles()?.forEach { existing ->
-                if (existing.isFile && existing.name.endsWith(".apk", ignoreCase = true)) {
+                if (existing.isFile && (existing.name.endsWith(".apk", ignoreCase = true) || existing.name.endsWith(".part", ignoreCase = true))) {
                     existing.delete()
                 }
             }
             context.cacheDir.listFiles()?.forEach { existing ->
-                if (existing.isFile && existing.name.endsWith(".apk", ignoreCase = true)) {
+                if (existing.isFile && (existing.name.startsWith("AG-Video-Player-") || existing.name.startsWith(".ag_update"))) {
                     existing.delete()
                 }
             }
         }
     }
 
-    fun startApkDownload(context: Context, release: GitHubReleaseInfo): Long {
+    fun scanDownloadedFile(context: Context, file: File?) {
+        if (file == null || !file.exists()) return
+        runCatching {
+            MediaScannerConnection.scanFile(
+                context.applicationContext,
+                arrayOf(file.absolutePath),
+                arrayOf("application/vnd.android.package-archive"),
+                null
+            )
+        }
+    }
+
+    fun startApkDownload(context: Context, release: GitHubReleaseInfo): Pair<Long, String> {
         val rawUrl = release.apkDownloadUrl.trim().replace(" ", "%20")
         if (!rawUrl.startsWith("https://", ignoreCase = true) && !rawUrl.startsWith("http://", ignoreCase = true)) {
-            return -1L
+            return -1L to ""
         }
 
-        val dm = context.getSystemService(Context.DOWNLOAD_SERVICE) as? DownloadManager ?: return -1L
-        val fileName = buildUpdateFileName(release)
-        val appDownloadsDir = context.getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS) ?: return -1L
+        val dm = context.getSystemService(Context.DOWNLOAD_SERVICE) as? DownloadManager ?: return -1L to ""
+        clearLegacyPrivateUpdateApks(context)
+        val fileName = resolveWritablePublicFileName(context, buildUpdateFileName(release))
 
-        return runCatching {
-            clearPreviousUpdateApks(context)
-            appDownloadsDir.mkdirs()
+        val downloadId = runCatching {
+            val publicDir = getPublicDownloadsDir()
+            if (!publicDir.exists()) {
+                publicDir.mkdirs()
+            }
 
             val request = DownloadManager.Request(Uri.parse(rawUrl))
                 .addRequestHeader("User-Agent", "Mozilla/5.0 (Android) AG-Video-Player")
-                .setTitle("AG Video Player v${release.versionName}")
-                .setDescription("Downloading update package")
+                .setTitle(fileName)
+                .setDescription("Downloading update to Download")
                 .setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
                 .setMimeType("application/vnd.android.package-archive")
                 .setAllowedOverMetered(true)
                 .setAllowedOverRoaming(true)
-                .setDestinationInExternalFilesDir(context, Environment.DIRECTORY_DOWNLOADS, fileName)
+                .setDestinationInExternalPublicDir(Environment.DIRECTORY_DOWNLOADS, fileName)
 
             dm.enqueue(request)
         }.getOrDefault(-1L)
+
+        return downloadId to fileName
     }
 
     suspend fun downloadApkDirect(
         context: Context,
         release: GitHubReleaseInfo,
         onProgress: (bytesDownloaded: Long, bytesTotal: Long, percent: Int) -> Unit
-    ): File? = withContext(Dispatchers.IO) {
+    ): DownloadedApkTarget? = withContext(Dispatchers.IO) {
         val rawUrl = release.apkDownloadUrl.trim().replace(" ", "%20")
         if (!rawUrl.startsWith("https://", ignoreCase = true) && !rawUrl.startsWith("http://", ignoreCase = true)) {
             return@withContext null
         }
 
-        clearPreviousUpdateApks(context)
-        val targetFile = getExpectedApkFile(context, release)
-        targetFile.parentFile?.mkdirs()
-        val tempFile = File(targetFile.parentFile, "${targetFile.name}.part")
-        if (tempFile.exists()) tempFile.delete()
+        clearLegacyPrivateUpdateApks(context)
+        val fileName = resolveWritablePublicFileName(context, buildUpdateFileName(release))
 
         var currentUrl = rawUrl
         var connection: HttpURLConnection? = null
@@ -362,18 +416,57 @@ object GitHubUpdateManager {
             }
 
             val activeConn = connection ?: return@withContext null
-            val code = activeConn.responseCode
-            if (code !in 200..299) {
+            if (activeConn.responseCode !in 200..299) {
                 return@withContext null
             }
 
             val headerLength = activeConn.contentLengthLongCompat()
             val totalBytes = if (headerLength > 0L) headerLength else release.apkSizeBytes.coerceAtLeast(0L)
+
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                downloadViaMediaStoreDownloads(context, activeConn, fileName, totalBytes, onProgress)
+            } else {
+                downloadViaLegacyPublicDownloads(context, activeConn, fileName, totalBytes, onProgress)
+            }
+        } catch (ce: CancellationException) {
+            throw ce
+        } catch (_: Exception) {
+            null
+        } finally {
+            connection?.disconnect()
+        }
+    }
+
+    private suspend fun downloadViaMediaStoreDownloads(
+        context: Context,
+        conn: HttpURLConnection,
+        fileName: String,
+        totalBytes: Long,
+        onProgress: (Long, Long, Int) -> Unit
+    ): DownloadedApkTarget? {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) return null
+        val resolver = context.contentResolver
+        val values = ContentValues().apply {
+            put(MediaStore.Downloads.DISPLAY_NAME, fileName)
+            put(MediaStore.Downloads.MIME_TYPE, "application/vnd.android.package-archive")
+            put(MediaStore.Downloads.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS)
+            put(MediaStore.Downloads.IS_PENDING, 1)
+        }
+
+        val itemUri = runCatching {
+            resolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values)
+        }.getOrNull() ?: return null
+
+        try {
             var downloaded = 0L
             var lastEmitMs = 0L
+            val outputStream = resolver.openOutputStream(itemUri, "w") ?: run {
+                resolver.delete(itemUri, null, null)
+                return null
+            }
 
-            activeConn.inputStream.use { input ->
-                FileOutputStream(tempFile).use { output ->
+            conn.inputStream.use { input ->
+                outputStream.use { output ->
                     val buffer = ByteArray(16 * 1024)
                     while (true) {
                         currentCoroutineContext().ensureActive()
@@ -392,41 +485,133 @@ object GitHubUpdateManager {
                 }
             }
 
-            if (tempFile.exists() && tempFile.length() > 0L) {
-                if (targetFile.exists()) targetFile.delete()
-                if (!tempFile.renameTo(targetFile)) {
-                    tempFile.copyTo(targetFile, overwrite = true)
-                    tempFile.delete()
-                }
-                val finalTotal = maxOf(totalBytes, targetFile.length())
-                onProgress(targetFile.length(), finalTotal, 100)
-                if (isValidApkFile(context, targetFile)) targetFile else null
+            if (downloaded < 500_000L) {
+                resolver.delete(itemUri, null, null)
+                return null
+            }
+
+            val publishValues = ContentValues().apply {
+                put(MediaStore.Downloads.IS_PENDING, 0)
+            }
+            resolver.update(itemUri, publishValues, null, null)
+
+            val resolvedFile = queryMediaStoreFile(context, itemUri, fileName)
+            scanDownloadedFile(context, resolvedFile)
+
+            val target = DownloadedApkTarget(file = resolvedFile, contentUri = itemUri)
+            val finalTotal = maxOf(totalBytes, downloaded)
+            onProgress(downloaded, finalTotal, 100)
+
+            return if (isValidApkTarget(context, target)) {
+                target
             } else {
+                resolver.delete(itemUri, null, null)
                 null
             }
         } catch (ce: CancellationException) {
-            tempFile.delete()
+            runCatching { resolver.delete(itemUri, null, null) }
             throw ce
         } catch (_: Exception) {
-            tempFile.delete()
-            null
-        } finally {
-            connection?.disconnect()
+            runCatching { resolver.delete(itemUri, null, null) }
+            return null
         }
     }
 
-    fun copyContentUriToApkFile(context: Context, contentUriString: String, release: GitHubReleaseInfo): File? {
-        return runCatching {
-            val uri = Uri.parse(contentUriString)
-            val target = getExpectedApkFile(context, release)
-            target.parentFile?.mkdirs()
-            context.contentResolver.openInputStream(uri)?.use { input ->
-                FileOutputStream(target).use { output ->
-                    input.copyTo(output)
+    private suspend fun downloadViaLegacyPublicDownloads(
+        context: Context,
+        conn: HttpURLConnection,
+        fileName: String,
+        totalBytes: Long,
+        onProgress: (Long, Long, Int) -> Unit
+    ): DownloadedApkTarget? {
+        // Stage in hidden cache file so zero .tmp/.part files ever appear in public Download folder
+        val stagingFile = File(context.cacheDir, ".ag_update_staging.part")
+        if (stagingFile.exists()) stagingFile.delete()
+
+        try {
+            var downloaded = 0L
+            var lastEmitMs = 0L
+            conn.inputStream.use { input ->
+                FileOutputStream(stagingFile).use { output ->
+                    val buffer = ByteArray(16 * 1024)
+                    while (true) {
+                        currentCoroutineContext().ensureActive()
+                        val read = input.read(buffer)
+                        if (read == -1) break
+                        output.write(buffer, 0, read)
+                        downloaded += read
+                        val now = System.currentTimeMillis()
+                        if (now - lastEmitMs >= 150L) {
+                            lastEmitMs = now
+                            val pct = if (totalBytes > 0L) ((downloaded * 100L) / totalBytes).toInt().coerceIn(0, 99) else 0
+                            onProgress(downloaded, totalBytes, pct)
+                        }
+                    }
+                    output.flush()
                 }
             }
-            target.takeIf { isValidApkFile(context, it) }
-        }.getOrNull()
+
+            if (!stagingFile.exists() || stagingFile.length() < 500_000L || !isValidApkFile(context, stagingFile)) {
+                stagingFile.delete()
+                return null
+            }
+
+            val publicDir = getPublicDownloadsDir()
+            val finalPublicFile = File(publicDir, fileName)
+            val writtenToPublic = runCatching {
+                if (!publicDir.exists()) publicDir.mkdirs()
+                if (finalPublicFile.exists()) finalPublicFile.delete()
+                stagingFile.copyTo(finalPublicFile, overwrite = true)
+                stagingFile.delete()
+                finalPublicFile.exists() && finalPublicFile.length() >= 500_000L
+            }.getOrDefault(false)
+
+            val finalFile = if (writtenToPublic) {
+                scanDownloadedFile(context, finalPublicFile)
+                finalPublicFile
+            } else {
+                val fallbackCacheApk = File(context.cacheDir, fileName)
+                if (fallbackCacheApk.exists()) fallbackCacheApk.delete()
+                if (!stagingFile.renameTo(fallbackCacheApk)) {
+                    stagingFile.copyTo(fallbackCacheApk, overwrite = true)
+                    stagingFile.delete()
+                }
+                fallbackCacheApk
+            }
+
+            val finalTotal = maxOf(totalBytes, finalFile.length())
+            onProgress(finalFile.length(), finalTotal, 100)
+            val target = DownloadedApkTarget(file = finalFile, contentUri = null)
+            return if (isValidApkTarget(context, target)) target else null
+        } catch (ce: CancellationException) {
+            stagingFile.delete()
+            throw ce
+        } catch (_: Exception) {
+            stagingFile.delete()
+            return null
+        }
+    }
+
+    private fun queryMediaStoreFile(context: Context, uri: Uri, fallbackName: String): File? {
+        val path = runCatching {
+            context.contentResolver.query(
+                uri,
+                arrayOf(MediaStore.Downloads.DATA, MediaStore.Downloads.DISPLAY_NAME),
+                null,
+                null,
+                null
+            )?.use { cursor ->
+                if (cursor.moveToFirst()) {
+                    val dataIdx = cursor.getColumnIndex(MediaStore.Downloads.DATA)
+                    val nameIdx = cursor.getColumnIndex(MediaStore.Downloads.DISPLAY_NAME)
+                    val rawPath = if (dataIdx >= 0) cursor.getString(dataIdx) else null
+                    val actualName = if (nameIdx >= 0) cursor.getString(nameIdx) else fallbackName
+                    rawPath?.takeIf { it.isNotBlank() } ?: File(getPublicDownloadsDir(), actualName).absolutePath
+                } else null
+            }
+        }.getOrNull() ?: File(getPublicDownloadsDir(), fallbackName).absolutePath
+
+        return File(path).takeIf { it.exists() }
     }
 
     fun findInstalledExternalDownloader(context: Context): Pair<String, String>? {
@@ -449,14 +634,55 @@ object GitHubUpdateManager {
         val rawUrl = release.apkDownloadUrl.trim().replace(" ", "%20")
         if (rawUrl.isBlank()) return false
         val installed = findInstalledExternalDownloader(context) ?: return false
+        val fileName = buildUpdateFileName(release)
+        val publicDownloadPath = getPublicDownloadsDir().absolutePath
+
         return runCatching {
             val intent = Intent(Intent.ACTION_VIEW, Uri.parse(rawUrl)).apply {
                 setPackage(installed.first)
+                putExtra(Intent.EXTRA_TITLE, fileName)
+                putExtra("extra_filename", fileName)
+                putExtra("extra_download_folder", publicDownloadPath)
                 addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             }
             context.startActivity(intent)
             true
         }.getOrDefault(false)
+    }
+
+    fun isValidApkTarget(context: Context, target: DownloadedApkTarget): Boolean {
+        val f = target.file
+        if (f != null && f.exists() && f.isFile && f.canRead()) {
+            return isValidApkFile(context, f)
+        }
+        val uri = target.contentUri ?: return false
+        val hasZipHeader = runCatching {
+            context.contentResolver.openInputStream(uri)?.use { input ->
+                val header = ByteArray(4)
+                input.read(header) == 4 &&
+                    header[0] == 0x50.toByte() &&
+                    header[1] == 0x4B.toByte() &&
+                    header[2] == 0x03.toByte() &&
+                    header[3] == 0x04.toByte()
+            } ?: false
+        }.getOrDefault(false)
+        if (!hasZipHeader) return false
+
+        // Verify package name using a fleeting cache copy if direct File path isn't readable, deleting immediately
+        val tempInspect = File(context.cacheDir, ".ag_verify_inspect.apk")
+        return try {
+            val copied = runCatching {
+                context.contentResolver.openInputStream(uri)?.use { input ->
+                    FileOutputStream(tempInspect).use { output ->
+                        input.copyTo(output)
+                    }
+                }
+                tempInspect.exists() && tempInspect.length() >= 500_000L
+            }.getOrDefault(false)
+            copied && isValidApkFile(context, tempInspect)
+        } finally {
+            runCatching { tempInspect.delete() }
+        }
     }
 
     fun isValidApkFile(context: Context, apkFile: File): Boolean {
@@ -493,8 +719,8 @@ object GitHubUpdateManager {
         return Build.VERSION.SDK_INT < Build.VERSION_CODES.O || context.packageManager.canRequestPackageInstalls()
     }
 
-    fun installDownloadedApk(context: Context, apkFile: File): ApkInstallResult {
-        if (!isValidApkFile(context, apkFile)) {
+    fun installDownloadedApk(context: Context, target: DownloadedApkTarget): ApkInstallResult {
+        if (!isValidApkTarget(context, target)) {
             return ApkInstallResult.FAILED
         }
         if (!canInstallPackages(context)) {
@@ -507,10 +733,19 @@ object GitHubUpdateManager {
                 ApkInstallResult.PERMISSION_NEEDED
             }.getOrDefault(ApkInstallResult.FAILED)
         }
+
+        val installUri = runCatching {
+            val f = target.file
+            if (f != null && f.exists()) {
+                FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", f)
+            } else {
+                null
+            }
+        }.getOrNull() ?: target.contentUri ?: return ApkInstallResult.FAILED
+
         return runCatching {
-            val uri = FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", apkFile)
             val viewIntent = Intent(Intent.ACTION_VIEW).apply {
-                setDataAndType(uri, "application/vnd.android.package-archive")
+                setDataAndType(installUri, "application/vnd.android.package-archive")
                 addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK)
             }
             if (viewIntent.resolveActivity(context.packageManager) != null) {
@@ -518,7 +753,7 @@ object GitHubUpdateManager {
             } else {
                 @Suppress("DEPRECATION")
                 val installIntent = Intent(Intent.ACTION_INSTALL_PACKAGE).apply {
-                    data = uri
+                    data = installUri
                     putExtra(Intent.EXTRA_NOT_UNKNOWN_SOURCE, true)
                     addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK)
                 }

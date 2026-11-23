@@ -30,6 +30,7 @@ import com.example.data.repository.PlaybackRepository
 import com.example.data.repository.UserPreferencesRepository
 import com.example.data.repository.VideoLibraryRepository
 import com.example.updater.ApkInstallResult
+import com.example.updater.DownloadedApkTarget
 import com.example.updater.GitHubUpdateManager
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -93,7 +94,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private var downloadPollJob: Job? = null
     private var activeDownloadManagerId: Long = -1L
     private var lastCheckedRelease: GitHubReleaseInfo? = null
-    private var pendingInstallAfterPermissionPath: String? = null
+    private var lastDownloadedTarget: DownloadedApkTarget? = null
+    private var pendingInstallTarget: DownloadedApkTarget? = null
 
     val preferences: StateFlow<UserPreferences> = prefsRepo.preferencesFlow.stateIn(
         viewModelScope,
@@ -483,11 +485,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     fun startUpdateDownload(release: GitHubReleaseInfo) {
         val context = getApplication<Application>()
         lastCheckedRelease = release
-        pendingInstallAfterPermissionPath = null
+        lastDownloadedTarget = null
+        pendingInstallTarget = null
         downloadPollJob?.cancel()
         cancelActiveSystemDownload(context)
 
-        val downloadId = GitHubUpdateManager.startApkDownload(context, release)
+        val (downloadId, publicFileName) = GitHubUpdateManager.startApkDownload(context, release)
         activeDownloadManagerId = downloadId
         _updateState.value = UpdateUiState.Downloading(
             downloadId = downloadId,
@@ -530,12 +533,17 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     when (status) {
                         DownloadManager.STATUS_SUCCESSFUL -> {
                             activeDownloadManagerId = -1L
-                            val resolvedFile = resolveDownloadedApk(context, localUri, release)
-                            if (resolvedFile != null && GitHubUpdateManager.isValidApkFile(context, resolvedFile)) {
-                                _updateState.value = UpdateUiState.ReadyToInstall(resolvedFile.absolutePath)
-                                installUpdate(resolvedFile.absolutePath)
+                            val resolvedTarget = resolveDownloadedApk(context, dm, downloadId, localUri, publicFileName, release)
+                            if (resolvedTarget != null && GitHubUpdateManager.isValidApkTarget(context, resolvedTarget)) {
+                                GitHubUpdateManager.scanDownloadedFile(context, resolvedTarget.file)
+                                lastDownloadedTarget = resolvedTarget
+                                _updateState.value = UpdateUiState.ReadyToInstall(
+                                    filePath = resolvedTarget.file?.absolutePath.orEmpty(),
+                                    contentUri = resolvedTarget.contentUri?.toString()
+                                )
+                                installUpdateTarget(resolvedTarget)
                             } else {
-                                // Retry once via direct streaming downloader in case DownloadManager saved a corrupted redirect
+                                // Retry once via direct streaming downloader in case DownloadManager saved a bad redirect
                                 runDirectDownloadFallback(context, release)
                             }
                             break
@@ -579,7 +587,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     private suspend fun runDirectDownloadFallback(context: Context, release: GitHubReleaseInfo) {
         activeDownloadManagerId = -1L
-        val file = GitHubUpdateManager.downloadApkDirect(context, release) { downloaded, total, percent ->
+        val target = GitHubUpdateManager.downloadApkDirect(context, release) { downloaded, total, percent ->
             val effectiveTotal = if (total > 0L) total else release.apkSizeBytes
             _updateState.value = UpdateUiState.Downloading(
                 downloadId = 0L,
@@ -588,31 +596,46 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 bytesTotal = effectiveTotal
             )
         }
-        if (file != null && GitHubUpdateManager.isValidApkFile(context, file)) {
-            _updateState.value = UpdateUiState.ReadyToInstall(file.absolutePath)
-            installUpdate(file.absolutePath)
+        if (target != null && GitHubUpdateManager.isValidApkTarget(context, target)) {
+            GitHubUpdateManager.scanDownloadedFile(context, target.file)
+            lastDownloadedTarget = target
+            _updateState.value = UpdateUiState.ReadyToInstall(
+                filePath = target.file?.absolutePath.orEmpty(),
+                contentUri = target.contentUri?.toString()
+            )
+            installUpdateTarget(target)
         } else {
             _updateState.value = UpdateUiState.Error("Download failed. Please check connection and try again.")
         }
     }
 
-    private fun resolveDownloadedApk(context: Context, localUri: String?, release: GitHubReleaseInfo): File? {
-        if (!localUri.isNullOrBlank()) {
-            val parsed = runCatching { Uri.parse(localUri) }.getOrNull()
-            if (parsed != null) {
-                if (parsed.scheme == "file" || parsed.scheme.isNullOrBlank()) {
-                    val f = parsed.path?.let(::File)
-                    if (f != null && GitHubUpdateManager.isValidApkFile(context, f)) {
-                        return f
-                    }
-                } else if (parsed.scheme == "content") {
-                    val copied = GitHubUpdateManager.copyContentUriToApkFile(context, localUri, release)
-                    if (copied != null) return copied
-                }
-            }
+    private fun resolveDownloadedApk(
+        context: Context,
+        dm: DownloadManager,
+        downloadId: Long,
+        localUri: String?,
+        publicFileName: String,
+        release: GitHubReleaseInfo
+    ): DownloadedApkTarget? {
+        val dmUri = runCatching { dm.getUriForDownloadedFile(downloadId) }.getOrNull()
+        val parsedLocal = localUri?.takeIf { it.isNotBlank() }?.let { runCatching { Uri.parse(it) }.getOrNull() }
+
+        val localFile = when {
+            parsedLocal != null && (parsedLocal.scheme == "file" || parsedLocal.scheme.isNullOrBlank()) ->
+                parsedLocal.path?.let(::File)?.takeIf { it.exists() }
+            publicFileName.isNotBlank() ->
+                File(GitHubUpdateManager.getPublicDownloadsDir(), publicFileName).takeIf { it.exists() }
+            else -> null
+        } ?: GitHubUpdateManager.getExpectedApkFile(release).takeIf { it.exists() }
+
+        val contentUri = when {
+            dmUri != null && dmUri.scheme == "content" -> dmUri
+            parsedLocal != null && parsedLocal.scheme == "content" -> parsedLocal
+            else -> null
         }
-        val expected = GitHubUpdateManager.getExpectedApkFile(context, release)
-        return expected.takeIf { GitHubUpdateManager.isValidApkFile(context, it) }
+
+        if (localFile == null && contentUri == null) return null
+        return DownloadedApkTarget(file = localFile, contentUri = contentUri)
     }
 
     private fun cancelActiveSystemDownload(context: Context) {
@@ -631,7 +654,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         downloadPollJob?.cancel()
         downloadPollJob = null
         cancelActiveSystemDownload(context)
-        pendingInstallAfterPermissionPath = null
+        lastDownloadedTarget = null
+        pendingInstallTarget = null
         _showUpdateDialog.value = false
         _updateState.value = lastCheckedRelease?.let { UpdateUiState.Available(it) } ?: UpdateUiState.Idle
     }
@@ -643,42 +667,50 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    fun installUpdate(filePath: String) {
+    fun installUpdate(targetIdentifier: String) {
         val context = getApplication<Application>()
-        val primaryFile = File(filePath)
-        val fallbackFile = lastCheckedRelease?.let { GitHubUpdateManager.getExpectedApkFile(context, it) }
-        val targetFile = when {
-            GitHubUpdateManager.isValidApkFile(context, primaryFile) -> primaryFile
-            fallbackFile != null && GitHubUpdateManager.isValidApkFile(context, fallbackFile) -> fallbackFile
-            else -> null
+        val cached = lastDownloadedTarget
+        val candidate = when {
+            cached != null && GitHubUpdateManager.isValidApkTarget(context, cached) -> cached
+            targetIdentifier.startsWith("content://") ->
+                DownloadedApkTarget(file = null, contentUri = Uri.parse(targetIdentifier))
+            targetIdentifier.isNotBlank() ->
+                DownloadedApkTarget(file = File(targetIdentifier), contentUri = null)
+            else -> lastCheckedRelease?.let {
+                DownloadedApkTarget(file = GitHubUpdateManager.getExpectedApkFile(it), contentUri = null)
+            }
         }
 
-        if (targetFile == null) {
+        if (candidate == null || !GitHubUpdateManager.isValidApkTarget(context, candidate)) {
             _updateState.value = UpdateUiState.Error("Downloaded APK file is invalid or missing. Please download again.")
             return
         }
+        installUpdateTarget(candidate)
+    }
 
-        when (GitHubUpdateManager.installDownloadedApk(context, targetFile)) {
+    private fun installUpdateTarget(target: DownloadedApkTarget) {
+        val context = getApplication<Application>()
+        when (GitHubUpdateManager.installDownloadedApk(context, target)) {
             ApkInstallResult.LAUNCHED -> {
-                pendingInstallAfterPermissionPath = null
+                pendingInstallTarget = null
             }
             ApkInstallResult.PERMISSION_NEEDED -> {
-                pendingInstallAfterPermissionPath = targetFile.absolutePath
+                pendingInstallTarget = target
                 _actionMessage.value = "Allow 'Install unknown apps' to continue update."
             }
             ApkInstallResult.FAILED -> {
-                pendingInstallAfterPermissionPath = null
+                pendingInstallTarget = null
                 _updateState.value = UpdateUiState.Error("Could not launch installer for the downloaded APK.")
             }
         }
     }
 
     fun retryPendingInstallIfAllowed() {
-        val path = pendingInstallAfterPermissionPath ?: return
+        val target = pendingInstallTarget ?: return
         val context = getApplication<Application>()
         if (GitHubUpdateManager.canInstallPackages(context)) {
-            pendingInstallAfterPermissionPath = null
-            installUpdate(path)
+            pendingInstallTarget = null
+            installUpdateTarget(target)
         }
     }
 

@@ -167,7 +167,7 @@ sealed interface UpdateUiState {
     data object Checking : UpdateUiState
     data class Available(val release: GitHubReleaseInfo) : UpdateUiState
     data class Downloading(val downloadId: Long, val percent: Int, val bytesDownloaded: Long, val bytesTotal: Long) : UpdateUiState
-    data class ReadyToInstall(val filePath: String) : UpdateUiState
+    data class ReadyToInstall(val filePath: String, val contentUri: String? = null) : UpdateUiState
     data class UpToDate(val versionName: String) : UpdateUiState
     data class Error(val message: String) : UpdateUiState
 }

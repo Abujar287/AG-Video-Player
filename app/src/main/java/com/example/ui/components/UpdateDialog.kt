@@ -189,7 +189,7 @@ fun UpdateDialog(
                     }
                 }
                 is UpdateUiState.ReadyToInstall -> {
-                    Button(onClick = { onInstallUpdate(state.filePath) }) {
+                    Button(onClick = { onInstallUpdate(state.filePath.ifBlank { state.contentUri.orEmpty() }) }) {
                         Text("Install")
                     }
                 }
