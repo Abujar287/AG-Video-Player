@@ -202,6 +202,12 @@ export function PlayerScreen({
       const gain = ctx.createGain();
       src.connect(gain);
       gain.connect(ctx.destination);
+      ctx.addEventListener('statechange', () => {
+        // Pause cleanly if OS/call interrupts Web Audio context
+        if ((ctx.state as string) === 'interrupted' && !video.paused) {
+          video.pause();
+        }
+      });
       audioCtxRef.current = ctx;
       gainNodeRef.current = gain;
       sourceConnectedRef.current = true;
@@ -501,16 +507,46 @@ export function PlayerScreen({
         video.pause();
       }
     });
+    trySetHandler('stop', () => {
+      const video = videoRef.current;
+      if (video && !video.paused) {
+        video.pause();
+      }
+    });
     trySetHandler('previoustrack', currentIndex > 0 ? handlePrevious : null);
     trySetHandler('nexttrack', currentIndex < playlist.length - 1 ? handleNext : null);
 
     return () => {
       trySetHandler('play', null);
       trySetHandler('pause', null);
+      trySetHandler('stop', null);
       trySetHandler('previoustrack', null);
       trySetHandler('nexttrack', null);
     };
   }, [currentEntry?.title, isPlaying, currentIndex, playlist.length, handlePrevious, handleNext]);
+
+  // Coordinate audio focus across browser tabs & external focus-loss events
+  const playerInstanceIdRef = useRef(`player_${Math.random().toString(36).slice(2)}`);
+  const audioFocusChannelRef = useRef<BroadcastChannel | null>(null);
+
+  useEffect(() => {
+    if (typeof BroadcastChannel === 'undefined') return;
+    const channel = new BroadcastChannel('ag_video_audio_focus');
+    audioFocusChannelRef.current = channel;
+    channel.onmessage = (event) => {
+      const msg = event.data as { type?: string; sender?: string } | undefined;
+      if (msg?.type === 'AUDIO_FOCUS_ACQUIRED' && msg.sender !== playerInstanceIdRef.current) {
+        const video = videoRef.current;
+        if (video && !video.paused) {
+          video.pause();
+        }
+      }
+    };
+    return () => {
+      audioFocusChannelRef.current = null;
+      channel.close();
+    };
+  }, []);
 
   const handleBackClick = useCallback(() => {
     persistCurrentSnapshot();
@@ -1039,7 +1075,13 @@ export function PlayerScreen({
             setDurationMs(Math.round(v.duration * 1000));
           }
         }}
-        onPlay={() => setIsPlaying(true)}
+        onPlay={() => {
+          setIsPlaying(true);
+          audioFocusChannelRef.current?.postMessage({
+            type: 'AUDIO_FOCUS_ACQUIRED',
+            sender: playerInstanceIdRef.current,
+          });
+        }}
         onPause={() => {
           setIsPlaying(false);
           persistCurrentSnapshot();

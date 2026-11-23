@@ -43,6 +43,69 @@ export default function App() {
     }
   }, []);
 
+  const bgInstanceIdRef = useRef(`bg_${Math.random().toString(36).slice(2)}`);
+  const bgFocusChannelRef = useRef<BroadcastChannel | null>(null);
+
+  useEffect(() => {
+    if (typeof BroadcastChannel === 'undefined') return;
+    const channel = new BroadcastChannel('ag_video_audio_focus');
+    bgFocusChannelRef.current = channel;
+    channel.onmessage = (event) => {
+      const msg = event.data as { type?: string; sender?: string } | undefined;
+      if (msg?.type === 'AUDIO_FOCUS_ACQUIRED' && msg.sender !== bgInstanceIdRef.current) {
+        const audio = bgAudioRef.current;
+        if (audio && !audio.paused) {
+          audio.pause();
+        }
+      }
+    };
+    return () => {
+      bgFocusChannelRef.current = null;
+      channel.close();
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!bgSession || playerSession || !('mediaSession' in navigator)) return;
+    const ms = navigator.mediaSession;
+    try {
+      ms.metadata = new MediaMetadata({
+        title: bgSession.title,
+        artist: 'AG Video Player',
+      });
+    } catch {
+      // ignore
+    }
+    ms.playbackState = bgSession.isPlaying ? 'playing' : 'paused';
+    const trySetHandler = (
+      action: MediaSessionAction,
+      handler: MediaSessionActionHandler | null
+    ) => {
+      try {
+        ms.setActionHandler(action, handler);
+      } catch {
+        // unsupported
+      }
+    };
+    trySetHandler('play', () => {
+      const audio = bgAudioRef.current;
+      if (audio && audio.paused) void audio.play().catch(() => {});
+    });
+    trySetHandler('pause', () => {
+      const audio = bgAudioRef.current;
+      if (audio && !audio.paused) audio.pause();
+    });
+    trySetHandler('stop', () => {
+      const audio = bgAudioRef.current;
+      if (audio && !audio.paused) audio.pause();
+    });
+    return () => {
+      trySetHandler('play', null);
+      trySetHandler('pause', null);
+      trySetHandler('stop', null);
+    };
+  }, [bgSession, playerSession]);
+
   const playerSessionRef = useRef(playerSession);
   playerSessionRef.current = playerSession;
 
@@ -199,7 +262,13 @@ export default function App() {
       <audio
         ref={bgAudioRef}
         className="hidden"
-        onPlay={() => setBgSession((s) => (s ? { ...s, isPlaying: true } : null))}
+        onPlay={() => {
+          setBgSession((s) => (s ? { ...s, isPlaying: true } : null));
+          bgFocusChannelRef.current?.postMessage({
+            type: 'AUDIO_FOCUS_ACQUIRED',
+            sender: bgInstanceIdRef.current,
+          });
+        }}
         onPause={() => setBgSession((s) => (s ? { ...s, isPlaying: false } : null))}
         onEnded={() => setBgSession((s) => (s ? { ...s, isPlaying: false } : null))}
       />

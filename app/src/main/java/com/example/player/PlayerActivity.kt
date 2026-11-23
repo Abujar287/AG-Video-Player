@@ -10,11 +10,15 @@ import android.content.IntentFilter
 import android.content.pm.ActivityInfo
 import android.content.res.Configuration
 import android.graphics.drawable.Icon
+import android.media.AudioAttributes as PlatformAudioAttributes
+import android.media.AudioFocusRequest
 import android.media.AudioManager
 import android.media.audiofx.LoudnessEnhancer
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.util.Rational
 import android.view.WindowManager
 import androidx.activity.ComponentActivity
@@ -44,6 +48,7 @@ import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import androidx.lifecycle.lifecycleScope
+import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
@@ -85,6 +90,34 @@ class PlayerActivity : ComponentActivity() {
     private var isInPipModeState by mutableStateOf(false)
     private var externalSubUri: Uri? = null
     private var onSubtitleAddedBanner: ((String) -> Unit)? = null
+
+    private val mainHandler by lazy { Handler(Looper.getMainLooper()) }
+    private val systemAudioManager by lazy { getSystemService(Context.AUDIO_SERVICE) as AudioManager }
+    private var audioFocusRequest: AudioFocusRequest? = null
+    private var hasAudioFocus: Boolean = false
+
+    private val audioFocusChangeListener = AudioManager.OnAudioFocusChangeListener { focusChange ->
+        mainHandler.post {
+            when (focusChange) {
+                AudioManager.AUDIOFOCUS_LOSS,
+                AudioManager.AUDIOFOCUS_LOSS_TRANSIENT,
+                AudioManager.AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK -> {
+                    hasAudioFocus = false
+                    val player = exoPlayer
+                    if (player != null && (player.isPlaying || player.playWhenReady)) {
+                        player.pause()
+                    }
+                    if (focusChange == AudioManager.AUDIOFOCUS_LOSS) {
+                        abandonAppAudioFocus()
+                    }
+                }
+                AudioManager.AUDIOFOCUS_GAIN -> {
+                    // Keep paused so user resumes manually without fighting calls/other apps
+                    hasAudioFocus = true
+                }
+            }
+        }
+    }
 
     private val pipActionReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
@@ -187,6 +220,14 @@ class PlayerActivity : ComponentActivity() {
 
                 val player = ExoPlayer.Builder(this@PlayerActivity)
                     .setRenderersFactory(DecoderModeSelector.buildRenderersFactory(this@PlayerActivity, software))
+                    .setAudioAttributes(
+                        AudioAttributes.Builder()
+                            .setContentType(C.AUDIO_CONTENT_TYPE_MOVIE)
+                            .setUsage(C.USAGE_MEDIA)
+                            .build(),
+                        false
+                    )
+                    .setHandleAudioBecomingNoisy(true)
                     .build()
 
                 exoPlayer = player
@@ -217,10 +258,29 @@ class PlayerActivity : ComponentActivity() {
                     player.repeatMode = repeatMode
                     player.playbackParameters = PlaybackParameters(playbackSpeed)
                     player.prepare()
-                    player.playWhenReady = true
+                    player.playWhenReady = requestAppAudioFocus()
                 }
 
                 player.addListener(object : Player.Listener {
+                    override fun onPlayWhenReadyChanged(playWhenReady: Boolean, reason: Int) {
+                        if (playWhenReady) {
+                            if (!requestAppAudioFocus()) {
+                                player.pause()
+                                if (isPhoneCallActive()) {
+                                    statusBanner = "Playback paused during call"
+                                }
+                            }
+                        } else if (!player.isPlaying) {
+                            abandonAppAudioFocus()
+                        }
+                    }
+
+                    override fun onPlaybackStateChanged(playbackState: Int) {
+                        if (playbackState == Player.STATE_ENDED || playbackState == Player.STATE_IDLE) {
+                            abandonAppAudioFocus()
+                        }
+                    }
+
                     override fun onIsPlayingChanged(playing: Boolean) {
                         isPlaying = playing
                         isPlayingForPip = playing
@@ -624,6 +684,7 @@ class PlayerActivity : ComponentActivity() {
     }
 
     override fun onDestroy() {
+        abandonAppAudioFocus()
         runCatching { unregisterReceiver(pipActionReceiver) }
         mediaSession?.release()
         mediaSession = null
@@ -632,6 +693,56 @@ class PlayerActivity : ComponentActivity() {
         exoPlayer?.release()
         exoPlayer = null
         super.onDestroy()
+    }
+
+    private fun isPhoneCallActive(): Boolean {
+        val mode = systemAudioManager.mode
+        return mode == AudioManager.MODE_RINGTONE ||
+            mode == AudioManager.MODE_IN_CALL ||
+            mode == AudioManager.MODE_IN_COMMUNICATION
+    }
+
+    private fun requestAppAudioFocus(): Boolean {
+        if (isPhoneCallActive()) {
+            hasAudioFocus = false
+            return false
+        }
+        if (hasAudioFocus) return true
+        val result = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val req = audioFocusRequest ?: AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN)
+                .setAudioAttributes(
+                    PlatformAudioAttributes.Builder()
+                        .setUsage(PlatformAudioAttributes.USAGE_MEDIA)
+                        .setContentType(PlatformAudioAttributes.CONTENT_TYPE_MOVIE)
+                        .build()
+                )
+                .setAcceptsDelayedFocusGain(false)
+                .setOnAudioFocusChangeListener(audioFocusChangeListener, mainHandler)
+                .build()
+                .also { audioFocusRequest = it }
+            systemAudioManager.requestAudioFocus(req)
+        } else {
+            @Suppress("DEPRECATION")
+            systemAudioManager.requestAudioFocus(
+                audioFocusChangeListener,
+                AudioManager.STREAM_MUSIC,
+                AudioManager.AUDIOFOCUS_GAIN
+            )
+        }
+        hasAudioFocus = (result == AudioManager.AUDIOFOCUS_REQUEST_GRANTED)
+        return hasAudioFocus
+    }
+
+    private fun abandonAppAudioFocus() {
+        hasAudioFocus = false
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            audioFocusRequest?.let { req ->
+                runCatching { systemAudioManager.abandonAudioFocusRequest(req) }
+            }
+        } else {
+            @Suppress("DEPRECATION")
+            runCatching { systemAudioManager.abandonAudioFocus(audioFocusChangeListener) }
+        }
     }
 
     private fun resolveInitialPlaylist(intent: Intent?) {
