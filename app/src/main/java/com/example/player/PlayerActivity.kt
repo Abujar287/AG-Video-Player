@@ -402,9 +402,10 @@ class PlayerActivity : ComponentActivity() {
                         runCatching {
                             loudnessEnhancer?.release()
                             loudnessEnhancer = LoudnessEnhancer(audioSessionId).apply {
-                                val boostGain = ((volumePercent - 100) * 15).coerceIn(0, 1500)
+                                val boostActive = software && volumePercent > 100
+                                val boostGain = if (boostActive) ((volumePercent - 100) * 15).coerceIn(0, 1500) else 0
                                 setTargetGain(boostGain)
-                                enabled = volumePercent > 100
+                                enabled = boostActive
                             }
                         }
                     }
@@ -478,7 +479,8 @@ class PlayerActivity : ComponentActivity() {
             }
 
             fun applyVolume(nextPct: Int) {
-                val clamped = nextPct.coerceIn(0, 200)
+                val maxAllowed = if (useSoftwareDecoderState) 200 else 100
+                val clamped = nextPct.coerceIn(0, maxAllowed)
                 if (clamped > 0) lastNonZeroVolume = clamped
                 volumePercent = clamped
                 val mutedNow = clamped == 0
@@ -497,9 +499,10 @@ class PlayerActivity : ComponentActivity() {
                 }
                 runCatching {
                     loudnessEnhancer?.apply {
-                        val gain = ((clamped - 100) * 15).coerceIn(0, 1500)
+                        val boostActive = useSoftwareDecoderState && clamped > 100
+                        val gain = if (boostActive) ((clamped - 100) * 15).coerceIn(0, 1500) else 0
                         setTargetGain(gain)
-                        enabled = clamped > 100
+                        enabled = boostActive
                     }
                 }
             }
@@ -643,6 +646,9 @@ class PlayerActivity : ComponentActivity() {
                             onToggleDecoder = {
                                 val nextSw = !useSoftwareDecoderState
                                 useSoftwareDecoderState = nextSw
+                                if (!nextSw && volumePercent > 100) {
+                                    applyVolume(100)
+                                }
                                 val pos = exoPlayer?.currentPosition ?: 0L
                                 rebuildPlayer(nextSw, pos)
                                 lifecycleScope.launch { prefsRepo.setDefaultSoftwareDecoder(nextSw) }

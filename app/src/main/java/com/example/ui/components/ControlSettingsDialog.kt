@@ -79,6 +79,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import com.example.BuildConfig
 import com.example.data.model.AppThemePreset
 import com.example.data.model.DoubleClickAction
 import com.example.data.model.PlayerControlButton
@@ -95,7 +96,7 @@ private enum class SettingsTab(
     MENU("Menu", "Theme, entry mode, layout & hidden files", Icons.Rounded.Menu),
     CONTROLS("Controls", "Progress bar style, screen buttons, shortcuts & gestures", Icons.Rounded.TouchApp),
     PLAYBACK("Playback & Background", "Background audio play, PiP & SW decoder", Icons.Rounded.Headphones),
-    UPDATE("Check Update", "GitHub version & APK download", Icons.Rounded.Refresh)
+    UPDATE("Check Update", "", Icons.Rounded.Refresh)
 }
 
 private val QUICK_SHORTCUT_BUTTONS = listOf(
@@ -231,13 +232,15 @@ fun ControlSettingsDialog(
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis
                         )
-                        Text(
-                            text = activeTab?.subtitle ?: currentVersionLabel,
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
-                        )
+                        activeTab?.subtitle?.takeIf { it.isNotBlank() }?.let { sub ->
+                            Text(
+                                text = sub,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
                     }
                     Spacer(Modifier.width(8.dp))
                     Box(
@@ -317,8 +320,13 @@ fun ControlSettingsDialog(
                                                 )
                                             }
                                         }
+                                        val rowSubtitle = if (tab == SettingsTab.UPDATE) {
+                                            "Version ${BuildConfig.VERSION_NAME}"
+                                        } else {
+                                            tab.subtitle
+                                        }
                                         Text(
-                                            text = tab.subtitle,
+                                            text = rowSubtitle,
                                             style = MaterialTheme.typography.bodySmall,
                                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                                             maxLines = 1,
@@ -694,7 +702,7 @@ fun ControlSettingsDialog(
                                         .fillMaxWidth()
                                         .padding(horizontal = 14.dp, vertical = 12.dp),
                                     verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.SpaceBetween
+                                    horizontalArrangement = Arrangement.spacedBy(10.dp)
                                 ) {
                                     Column(modifier = Modifier.weight(1f)) {
                                         Text("Swipe Seek Step", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium)
@@ -1025,7 +1033,8 @@ private fun <T> TwoColSelector(
                             fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
                             color = if (selected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface,
                             maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.weight(1f)
                         )
                     }
                 }

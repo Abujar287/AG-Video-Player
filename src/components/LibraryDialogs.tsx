@@ -216,7 +216,7 @@ function PropRow({ label, value, mono }: { label: string; value: string; mono?: 
   return (
     <div className="flex items-center justify-between gap-3">
       <span className="shrink-0 text-[var(--text-muted)]">{label}</span>
-      <span className={`truncate font-medium ${mono ? 'font-mono-label' : ''}`}>{value}</span>
+      <span className={`truncate text-right font-medium ${mono ? 'font-mono-label' : ''}`}>{value}</span>
     </div>
   );
 }

@@ -79,7 +79,17 @@ android {
     buildConfig = true
   }
   testOptions { unitTests { isIncludeAndroidResources = true } }
+  dependenciesInfo {
+    includeInApk = false
+    includeInBundle = false
+  }
   packaging {
+    jniLibs {
+      useLegacyPackaging = true
+    }
+    dex {
+      useLegacyPackaging = true
+    }
     resources {
       excludes += listOf(
         "META-INF/DEPENDENCIES",
@@ -93,8 +103,13 @@ android {
         "META-INF/*.kotlin_module",
         "META-INF/*.version",
         "META-INF/{AL2.0,LGPL2.1}",
+        "META-INF/INDEX.LIST",
+        "META-INF/maven/**",
+        "META-INF/proguard/**",
+        "META-INF/com.android.tools/**",
         "DebugProbesKt.bin",
-        "kotlin-tooling-metadata.json"
+        "kotlin-tooling-metadata.json",
+        "**/*.proto"
       )
     }
   }
@@ -134,7 +149,6 @@ dependencies {
   implementation(libs.androidx.compose.material3)
   implementation(libs.androidx.compose.ui)
   implementation(libs.androidx.compose.ui.graphics)
-  implementation(libs.androidx.compose.ui.tooling.preview)
   implementation(libs.androidx.core.ktx)
   implementation(libs.androidx.datastore.preferences)
   implementation(libs.androidx.lifecycle.runtime.compose)
@@ -158,5 +172,6 @@ dependencies {
   testImplementation(libs.androidx.compose.ui.test.junit4)
 
   debugImplementation(libs.androidx.compose.ui.tooling)
+  debugImplementation(libs.androidx.compose.ui.tooling.preview)
   debugImplementation(libs.androidx.compose.ui.test.manifest)
 }

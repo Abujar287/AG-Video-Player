@@ -98,6 +98,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -889,6 +890,7 @@ private fun FolderListCard(folder: VideoFolder, newCount: Int, onClick: () -> Un
             }
         }
         if (newCount > 0) {
+            Spacer(Modifier.width(8.dp))
             Text(
                 text = newCount.toString(),
                 color = Color.White,
@@ -1289,6 +1291,7 @@ private fun SortOptionsDialog(
                                 style = MaterialTheme.typography.labelMedium,
                                 color = if (selected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant,
                                 maxLines = 1,
+                                softWrap = false,
                                 overflow = TextOverflow.Ellipsis
                             )
                         }
@@ -1345,7 +1348,15 @@ private fun PropRow(label: String, value: String) {
     Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
         Text(label, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         Spacer(Modifier.width(12.dp))
-        Text(value, style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.Medium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        Text(
+            text = value,
+            style = MaterialTheme.typography.bodySmall,
+            fontWeight = FontWeight.Medium,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            textAlign = TextAlign.End,
+            modifier = Modifier.weight(1f)
+        )
     }
 }
 

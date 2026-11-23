@@ -74,7 +74,7 @@ const SETTINGS_TABS: TabMeta[] = [
   {
     id: 'UPDATE',
     title: 'Check Update',
-    subtitle: 'GitHub version & APK download',
+    subtitle: '',
     icon: RefreshCw,
   },
 ];
@@ -245,9 +245,11 @@ export function ControlSettingsDialog({
             <h2 className="truncate text-lg font-bold">
               {activeTabMeta?.title ?? 'Settings'}
             </h2>
-            <p className="truncate text-xs text-[var(--text-muted)]">
-              {activeTabMeta?.subtitle ?? currentVersionLabel}
-            </p>
+            {activeTabMeta?.subtitle && (
+              <p className="truncate text-xs text-[var(--text-muted)]">
+                {activeTabMeta.subtitle}
+              </p>
+            )}
           </div>
           <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[var(--primary)]/15 text-[var(--primary)]">
             <HeaderIcon className="h-5 w-5" />
@@ -291,7 +293,11 @@ export function ControlSettingsDialog({
                           </span>
                         )}
                       </div>
-                      <p className="truncate text-xs text-[var(--text-muted)]">{tab.subtitle}</p>
+                      <p className="truncate text-xs text-[var(--text-muted)]">
+                        {tab.id === 'UPDATE'
+                          ? `Version ${currentVersionLabel.replace(/^v/i, '').split(' ')[0] || '1.0.0'}`
+                          : tab.subtitle}
+                      </p>
                     </div>
                     <ChevronRight className="h-4 w-4 shrink-0 text-[var(--text-muted)]" />
                   </button>

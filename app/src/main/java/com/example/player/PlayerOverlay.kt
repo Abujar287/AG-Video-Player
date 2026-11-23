@@ -26,6 +26,7 @@ import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
@@ -82,6 +83,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
@@ -167,6 +169,7 @@ fun PlayerOverlay(
     val latestDurationMs by rememberUpdatedState(durationMs)
     val latestBrightness by rememberUpdatedState(brightnessPercent)
     val latestVolume by rememberUpdatedState(volumePercent)
+    val latestMaxVolume by rememberUpdatedState(if (useSoftwareDecoder) 200 else 100)
     val latestQuickZoom by rememberUpdatedState(quickZoomScale)
     val latestOnToggleControls by rememberUpdatedState(onToggleControls)
     val latestOnPlayPause by rememberUpdatedState(onPlayPause)
@@ -333,9 +336,10 @@ fun PlayerOverlay(
                                     latestOnChangeBrightness((startBrightness + deltaPct).coerceIn(5, 100))
                                 }
                                 DragMode.VOLUME -> {
+                                    val maxVol = latestMaxVolume
                                     val heightPx = (boxSize.height * 0.45f).coerceAtLeast(180f)
-                                    val deltaPct = ((-accumY / heightPx) * 200f).roundToInt()
-                                    latestOnChangeVolume((startVolume + deltaPct).coerceIn(0, 200))
+                                    val deltaPct = ((-accumY / heightPx) * maxVol.toFloat()).roundToInt()
+                                    latestOnChangeVolume((startVolume + deltaPct).coerceIn(0, maxVol))
                                 }
                                 DragMode.NONE -> Unit
                             }
@@ -402,6 +406,7 @@ fun PlayerOverlay(
                                     listOf(Color.Black.copy(alpha = 0.85f), Color.Black.copy(alpha = 0.4f), Color.Transparent)
                                 )
                             )
+                            .displayCutoutPadding()
                             .padding(horizontal = 12.dp, vertical = 10.dp)
                     ) {
                         Row(
@@ -417,7 +422,7 @@ fun PlayerOverlay(
                             overflow = TextOverflow.Ellipsis,
                             modifier = Modifier.weight(1f)
                         )
-                        if (volumePercent > 100) {
+                        if (useSoftwareDecoder && volumePercent > 100) {
                             Text(
                                 text = "BOOST $volumePercent%",
                                 color = BoostOrange,
@@ -496,6 +501,7 @@ fun PlayerOverlay(
                         Spacer(Modifier.height(6.dp))
                         Row(
                             modifier = Modifier
+                                .horizontalScroll(rememberScrollState())
                                 .clip(RoundedCornerShape(12.dp))
                                 .background(Color(0xFF111827).copy(alpha = 0.92f))
                                 .border(1.dp, Color.White.copy(alpha = 0.12f), RoundedCornerShape(12.dp))
@@ -532,6 +538,7 @@ fun PlayerOverlay(
                                 listOf(Color.Transparent, Color.Black.copy(alpha = 0.55f), Color.Black.copy(alpha = 0.9f))
                             )
                         )
+                        .displayCutoutPadding()
                         .padding(horizontal = 16.dp, vertical = 14.dp)
                 ) {
                     val activePos = if (isScrubbingBar) scrubMs else currentPosMs
@@ -544,7 +551,9 @@ fun PlayerOverlay(
                             text = FormatUtils.formatDuration(activePos),
                             color = Color.White,
                             fontSize = 11.sp,
-                            modifier = Modifier.width(46.dp)
+                            maxLines = 1,
+                            softWrap = false,
+                            modifier = Modifier.widthIn(min = 46.dp)
                         )
                         val progressFrac = (activePos.toFloat() / dur.toFloat()).coerceIn(0f, 1f)
                         if (preferences.progressBarStyle == ProgressBarStyle.FLAT) {
@@ -619,7 +628,10 @@ fun PlayerOverlay(
                             text = FormatUtils.formatDuration(durationMs),
                             color = Color.White.copy(alpha = 0.85f),
                             fontSize = 11.sp,
-                            modifier = Modifier.width(46.dp)
+                            maxLines = 1,
+                            softWrap = false,
+                            textAlign = TextAlign.End,
+                            modifier = Modifier.widthIn(min = 46.dp)
                         )
                     }
 
@@ -628,7 +640,10 @@ fun PlayerOverlay(
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.SpaceBetween
                     ) {
-                        Box(modifier = Modifier.width(88.dp)) {
+                        Box(
+                            modifier = Modifier.weight(1f),
+                            contentAlignment = Alignment.CenterStart
+                        ) {
                             if (preferences.isButtonVisible(PlayerControlButton.LOCK)) {
                                 IconButton(onClick = onToggleLock) {
                                     Icon(Icons.Rounded.Lock, contentDescription = "Lock", tint = Color.White)
@@ -691,7 +706,7 @@ fun PlayerOverlay(
                         }
 
                         Row(
-                            modifier = Modifier.wrapContentWidth(),
+                            modifier = Modifier.weight(1f),
                             horizontalArrangement = Arrangement.End,
                             verticalAlignment = Alignment.CenterVertically
                         ) {
@@ -774,14 +789,16 @@ fun PlayerOverlay(
                 accentColor = DarkSecondary
             )
         } else if (dragMode == DragMode.VOLUME) {
+            val maxVolFloat = if (useSoftwareDecoder) 200f else 100f
+            val boostActive = useSoftwareDecoder && volumePercent > 100
             VerticalGestureHud(
                 modifier = Modifier
                     .align(Alignment.CenterEnd)
                     .padding(end = 28.dp),
                 icon = Icons.AutoMirrored.Rounded.VolumeUp,
-                label = if (volumePercent > 100) "BOOST $volumePercent%" else "$volumePercent%",
-                fraction = volumePercent / 200f,
-                accentColor = if (volumePercent > 100) BoostOrange else MaterialTheme.colorScheme.primary
+                label = if (boostActive) "BOOST $volumePercent%" else "$volumePercent%",
+                fraction = (volumePercent / maxVolFloat).coerceIn(0f, 1f),
+                accentColor = if (boostActive) BoostOrange else MaterialTheme.colorScheme.primary
             )
         }
 
@@ -825,14 +842,21 @@ fun PlayerOverlay(
                         .verticalScroll(rememberScrollState()),
                     verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    Text("Volume / Audio Boost ($volumePercent%)", fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.primary)
+                    val maxSliderVol = if (useSoftwareDecoder) 200f else 100f
+                    val boostActive = useSoftwareDecoder && volumePercent > 100
+                    Text(
+                        text = if (useSoftwareDecoder) "Volume / Audio Boost ($volumePercent%)" else "Volume ($volumePercent% · Enable SW for boost)",
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = MaterialTheme.colorScheme.primary
+                    )
                     Slider(
-                        value = volumePercent.toFloat(),
+                        value = volumePercent.toFloat().coerceIn(0f, maxSliderVol),
                         onValueChange = { onChangeVolume(it.toInt()) },
-                        valueRange = 0f..200f,
+                        valueRange = 0f..maxSliderVol,
                         colors = SliderDefaults.colors(
-                            thumbColor = if (volumePercent > 100) BoostOrange else MaterialTheme.colorScheme.primary,
-                            activeTrackColor = if (volumePercent > 100) BoostOrange else MaterialTheme.colorScheme.primary
+                            thumbColor = if (boostActive) BoostOrange else MaterialTheme.colorScheme.primary,
+                            activeTrackColor = if (boostActive) BoostOrange else MaterialTheme.colorScheme.primary
                         )
                     )
                     if (audioTracks.isNotEmpty()) {

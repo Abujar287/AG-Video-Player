@@ -101,6 +101,7 @@ export function PlayerScreen({
   const [durationMs, setDurationMs] = useState(0);
   const [playbackSpeed, setPlaybackSpeed] = useState(1.0);
   const [useSoftwareDecoder, setUseSoftwareDecoder] = useState(preferences.defaultSoftwareDecoder);
+  const useSoftwareDecoderRef = useRef(preferences.defaultSoftwareDecoder);
   const [repeatMode, setRepeatMode] = useState<RepeatMode>(RepeatMode.OFF);
   const [sleepMinutesRemaining, setSleepMinutesRemaining] = useState<number | null>(null);
   const [isLocked, setIsLocked] = useState(false);
@@ -217,8 +218,10 @@ export function PlayerScreen({
   }, []);
 
   const applyVolume = useCallback(
-    (nextPct: number) => {
-      const clamped = Math.max(0, Math.min(200, Math.round(nextPct)));
+    (nextPct: number, swOverride?: boolean) => {
+      const swActive = swOverride ?? useSoftwareDecoderRef.current;
+      const maxVol = swActive ? 200 : 100;
+      const clamped = Math.max(0, Math.min(maxVol, Math.round(nextPct)));
       if (clamped > 0) setLastNonZeroVolume(clamped);
       setVolumePercent(clamped);
       setIsMuted(clamped === 0);
@@ -226,7 +229,7 @@ export function PlayerScreen({
       const video = videoRef.current;
       if (!video) return;
 
-      if (clamped > 100) {
+      if (swActive && clamped > 100) {
         ensureAudioBoostGraph();
       }
       if (audioCtxRef.current?.state === 'suspended') {
@@ -258,7 +261,12 @@ export function PlayerScreen({
     onMarkPlayed(currentEntry.uriString);
 
     const saved = historyByUri[currentEntry.uriString];
-    setUseSoftwareDecoder(saved?.useSoftwareDecoder ?? preferences.defaultSoftwareDecoder);
+    const nextSw = saved?.useSoftwareDecoder ?? preferences.defaultSoftwareDecoder;
+    useSoftwareDecoderRef.current = nextSw;
+    setUseSoftwareDecoder(nextSw);
+    if (!nextSw && volumePercent > 100) {
+      applyVolume(100, false);
+    }
     const nextSpeed = saved?.playbackSpeed ?? 1.0;
     setPlaybackSpeed(nextSpeed);
 
@@ -644,10 +652,14 @@ export function PlayerScreen({
 
   const handleToggleDecoder = useCallback(() => {
     const nextSw = !useSoftwareDecoder;
+    useSoftwareDecoderRef.current = nextSw;
     setUseSoftwareDecoder(nextSw);
+    if (!nextSw && volumePercent > 100) {
+      applyVolume(100, false);
+    }
     onSetDefaultSoftwareDecoder(nextSw);
     setStatusBanner(nextSw ? 'Switched to SW Decoder' : 'Switched to HW Decoder');
-  }, [useSoftwareDecoder, onSetDefaultSoftwareDecoder]);
+  }, [useSoftwareDecoder, volumePercent, applyVolume, onSetDefaultSoftwareDecoder]);
 
   const handleToggleRotation = useCallback(async () => {
     const next = !isRotated;
@@ -712,9 +724,10 @@ export function PlayerScreen({
       } else if (e.key === 'ArrowUp') {
         e.preventDefault();
         if (!isLocked) {
-          const next = Math.min(200, volumePercent + 10);
+          const maxVol = useSoftwareDecoder ? 200 : 100;
+          const next = Math.min(maxVol, volumePercent + 10);
           applyVolume(next);
-          setStatusBanner(next > 100 ? `BOOST ${next}%` : `Volume ${next}%`);
+          setStatusBanner(useSoftwareDecoder && next > 100 ? `BOOST ${next}%` : `Volume ${next}%`);
         }
       } else if (e.key === 'ArrowDown') {
         e.preventDefault();
@@ -733,6 +746,7 @@ export function PlayerScreen({
     showTrackDialog,
     showSleepDialog,
     isLocked,
+    useSoftwareDecoder,
     volumePercent,
     handleBackClick,
     handlePlayPause,
@@ -948,8 +962,9 @@ export function PlayerScreen({
       const nextBrightness = Math.max(10, Math.min(100, g.startBrightness + deltaPct));
       setBrightnessPercent(nextBrightness);
     } else if (g.mode === 'VOLUME') {
-      const deltaPct = Math.round((-dyTotal / dragHeight) * 200);
-      const nextVol = Math.max(0, Math.min(200, g.startVolume + deltaPct));
+      const maxVol = useSoftwareDecoderRef.current ? 200 : 100;
+      const deltaPct = Math.round((-dyTotal / dragHeight) * maxVol);
+      const nextVol = Math.max(0, Math.min(maxVol, g.startVolume + deltaPct));
       applyVolume(nextVol);
     }
   };
@@ -1163,7 +1178,7 @@ export function PlayerScreen({
             <h1 className="min-w-0 flex-1 truncate text-[15px] font-semibold">
               {currentEntry?.title ?? 'Video'}
             </h1>
-            {volumePercent > 100 && (
+            {useSoftwareDecoder && volumePercent > 100 && (
               <span className="shrink-0 rounded-md bg-[var(--boost-orange)]/25 px-2 py-1 text-[11px] font-bold text-[var(--boost-orange)] tabular-nums">
                 BOOST {volumePercent}%
               </span>
@@ -1219,7 +1234,7 @@ export function PlayerScreen({
           )}
 
           {showSpeedPicker && (
-            <div className="mt-2 inline-flex items-center gap-1 rounded-xl border border-white/15 bg-[#111827]/95 p-1">
+            <div className="mt-2 inline-flex max-w-full items-center gap-1 overflow-x-auto rounded-xl border border-white/15 bg-[#111827]/95 p-1">
               {[0.5, 0.75, 1.0, 1.25, 1.5, 2.0].map((spd) => {
                 const active = Math.abs(playbackSpeed - spd) < 0.01;
                 return (
@@ -1253,7 +1268,7 @@ export function PlayerScreen({
         >
           {/* Scrubber Bar (Material vs Flat style) */}
           <div className="flex items-center gap-3">
-            <span className="font-mono-label w-12 text-[11px] text-white">
+            <span className="font-mono-label min-w-12 shrink-0 text-[11px] text-white tabular-nums">
               {formatDuration(activePos)}
             </span>
 
@@ -1325,14 +1340,14 @@ export function PlayerScreen({
               </div>
             )}
 
-            <span className="font-mono-label w-12 text-right text-[11px] text-white/85">
+            <span className="font-mono-label min-w-12 shrink-0 text-right text-[11px] text-white/85 tabular-nums">
               {formatDuration(durationMs)}
             </span>
           </div>
 
           {/* Primary Transport Row */}
           <div className="mt-3 flex items-center justify-between">
-            <div className="flex w-24 items-center justify-start">
+            <div className="flex flex-1 items-center justify-start">
               {isBtnVisible(PlayerControlButton.LOCK) && (
                 <button
                   type="button"
@@ -1384,7 +1399,7 @@ export function PlayerScreen({
               )}
             </div>
 
-            <div className="flex items-center justify-end gap-1">
+            <div className="flex flex-1 items-center justify-end gap-1">
               {isBtnVisible(PlayerControlButton.FIT) && (
                 <button
                   type="button"
@@ -1472,12 +1487,12 @@ export function PlayerScreen({
           side="right"
           icon={
             <Volume2
-              className={`h-5 w-5 ${volumePercent > 100 ? 'text-[#FF6B35]' : 'text-[var(--primary)]'}`}
+              className={`h-5 w-5 ${useSoftwareDecoder && volumePercent > 100 ? 'text-[#FF6B35]' : 'text-[var(--primary)]'}`}
             />
           }
-          label={volumePercent > 100 ? `BOOST ${volumePercent}%` : `${volumePercent}%`}
-          fraction={volumePercent / 200}
-          barColor={volumePercent > 100 ? '#FF6B35' : 'var(--primary)'}
+          label={useSoftwareDecoder && volumePercent > 100 ? `BOOST ${volumePercent}%` : `${volumePercent}%`}
+          fraction={volumePercent / (useSoftwareDecoder ? 200 : 100)}
+          barColor={useSoftwareDecoder && volumePercent > 100 ? '#FF6B35' : 'var(--primary)'}
         />
       )}
 
@@ -1510,16 +1525,16 @@ export function PlayerScreen({
             <div className="mt-4 max-h-80 space-y-3 overflow-y-auto pr-1">
               <div>
                 <div className="mb-1.5 flex items-center justify-between text-xs font-semibold text-[var(--primary)]">
-                  <span>Volume / Audio Boost</span>
+                  <span>{useSoftwareDecoder ? 'Volume / Audio Boost' : 'Volume (Enable SW for boost)'}</span>
                   <span className="font-mono-label">
-                    {volumePercent > 100 ? `BOOST ${volumePercent}%` : `${volumePercent}%`}
+                    {useSoftwareDecoder && volumePercent > 100 ? `BOOST ${volumePercent}%` : `${volumePercent}%`}
                   </span>
                 </div>
                 <input
                   type="range"
                   min={0}
-                  max={200}
-                  value={volumePercent}
+                  max={useSoftwareDecoder ? 200 : 100}
+                  value={Math.min(volumePercent, useSoftwareDecoder ? 200 : 100)}
                   onChange={(e) => applyVolume(Number(e.target.value))}
                   className="w-full cursor-pointer accent-[var(--primary)]"
                 />
