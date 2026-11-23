@@ -42,22 +42,19 @@ jobs:
         run: |
           if [[ "${{ github.ref }}" == refs/tags/v* ]]; then
             RAW_TAG="${GITHUB_REF_NAME#v}"
-            MAJOR=$(echo "$RAW_TAG" | cut -d. -f1)
-            MINOR=$(echo "$RAW_TAG" | cut -d. -f2)
+            MAJOR=$(echo "$RAW_TAG" | cut -d. -f1 | tr -dc '0-9')
+            MINOR=$(echo "$RAW_TAG" | cut -d. -f2 | tr -dc '0-9')
             PATCH=$(echo "$RAW_TAG" | cut -d. -f3 | tr -dc '0-9')
             MAJOR=${MAJOR:-1}; MINOR=${MINOR:-0}; PATCH=${PATCH:-0}
             NEXT_VERSION="${MAJOR}.${MINOR}.${PATCH}"
-            NEXT_CODE=$((PATCH + 1))
+            NEXT_CODE=$((MAJOR * 10000 + MINOR * 100 + PATCH))
           else
             RELEASE_TAG=$(gh api "repos/${{ github.repository }}/releases/latest" --jq '.tag_name' 2>/dev/null) || RELEASE_TAG=""
             GIT_TAG=$(git tag -l 'v*' --sort=-v:refname | head -n 1 2>/dev/null) || GIT_TAG=""
-            LATEST_TAG="$RELEASE_TAG"
-            if [ -z "$LATEST_TAG" ] || [ "$LATEST_TAG" = "null" ]; then
-              LATEST_TAG="$GIT_TAG"
-            fi
+            LATEST_TAG=$(printf '%s\n%s\n' "$RELEASE_TAG" "$GIT_TAG" | grep -E '^v[0-9]+' | sort -V | tail -n 1 || true)
             if [ -z "$LATEST_TAG" ] || [ "$LATEST_TAG" = "null" ]; then
               NEXT_VERSION="1.0.0"
-              NEXT_CODE=1
+              NEXT_CODE=10000
             else
               CLEAN_VER="${LATEST_TAG#v}"
               MAJOR=$(echo "$CLEAN_VER" | cut -d. -f1 | tr -dc '0-9')
@@ -66,8 +63,11 @@ jobs:
               MAJOR=${MAJOR:-1}; MINOR=${MINOR:-0}; PATCH=${PATCH:-0}
               NEXT_PATCH=$((PATCH + 1))
               NEXT_VERSION="${MAJOR}.${MINOR}.${NEXT_PATCH}"
-              NEXT_CODE=$((NEXT_PATCH + 1))
+              NEXT_CODE=$((MAJOR * 10000 + MINOR * 100 + NEXT_PATCH))
             fi
+          fi
+          if [ "$NEXT_CODE" -lt 1 ]; then
+            NEXT_CODE=1
           fi
           echo "version_name=${NEXT_VERSION}" >> "$GITHUB_OUTPUT"
           echo "version_code=${NEXT_CODE}" >> "$GITHUB_OUTPUT"
@@ -86,13 +86,20 @@ jobs:
           if [ -n "${{ secrets.SIGNING_KEYSTORE_BASE64 }}" ]; then
             echo "${{ secrets.SIGNING_KEYSTORE_BASE64 }}" | base64 -d > my-upload-key.jks
             echo "STORE_PASSWORD=${{ secrets.STORE_PASSWORD }}" >> "$GITHUB_ENV"
-            echo "KEY_PASSWORD=${{ secrets.KEY_PASSWORD }}" >> "$GITHUB_ENV"
+            if [ -n "${{ secrets.KEY_PASSWORD }}" ]; then
+              echo "KEY_PASSWORD=${{ secrets.KEY_PASSWORD }}" >> "$GITHUB_ENV"
+            else
+              echo "KEY_PASSWORD=${{ secrets.STORE_PASSWORD }}" >> "$GITHUB_ENV"
+            fi
+            echo "KEY_ALIAS=${{ secrets.KEY_ALIAS || 'upload' }}" >> "$GITHUB_ENV"
           else
             if [ ! -f my-upload-key.jks ]; then
               keytool -genkeypair -noprompt \
                 -keystore my-upload-key.jks \
+                -storetype PKCS12 \
                 -alias upload \
                 -keyalg RSA \
+                -sigalg SHA256withRSA \
                 -keysize 2048 \
                 -validity 10000 \
                 -storepass android123 \
@@ -101,6 +108,7 @@ jobs:
             fi
             echo "STORE_PASSWORD=android123" >> "$GITHUB_ENV"
             echo "KEY_PASSWORD=android123" >> "$GITHUB_ENV"
+            echo "KEY_ALIAS=upload" >> "$GITHUB_ENV"
           fi
           echo "KEYSTORE_PATH=${{ github.workspace }}/my-upload-key.jks" >> "$GITHUB_ENV"
 
@@ -119,10 +127,39 @@ jobs:
           -PappVersionName=${{ steps.version.outputs.version_name }}
           -PgithubRepoSlug=${{ github.repository }}
 
-      - name: Package Release APK
+      - name: Package, Zipalign & Verify Release APK Signature
         run: |
-          RELEASE_APK=$(find app/build/outputs/apk/release -name "*.apk" | head -n 1)
-          cp "$RELEASE_APK" "AG Video Player.apk"
+          RELEASE_APK=$(find app/build/outputs/apk/release -maxdepth 1 -name "*.apk" ! -name "*-unsigned.apk" | head -n 1)
+          if [ -z "$RELEASE_APK" ] || [ ! -s "$RELEASE_APK" ]; then
+            echo "ERROR: Signed release APK not found!"
+            ls -la app/build/outputs/apk/release || true
+            exit 1
+          fi
+
+          BUILD_TOOLS_DIR=$(find "$ANDROID_HOME/build-tools" -mindepth 1 -maxdepth 1 -type d | sort -V | tail -n 1)
+          ZIPALIGN="$BUILD_TOOLS_DIR/zipalign"
+          APKSIGNER="$BUILD_TOOLS_DIR/apksigner"
+
+          if ! "$ZIPALIGN" -c -p 4 "$RELEASE_APK" >/dev/null 2>&1; then
+            echo "APK is not 4-byte aligned; aligning and re-signing..."
+            "$ZIPALIGN" -f -p 4 "$RELEASE_APK" "aligned-release.apk"
+            "$APKSIGNER" sign \
+              --ks "$KEYSTORE_PATH" \
+              --ks-key-alias "$KEY_ALIAS" \
+              --ks-pass "env:STORE_PASSWORD" \
+              --key-pass "env:KEY_PASSWORD" \
+              --v1-signing-enabled true \
+              --v2-signing-enabled true \
+              --v3-signing-enabled true \
+              --out "AG Video Player.apk" \
+              "aligned-release.apk"
+            rm -f "aligned-release.apk"
+          else
+            cp "$RELEASE_APK" "AG Video Player.apk"
+          fi
+
+          "$ZIPALIGN" -c -p 4 "AG Video Player.apk"
+          "$APKSIGNER" verify --verbose --print-certs "AG Video Player.apk"
           ls -lh "AG Video Player.apk"
 
       - name: Upload APK Artifact

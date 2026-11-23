@@ -13,7 +13,8 @@ android {
   compileSdk = 36
 
   defaultConfig {
-    val ciVersionCode = (project.findProperty("appVersionCode") as? String)?.toIntOrNull() ?: 1
+    val ciVersionCode = (project.findProperty("appVersionCode") as? String)
+      ?.toIntOrNull()?.takeIf { it > 0 } ?: 1
     val ciVersionName = (project.findProperty("appVersionName") as? String)
       ?.takeIf { it.isNotBlank() } ?: "1.0.0"
     val ciRepoSlug = (project.findProperty("githubRepoSlug") as? String)
@@ -39,37 +40,34 @@ android {
     }
   }
 
-  signingConfigs {
-    create("debugConfig") {
-      storeFile = file("${rootDir}/debug.keystore")
-      storePassword = "android"
-      keyAlias = "androiddebugkey"
-      keyPassword = "android"
-    }
-  }
-
   buildTypes {
     release {
       isCrunchPngs = true
       isMinifyEnabled = true
       isShrinkResources = true
       proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
-      
+
       val keystorePath = System.getenv("KEYSTORE_PATH") ?: "${rootDir}/my-upload-key.jks"
       val keystoreFile = file(keystorePath)
-      signingConfig = if (keystoreFile.exists() && !System.getenv("STORE_PASSWORD").isNullOrBlank()) {
+      val storePass = System.getenv("STORE_PASSWORD")
+      val keyPass = System.getenv("KEY_PASSWORD")?.takeIf { it.isNotBlank() } ?: storePass
+      val customAlias = System.getenv("KEY_ALIAS")?.takeIf { it.isNotBlank() } ?: "upload"
+
+      signingConfig = if (keystoreFile.exists() && !storePass.isNullOrBlank()) {
         signingConfigs.create("releaseCustom") {
           storeFile = keystoreFile
-          storePassword = System.getenv("STORE_PASSWORD")
-          keyAlias = "upload"
-          keyPassword = System.getenv("KEY_PASSWORD")
+          storePassword = storePass
+          keyAlias = customAlias
+          keyPassword = keyPass
+          enableV1Signing = true
+          enableV2Signing = true
         }
       } else {
-        signingConfigs.getByName("debugConfig")
+        signingConfigs.getByName("debug")
       }
     }
     debug {
-      signingConfig = signingConfigs.getByName("debugConfig")
+      signingConfig = signingConfigs.getByName("debug")
     }
   }
   compileOptions {
