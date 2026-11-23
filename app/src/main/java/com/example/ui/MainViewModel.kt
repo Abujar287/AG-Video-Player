@@ -417,6 +417,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     fun toggleGridView() = viewModelScope.launch { prefsRepo.setGridView(!preferences.value.isGridView) }
     fun setShowHiddenFiles(v: Boolean) = viewModelScope.launch { prefsRepo.setShowHiddenFiles(v) }
     fun setMainDisplayMode(m: String) = viewModelScope.launch { prefsRepo.setMainDisplayMode(m) }
+    fun setThemeId(themeId: String) = viewModelScope.launch { prefsRepo.setThemeId(themeId) }
     fun setMainViewLayout(l: String) = viewModelScope.launch { prefsRepo.setMainViewLayout(l) }
     fun setOneFingerGesture(g: String) = viewModelScope.launch { prefsRepo.setOneFingerGesture(g) }
     fun setTwoFingerGesture(g: String) = viewModelScope.launch { prefsRepo.setTwoFingerGesture(g) }

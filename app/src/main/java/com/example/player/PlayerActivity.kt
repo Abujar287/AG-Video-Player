@@ -316,7 +316,7 @@ class PlayerActivity : ComponentActivity() {
                 finish()
             }
 
-            VeloPlayTheme(darkTheme = true) {
+            VeloPlayTheme(darkTheme = true, themeId = prefs.themeId) {
                 Box(
                     modifier = Modifier
                         .fillMaxSize()

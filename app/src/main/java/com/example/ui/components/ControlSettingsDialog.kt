@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -75,11 +76,13 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import com.example.data.model.AppThemePreset
 import com.example.data.model.DoubleClickAction
 import com.example.data.model.PlayerControlButton
 import com.example.data.model.ProgressBarStyle
 import com.example.data.model.SingleClickAction
 import com.example.data.model.UserPreferences
+import com.example.ui.theme.resolveThemePrimaryColor
 
 private enum class SettingsTab(
     val title: String,
@@ -161,8 +164,8 @@ fun ControlSettingsDialog(
     currentVersionLabel: String,
     hasAvailableUpdate: Boolean,
     onDismiss: () -> Unit,
-    onRefreshLibrary: () -> Unit,
     onToggleTheme: () -> Unit,
+    onSelectThemeId: (String) -> Unit,
     onOpenUpdateCheck: () -> Unit,
     onProgressBarStyleChange: (ProgressBarStyle) -> Unit,
     onSingleClickActionChange: (SingleClickAction) -> Unit,
@@ -354,32 +357,131 @@ fun ControlSettingsDialog(
                                         onCheckedChange = { onToggleTheme() }
                                     )
                                 }
+                                SettingsDivider()
+                                Column(
+                                    modifier = Modifier.padding(14.dp),
+                                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                                ) {
+                                    val isRandomActive = preferences.themeId.startsWith("RANDOM:")
+                                    val activePreset = AppThemePreset.fromId(preferences.themeId)
+                                    val activeLabel = when {
+                                        isRandomActive -> "Random"
+                                        activePreset != null -> activePreset.label
+                                        else -> AppThemePreset.TEAL_MINT.label
+                                    }
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.SpaceBetween
+                                    ) {
+                                        Column(modifier = Modifier.weight(1f)) {
+                                            Text(
+                                                text = "Theme",
+                                                style = MaterialTheme.typography.bodyMedium,
+                                                fontWeight = FontWeight.SemiBold
+                                            )
+                                            Text(
+                                                text = "Active: $activeLabel",
+                                                style = MaterialTheme.typography.bodySmall,
+                                                color = MaterialTheme.colorScheme.primary,
+                                                fontWeight = FontWeight.Medium
+                                            )
+                                        }
+                                        Row(
+                                            modifier = Modifier
+                                                .clip(RoundedCornerShape(10.dp))
+                                                .background(
+                                                    if (isRandomActive) MaterialTheme.colorScheme.primary
+                                                    else MaterialTheme.colorScheme.primaryContainer
+                                                )
+                                                .border(
+                                                    width = if (isRandomActive) 1.5.dp else 0.dp,
+                                                    color = if (isRandomActive) MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.35f) else Color.Transparent,
+                                                    shape = RoundedCornerShape(10.dp)
+                                                )
+                                                .clickable {
+                                                    val hue = (0..359).random()
+                                                    onSelectThemeId("RANDOM:$hue")
+                                                }
+                                                .padding(horizontal = 12.dp, vertical = 7.dp),
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.spacedBy(5.dp)
+                                        ) {
+                                            if (isRandomActive) {
+                                                Icon(
+                                                    imageVector = Icons.Rounded.Check,
+                                                    contentDescription = null,
+                                                    tint = MaterialTheme.colorScheme.onPrimary,
+                                                    modifier = Modifier.size(14.dp)
+                                                )
+                                            }
+                                            Text(
+                                                text = "Random Theme",
+                                                style = MaterialTheme.typography.labelMedium,
+                                                fontWeight = FontWeight.Bold,
+                                                color = if (isRandomActive) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onPrimaryContainer
+                                            )
+                                        }
+                                    }
+
+                                    AppThemePreset.entries.chunked(2).forEach { pair ->
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                        ) {
+                                            pair.forEach { preset ->
+                                                val selected = preferences.themeId == preset.id
+                                                val swatch = resolveThemePrimaryColor(preset.id, preferences.isDarkMode)
+                                                Row(
+                                                    modifier = Modifier
+                                                        .weight(1f)
+                                                        .clip(RoundedCornerShape(12.dp))
+                                                        .background(
+                                                            if (selected) MaterialTheme.colorScheme.primaryContainer
+                                                            else MaterialTheme.colorScheme.surface
+                                                        )
+                                                        .border(
+                                                            width = if (selected) 2.dp else 1.dp,
+                                                            color = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline.copy(alpha = 0.3f),
+                                                            shape = RoundedCornerShape(12.dp)
+                                                        )
+                                                        .clickable { onSelectThemeId(preset.id) }
+                                                        .padding(horizontal = 10.dp, vertical = 10.dp),
+                                                    verticalAlignment = Alignment.CenterVertically,
+                                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                                ) {
+                                                    Box(
+                                                        modifier = Modifier
+                                                            .size(14.dp)
+                                                            .clip(CircleShape)
+                                                            .background(swatch)
+                                                            .border(1.dp, Color.White.copy(alpha = 0.35f), CircleShape)
+                                                    )
+                                                    Text(
+                                                        text = preset.label,
+                                                        style = MaterialTheme.typography.labelMedium,
+                                                        fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
+                                                        color = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
+                                                        maxLines = 1,
+                                                        overflow = TextOverflow.Ellipsis,
+                                                        modifier = Modifier.weight(1f)
+                                                    )
+                                                    if (selected) {
+                                                        Icon(
+                                                            imageVector = Icons.Rounded.Check,
+                                                            contentDescription = "Selected",
+                                                            tint = MaterialTheme.colorScheme.primary,
+                                                            modifier = Modifier.size(15.dp)
+                                                        )
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
                             }
 
                             SettingsGroup(title = "Main Interface & Layout") {
-                                Row(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .clickable {
-                                            onRefreshLibrary()
-                                            onDismiss()
-                                        }
-                                        .padding(horizontal = 14.dp, vertical = 12.dp),
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.spacedBy(10.dp)
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.Rounded.Refresh,
-                                        contentDescription = null,
-                                        tint = MaterialTheme.colorScheme.primary,
-                                        modifier = Modifier.size(20.dp)
-                                    )
-                                    Column(modifier = Modifier.weight(1f)) {
-                                        Text("Refresh Video Library", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium)
-                                        Text("Scan storage folders for new videos", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                                    }
-                                }
-                                SettingsDivider()
                                 Column(
                                     modifier = Modifier.padding(14.dp),
                                     verticalArrangement = Arrangement.spacedBy(12.dp)

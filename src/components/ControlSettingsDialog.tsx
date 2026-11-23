@@ -43,13 +43,6 @@ const THEME_PRESETS = [
   { name: 'Ocean Blue', primary: '#3b82f6', container: '#1e3a8a' },
 ];
 
-function applyCustomTheme(primary: string, container: string) {
-  document.documentElement.style.setProperty('--primary', primary);
-  document.documentElement.style.setProperty('--primary-container', container);
-  localStorage.setItem('ag_custom_primary', primary);
-  localStorage.setItem('ag_custom_container', container);
-}
-
 type SettingsTab = 'MENU' | 'CONTROLS' | 'PLAYBACK' | 'UPDATE';
 
 interface TabMeta {
@@ -345,37 +338,60 @@ export function ControlSettingsDialog({
               </button>
               <SettingsDivider />
               <div className="space-y-3 p-3.5">
-                <div className="flex items-center justify-between">
-                  <div className="text-sm font-semibold">Accent Theme & Randomizer</div>
-                  <button
-                    type="button"
-                    onClick={applyRandomTheme}
-                    className="flex items-center gap-1.5 rounded-xl bg-[var(--primary)] px-3 py-1.5 text-xs font-semibold text-[var(--on-primary)] transition-transform active:scale-95"
-                  >
-                    <span>🎲 Random Theme</span>
-                  </button>
-                </div>
-                <div className="grid grid-cols-3 gap-2 pt-1">
-                  {THEME_PRESETS.map((t) => {
-                    const isSelected = selectedPrimary.toLowerCase() === t.primary.toLowerCase();
-                    return (
-                      <button
-                        key={t.name}
-                        type="button"
-                        onClick={() => applyCustomTheme(t.primary, t.container)}
-                        className={`flex items-center gap-2 rounded-xl px-3 py-2 text-xs font-medium transition-all ${
-                          isSelected
-                            ? 'bg-[var(--primary)] text-[var(--on-primary)] ring-2 ring-white/40 shadow-md font-bold'
-                            : 'bg-[var(--bg-surface-variant)] text-[var(--text-primary)] hover:opacity-90'
-                        }`}
-                      >
-                        <span className="h-3.5 w-3.5 rounded-full shrink-0 border border-white/30" style={{ backgroundColor: t.primary }} />
-                        <span className="truncate flex-1 text-left">{t.name}</span>
-                        {isSelected && <Check className="h-3.5 w-3.5 shrink-0" />}
-                      </button>
-                    );
-                  })}
-                </div>
+                {(() => {
+                  const activePreset = THEME_PRESETS.find(
+                    (t) => t.primary.toLowerCase() === selectedPrimary.toLowerCase()
+                  );
+                  const isRandomActive = !activePreset;
+                  return (
+                    <>
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <div className="text-sm font-semibold">Theme</div>
+                          <div className="text-xs font-medium text-[var(--primary)]">
+                            Active: {activePreset ? activePreset.name : 'Random'}
+                          </div>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={applyRandomTheme}
+                          className={`flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-xs font-semibold transition-transform active:scale-95 ${
+                            isRandomActive
+                              ? 'bg-[var(--primary)] text-[var(--on-primary)] ring-2 ring-white/40 shadow-md'
+                              : 'bg-[var(--primary-container)] text-[var(--on-primary-container)] hover:opacity-90'
+                          }`}
+                        >
+                          {isRandomActive && <Check className="h-3.5 w-3.5 shrink-0" />}
+                          <span>Random Theme</span>
+                        </button>
+                      </div>
+                      <div className="grid grid-cols-3 gap-2 pt-1">
+                        {THEME_PRESETS.map((t) => {
+                          const isSelected = selectedPrimary.toLowerCase() === t.primary.toLowerCase();
+                          return (
+                            <button
+                              key={t.name}
+                              type="button"
+                              onClick={() => applyCustomTheme(t.primary, t.container)}
+                              className={`flex items-center gap-2 rounded-xl border px-3 py-2 text-xs transition-all ${
+                                isSelected
+                                  ? 'border-[var(--primary)] bg-[var(--primary-container)] font-bold text-[var(--primary)] shadow-md ring-1 ring-[var(--primary)]'
+                                  : 'border-transparent bg-[var(--bg-surface-variant)] font-medium text-[var(--text-primary)] hover:opacity-90'
+                              }`}
+                            >
+                              <span
+                                className="h-3.5 w-3.5 shrink-0 rounded-full border border-white/30"
+                                style={{ backgroundColor: t.primary }}
+                              />
+                              <span className="flex-1 truncate text-left">{t.name}</span>
+                              {isSelected && <Check className="h-3.5 w-3.5 shrink-0" />}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </>
+                  );
+                })()}
               </div>
 
               <SettingsDivider />

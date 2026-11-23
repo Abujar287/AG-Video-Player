@@ -609,8 +609,6 @@ export function LibraryBrowserScreen(props: LibraryBrowserScreenProps) {
           currentVersionLabel={currentAppVersionLabel}
           hasAvailableUpdate={hasAvailableUpdate}
           onDismiss={() => setShowControlSettings(false)}
-          onRefreshLibrary={props.onRefresh}
-          onOpenDocumentPicker={props.onOpenDocumentPicker}
           onToggleTheme={props.onToggleTheme}
           onOpenUpdateCheck={props.onOpenUpdateCheck}
           onProgressBarStyleChange={props.onProgressBarStyleChange}

@@ -22,6 +22,7 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -54,6 +55,7 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
@@ -92,7 +94,6 @@ import com.example.data.model.SingleClickAction
 import com.example.data.model.UserPreferences
 import com.example.ui.components.FitScreenIcon
 import com.example.ui.theme.BoostOrange
-import com.example.ui.theme.DarkPrimary
 import com.example.ui.theme.DarkSecondary
 import com.example.util.FormatUtils
 import kotlin.math.abs
@@ -368,7 +369,7 @@ fun PlayerOverlay(
                                     .clip(RoundedCornerShape(8.dp))
                                     .background(
                                         if (useSoftwareDecoder) DarkSecondary.copy(alpha = 0.24f)
-                                        else DarkPrimary.copy(alpha = 0.22f)
+                                        else MaterialTheme.colorScheme.primary.copy(alpha = 0.22f)
                                     )
                                     .clickable(onClick = onToggleDecoder)
                                     .padding(horizontal = 10.dp, vertical = 6.dp),
@@ -378,12 +379,12 @@ fun PlayerOverlay(
                                 Icon(
                                     imageVector = Icons.Rounded.Memory,
                                     contentDescription = null,
-                                    tint = if (useSoftwareDecoder) DarkSecondary else DarkPrimary,
+                                    tint = if (useSoftwareDecoder) DarkSecondary else MaterialTheme.colorScheme.primary,
                                     modifier = Modifier.size(14.dp)
                                 )
                                 Text(
                                     text = if (useSoftwareDecoder) "SW" else "HW",
-                                    color = if (useSoftwareDecoder) DarkSecondary else DarkPrimary,
+                                    color = if (useSoftwareDecoder) DarkSecondary else MaterialTheme.colorScheme.primary,
                                     fontSize = 11.sp,
                                     fontWeight = FontWeight.Bold
                                 )
@@ -425,14 +426,14 @@ fun PlayerOverlay(
                                 Box(
                                     modifier = Modifier
                                         .clip(RoundedCornerShape(10.dp))
-                                        .background(if (showMoreTools) DarkPrimary.copy(alpha = 0.22f) else Color.White.copy(alpha = 0.12f))
+                                        .background(if (showMoreTools) MaterialTheme.colorScheme.primary.copy(alpha = 0.22f) else Color.White.copy(alpha = 0.12f))
                                         .clickable { showMoreTools = !showMoreTools }
                                         .padding(horizontal = 10.dp, vertical = 8.dp)
                                 ) {
                                     Icon(
                                         imageVector = Icons.AutoMirrored.Rounded.KeyboardArrowRight,
                                         contentDescription = "More tools",
-                                        tint = if (showMoreTools) DarkPrimary else Color.White,
+                                        tint = if (showMoreTools) MaterialTheme.colorScheme.primary else Color.White,
                                         modifier = Modifier
                                             .size(18.dp)
                                             .rotate(if (showMoreTools) 180f else 0f)
@@ -484,7 +485,7 @@ fun PlayerOverlay(
                                     fontWeight = FontWeight.SemiBold,
                                     modifier = Modifier
                                         .clip(RoundedCornerShape(8.dp))
-                                        .background(if (active) DarkPrimary else Color.Transparent)
+                                        .background(if (active) MaterialTheme.colorScheme.primary else Color.Transparent)
                                         .clickable {
                                             onSelectSpeed(spd)
                                             showSpeedPicker = false
@@ -565,7 +566,7 @@ fun PlayerOverlay(
                                             .fillMaxWidth(progressFrac)
                                             .fillMaxHeight()
                                             .clip(RoundedCornerShape(3.dp))
-                                            .background(DarkPrimary)
+                                            .background(MaterialTheme.colorScheme.primary)
                                     )
                                 }
                             }
@@ -581,8 +582,8 @@ fun PlayerOverlay(
                                     onSeekTo(scrubMs)
                                 },
                                 colors = SliderDefaults.colors(
-                                    thumbColor = DarkPrimary,
-                                    activeTrackColor = DarkPrimary,
+                                    thumbColor = MaterialTheme.colorScheme.primary,
+                                    activeTrackColor = MaterialTheme.colorScheme.primary,
                                     inactiveTrackColor = Color.White.copy(alpha = 0.25f)
                                 ),
                                 modifier = Modifier.weight(1f)
@@ -635,7 +636,7 @@ fun PlayerOverlay(
                                 modifier = Modifier
                                     .size(54.dp)
                                     .clip(CircleShape)
-                                    .background(DarkPrimary)
+                                    .background(MaterialTheme.colorScheme.primary)
                             ) {
                                 Icon(
                                     imageVector = if (isPlaying) Icons.Rounded.Pause else Icons.Rounded.PlayArrow,
@@ -671,7 +672,7 @@ fun PlayerOverlay(
                             if (preferences.isButtonVisible(PlayerControlButton.FIT)) {
                                 IconButton(onClick = onCycleAspectMode) {
                                     FitScreenIcon(
-                                        tint = if (aspectMode != PlayerAspectMode.FIT) DarkPrimary else Color.White,
+                                        tint = if (aspectMode != PlayerAspectMode.FIT) MaterialTheme.colorScheme.primary else Color.White,
                                         size = 21.dp
                                     )
                                 }
@@ -705,7 +706,7 @@ fun PlayerOverlay(
                     .clip(CircleShape)
                     .background(Color.Black.copy(alpha = 0.72f))
             ) {
-                Icon(Icons.Rounded.LockOpen, contentDescription = "Unlock", tint = DarkPrimary)
+                Icon(Icons.Rounded.LockOpen, contentDescription = "Unlock", tint = MaterialTheme.colorScheme.primary)
             }
         }
 
@@ -719,7 +720,7 @@ fun PlayerOverlay(
                     .padding(horizontal = 24.dp, vertical = 14.dp),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
-                Text(FormatUtils.formatDuration(previewSeekMs), color = DarkPrimary, fontSize = 22.sp, fontWeight = FontWeight.Bold)
+                Text(FormatUtils.formatDuration(previewSeekMs), color = MaterialTheme.colorScheme.primary, fontSize = 22.sp, fontWeight = FontWeight.Bold)
                 Text(FormatUtils.formatSignedDelta(dragSeekDeltaMs), color = Color.White, fontSize = 12.sp)
             }
         } else if (dragMode == DragMode.BRIGHTNESS) {
@@ -740,7 +741,7 @@ fun PlayerOverlay(
                 icon = Icons.AutoMirrored.Rounded.VolumeUp,
                 label = if (volumePercent > 100) "BOOST $volumePercent%" else "$volumePercent%",
                 fraction = volumePercent / 200f,
-                accentColor = if (volumePercent > 100) BoostOrange else DarkPrimary
+                accentColor = if (volumePercent > 100) BoostOrange else MaterialTheme.colorScheme.primary
             )
         }
 
@@ -748,7 +749,7 @@ fun PlayerOverlay(
         if (!statusBanner.isNullOrBlank() && dragMode == DragMode.NONE) {
             Text(
                 text = statusBanner,
-                color = DarkPrimary,
+                color = MaterialTheme.colorScheme.primary,
                 fontSize = 12.sp,
                 fontWeight = FontWeight.Medium,
                 modifier = Modifier
@@ -792,18 +793,18 @@ fun PlayerOverlay(
                         .verticalScroll(rememberScrollState()),
                     verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    Text("Volume / Audio Boost ($volumePercent%)", fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = DarkPrimary)
+                    Text("Volume / Audio Boost ($volumePercent%)", fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.primary)
                     Slider(
                         value = volumePercent.toFloat(),
                         onValueChange = { onChangeVolume(it.toInt()) },
                         valueRange = 0f..200f,
                         colors = SliderDefaults.colors(
-                            thumbColor = if (volumePercent > 100) BoostOrange else DarkPrimary,
-                            activeTrackColor = if (volumePercent > 100) BoostOrange else DarkPrimary
+                            thumbColor = if (volumePercent > 100) BoostOrange else MaterialTheme.colorScheme.primary,
+                            activeTrackColor = if (volumePercent > 100) BoostOrange else MaterialTheme.colorScheme.primary
                         )
                     )
                     if (audioTracks.isNotEmpty()) {
-                        Text("Audio Tracks", fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = DarkPrimary)
+                        Text("Audio Tracks", fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.primary)
                         audioTracks.forEach { tr ->
                             TrackChoiceRow(tr.label, tr.isSelected) {
                                 onSelectAudioTrack(tr)
@@ -812,7 +813,7 @@ fun PlayerOverlay(
                         }
                     }
                     HorizontalDivider()
-                    Text("Subtitles", fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = DarkPrimary)
+                    Text("Subtitles", fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.primary)
                     TrackChoiceRow("Off (Disable Subtitles)", subtitleTracks.none { it.isSelected }) {
                         onSelectSubtitleTrack(null)
                         showTrackDialog = false
@@ -925,7 +926,7 @@ private fun TopToolChip(
         TopToolItem.TRACKS -> onTracksClick
     }
 
-    val accent = if (tool == TopToolItem.SLEEP && active) DarkSecondary else DarkPrimary
+    val accent = if (tool == TopToolItem.SLEEP && active) DarkSecondary else MaterialTheme.colorScheme.primary
     Column(
         modifier = Modifier
             .clip(RoundedCornerShape(10.dp))
@@ -983,7 +984,7 @@ private fun TrackChoiceRow(label: String, selected: Boolean, onClick: () -> Unit
         modifier = Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(10.dp))
-            .background(if (selected) DarkPrimary.copy(alpha = 0.16f) else Color.Transparent)
+            .background(if (selected) MaterialTheme.colorScheme.primary.copy(alpha = 0.16f) else Color.Transparent)
             .clickable(onClick = onClick)
             .padding(horizontal = 12.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically
@@ -991,11 +992,11 @@ private fun TrackChoiceRow(label: String, selected: Boolean, onClick: () -> Unit
         Text(
             text = label,
             fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
-            color = if (selected) DarkPrimary else Color.Unspecified,
+            color = if (selected) MaterialTheme.colorScheme.primary else Color.Unspecified,
             modifier = Modifier.weight(1f),
             maxLines = 1,
             overflow = TextOverflow.Ellipsis
         )
-        if (selected) Icon(Icons.Rounded.Check, null, tint = DarkPrimary, modifier = Modifier.size(18.dp))
+        if (selected) Icon(Icons.Rounded.Check, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(18.dp))
     }
 }

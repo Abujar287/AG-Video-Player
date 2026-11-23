@@ -29,6 +29,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.Add
@@ -82,6 +83,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -143,6 +145,7 @@ fun LibraryBrowserScreen(
     onRefresh: () -> Unit,
     onOpenDocumentPicker: () -> Unit,
     onToggleTheme: () -> Unit,
+    onSelectThemeId: (String) -> Unit,
     onToggleGridView: () -> Unit,
     onApplySort: (SortField, SortDirection) -> Unit,
     onOpenUpdateCheck: () -> Unit,
@@ -443,6 +446,14 @@ fun LibraryBrowserScreen(
 
             Spacer(Modifier.height(10.dp))
 
+            PullToRefreshBox(
+                isRefreshing = isLoadingLibrary,
+                onRefresh = onRefresh,
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxWidth()
+            ) {
+            Column(modifier = Modifier.fillMaxSize()) {
             if (destination == BrowserDestination.Folders && preferences.mainDisplayMode == "folders") {
                 if (!searchQuery.isNotBlank() && (favoriteVideosCount > 0 || preferences.playlists.isNotEmpty())) {
                     Row(
@@ -613,6 +624,8 @@ fun LibraryBrowserScreen(
                     }
                 }
             }
+            }
+            }
         }
     }
 
@@ -635,8 +648,8 @@ fun LibraryBrowserScreen(
             currentVersionLabel = currentAppVersionLabel,
             hasAvailableUpdate = hasAvailableUpdate,
             onDismiss = { showControlSettings = false },
-            onRefreshLibrary = onRefresh,
             onToggleTheme = onToggleTheme,
+            onSelectThemeId = onSelectThemeId,
             onOpenUpdateCheck = onOpenUpdateCheck,
             onProgressBarStyleChange = onProgressBarStyleChange,
             onSingleClickActionChange = onSingleClickActionChange,
@@ -1499,6 +1512,7 @@ private fun EmptyLibraryState(onOpenDocumentPicker: () -> Unit) {
     Column(
         modifier = Modifier
             .fillMaxSize()
+            .verticalScroll(rememberScrollState())
             .padding(32.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center
@@ -1520,6 +1534,7 @@ private fun EmptyVideosState() {
     Column(
         modifier = Modifier
             .fillMaxSize()
+            .verticalScroll(rememberScrollState())
             .padding(32.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center

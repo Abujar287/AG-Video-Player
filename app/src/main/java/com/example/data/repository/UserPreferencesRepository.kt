@@ -10,6 +10,7 @@ import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.core.stringSetPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import com.example.BuildConfig
+import com.example.data.model.AppThemePreset
 import com.example.data.model.DoubleClickAction
 import com.example.data.model.PlayerControlButton
 import com.example.data.model.ProgressBarStyle
@@ -26,6 +27,7 @@ class UserPreferencesRepository(private val context: Context) {
 
     private object Keys {
         val IS_DARK_MODE = booleanPreferencesKey("is_dark_mode")
+        val THEME_ID = stringPreferencesKey("theme_id")
         val IS_GRID_VIEW = booleanPreferencesKey("is_grid_view")
         val SHOW_HIDDEN_FILES = booleanPreferencesKey("show_hidden_files")
         val MAIN_DISPLAY_MODE = stringPreferencesKey("main_display_mode")
@@ -58,6 +60,7 @@ class UserPreferencesRepository(private val context: Context) {
 
         UserPreferences(
             isDarkMode = prefs[Keys.IS_DARK_MODE] ?: true,
+            themeId = prefs[Keys.THEME_ID] ?: AppThemePreset.TEAL_MINT.id,
             isGridView = isGrid,
             showHiddenFiles = prefs[Keys.SHOW_HIDDEN_FILES] ?: false,
             mainDisplayMode = prefs[Keys.MAIN_DISPLAY_MODE] ?: "folders",
@@ -88,6 +91,7 @@ class UserPreferencesRepository(private val context: Context) {
     }
 
     suspend fun setDarkMode(enabled: Boolean) = update { it[Keys.IS_DARK_MODE] = enabled }
+    suspend fun setThemeId(themeId: String) = update { it[Keys.THEME_ID] = themeId }
     suspend fun setGridView(enabled: Boolean) = update {
         it[Keys.IS_GRID_VIEW] = enabled
         it[Keys.MAIN_VIEW_LAYOUT] = if (enabled) "grid" else "list"

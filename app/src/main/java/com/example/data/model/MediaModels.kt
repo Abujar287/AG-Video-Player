@@ -91,6 +91,26 @@ enum class PlayerAspectMode(val label: String) {
     ZOOM("Crop")
 }
 
+enum class AppThemePreset(
+    val id: String,
+    val label: String,
+    val darkPrimaryHex: Long,
+    val darkContainerHex: Long,
+    val lightPrimaryHex: Long,
+    val lightContainerHex: Long
+) {
+    TEAL_MINT("TEAL_MINT", "Teal Mint", 0xFF2DD4BFL, 0xFF0F3D39L, 0xFF0D9488L, 0xFFCCFBF1L),
+    EMERALD("EMERALD", "Emerald", 0xFF10B981L, 0xFF064E3BL, 0xFF059669L, 0xFFD1FAE5L),
+    AMBER("AMBER", "Amber", 0xFFF59E0BL, 0xFF452A04L, 0xFFD97706L, 0xFFFEF3C7L),
+    PURPLE("PURPLE", "Purple", 0xFFA855F7L, 0xFF3B0764L, 0xFF9333EAL, 0xFFF3E8FFL),
+    NEON_PINK("NEON_PINK", "Neon Pink", 0xFFEC4899L, 0xFF500724L, 0xFFDB2777L, 0xFFFCE7F3L),
+    OCEAN_BLUE("OCEAN_BLUE", "Ocean Blue", 0xFF3B82F6L, 0xFF1E3A8AL, 0xFF2563EBL, 0xFFDBEAFEL);
+
+    companion object {
+        fun fromId(id: String): AppThemePreset? = entries.firstOrNull { it.id == id }
+    }
+}
+
 data class PlaylistEntry(
     val uriString: String,
     val title: String
@@ -106,6 +126,7 @@ data class MediaTrackOption(
 
 data class UserPreferences(
     val isDarkMode: Boolean = true,
+    val themeId: String = AppThemePreset.TEAL_MINT.id,
     val isGridView: Boolean = false,
     val showHiddenFiles: Boolean = false,
     val mainDisplayMode: String = "folders",

@@ -151,7 +151,7 @@ class MainActivity : ComponentActivity() {
                 }
             }
 
-            VeloPlayTheme(darkTheme = prefs.isDarkMode) {
+            VeloPlayTheme(darkTheme = prefs.isDarkMode, themeId = prefs.themeId) {
                 LibraryBrowserScreen(
                     isLoadingLibrary = isLoading,
                     folders = snapshot.folders,
@@ -176,6 +176,7 @@ class MainActivity : ComponentActivity() {
                     onRefresh = vm::refreshLibrary,
                     onOpenDocumentPicker = { openDocLauncher.launch(arrayOf("video/*")) },
                     onToggleTheme = vm::toggleDarkMode,
+                    onSelectThemeId = vm::setThemeId,
                     onToggleGridView = vm::toggleGridView,
                     onApplySort = vm::setSortOption,
                     onOpenUpdateCheck = vm::openUpdateCheck,
