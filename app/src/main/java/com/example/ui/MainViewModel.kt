@@ -490,20 +490,33 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         downloadPollJob?.cancel()
         cancelActiveSystemDownload(context)
 
-        val (downloadId, publicFileName) = GitHubUpdateManager.startApkDownload(context, release)
-        activeDownloadManagerId = downloadId
+        val initialName = GitHubUpdateManager.buildUpdateFileName(release)
         _updateState.value = UpdateUiState.Downloading(
-            downloadId = downloadId,
+            downloadId = 0L,
             percent = 0,
             bytesDownloaded = 0L,
-            bytesTotal = release.apkSizeBytes
+            bytesTotal = release.apkSizeBytes,
+            fileName = initialName,
+            usingDownloadManager = true
         )
 
         downloadPollJob = viewModelScope.launch {
+            val (downloadId, publicFileName) = GitHubUpdateManager.startApkDownloadAsync(context, release)
+            activeDownloadManagerId = downloadId
+
             if (downloadId <= 0L) {
                 runDirectDownloadFallback(context, release)
                 return@launch
             }
+
+            _updateState.value = UpdateUiState.Downloading(
+                downloadId = downloadId,
+                percent = 0,
+                bytesDownloaded = 0L,
+                bytesTotal = release.apkSizeBytes,
+                fileName = publicFileName,
+                usingDownloadManager = true
+            )
 
             val dm = context.getSystemService(Context.DOWNLOAD_SERVICE) as? DownloadManager
             if (dm == null) {
@@ -512,7 +525,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             }
 
             var emptyPolls = 0
-            val startedAtMs = System.currentTimeMillis()
+            var lastProgressBytes = 0L
+            var lastActivityMs = System.currentTimeMillis()
             while (true) {
                 val query = DownloadManager.Query().setFilterById(downloadId)
                 val cursor = runCatching { dm.query(query) }.getOrNull()
@@ -530,6 +544,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
                     cursor.close()
 
+                    if (bytesDownloaded > lastProgressBytes || status == DownloadManager.STATUS_RUNNING) {
+                        lastProgressBytes = bytesDownloaded
+                        lastActivityMs = System.currentTimeMillis()
+                    }
+
                     when (status) {
                         DownloadManager.STATUS_SUCCESSFUL -> {
                             activeDownloadManagerId = -1L
@@ -537,13 +556,15 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                             if (resolvedTarget != null && GitHubUpdateManager.isValidApkTarget(context, resolvedTarget)) {
                                 GitHubUpdateManager.scanDownloadedFile(context, resolvedTarget.file)
                                 lastDownloadedTarget = resolvedTarget
+                                val savedName = resolvedTarget.file?.name ?: publicFileName
+                                _actionMessage.value = "Downloaded to Download/$savedName"
                                 _updateState.value = UpdateUiState.ReadyToInstall(
                                     filePath = resolvedTarget.file?.absolutePath.orEmpty(),
                                     contentUri = resolvedTarget.contentUri?.toString()
                                 )
                                 installUpdateTarget(resolvedTarget)
                             } else {
-                                // Retry once via direct streaming downloader in case DownloadManager saved a bad redirect
+                                // Retry once via direct streaming downloader to 0/Download
                                 runDirectDownloadFallback(context, release)
                             }
                             break
@@ -558,12 +579,19 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                             val percent = if (effectiveTotal > 0L) {
                                 ((bytesDownloaded * 100L) / effectiveTotal).toInt().coerceIn(0, 100)
                             } else 0
-                            _updateState.value = UpdateUiState.Downloading(downloadId, percent, bytesDownloaded, effectiveTotal)
+                            _updateState.value = UpdateUiState.Downloading(
+                                downloadId = downloadId,
+                                percent = percent,
+                                bytesDownloaded = bytesDownloaded,
+                                bytesTotal = effectiveTotal,
+                                fileName = publicFileName,
+                                usingDownloadManager = true
+                            )
 
-                            // If system DownloadManager stalls pending with 0 bytes for >12s, seamlessly switch to native downloader
+                            // Only fall back if system DownloadManager stays stuck at 0 bytes PENDING for >45s
                             if (status == DownloadManager.STATUS_PENDING &&
                                 bytesDownloaded == 0L &&
-                                System.currentTimeMillis() - startedAtMs > 12_000L
+                                System.currentTimeMillis() - lastActivityMs > 45_000L
                             ) {
                                 cancelActiveSystemDownload(context)
                                 runDirectDownloadFallback(context, release)
@@ -574,31 +602,36 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 } else {
                     cursor?.close()
                     emptyPolls++
-                    if (emptyPolls >= 4) {
+                    if (emptyPolls >= 8) {
                         cancelActiveSystemDownload(context)
                         runDirectDownloadFallback(context, release)
                         break
                     }
                 }
-                delay(250L)
+                delay(300L)
             }
         }
     }
 
     private suspend fun runDirectDownloadFallback(context: Context, release: GitHubReleaseInfo) {
         activeDownloadManagerId = -1L
+        val fileName = GitHubUpdateManager.buildUpdateFileName(release)
         val target = GitHubUpdateManager.downloadApkDirect(context, release) { downloaded, total, percent ->
             val effectiveTotal = if (total > 0L) total else release.apkSizeBytes
             _updateState.value = UpdateUiState.Downloading(
                 downloadId = 0L,
                 percent = percent,
                 bytesDownloaded = downloaded,
-                bytesTotal = effectiveTotal
+                bytesTotal = effectiveTotal,
+                fileName = fileName,
+                usingDownloadManager = false
             )
         }
         if (target != null && GitHubUpdateManager.isValidApkTarget(context, target)) {
             GitHubUpdateManager.scanDownloadedFile(context, target.file)
             lastDownloadedTarget = target
+            val savedName = target.file?.name ?: fileName
+            _actionMessage.value = "Downloaded to Download/$savedName"
             _updateState.value = UpdateUiState.ReadyToInstall(
                 filePath = target.file?.absolutePath.orEmpty(),
                 contentUri = target.contentUri?.toString()
@@ -619,6 +652,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     ): DownloadedApkTarget? {
         val dmUri = runCatching { dm.getUriForDownloadedFile(downloadId) }.getOrNull()
         val parsedLocal = localUri?.takeIf { it.isNotBlank() }?.let { runCatching { Uri.parse(it) }.getOrNull() }
+        val mediaStoreMatch = GitHubUpdateManager.queryPublicDownloadByName(context, publicFileName)
 
         val localFile = when {
             parsedLocal != null && (parsedLocal.scheme == "file" || parsedLocal.scheme.isNullOrBlank()) ->
@@ -626,11 +660,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             publicFileName.isNotBlank() ->
                 File(GitHubUpdateManager.getPublicDownloadsDir(), publicFileName).takeIf { it.exists() }
             else -> null
-        } ?: GitHubUpdateManager.getExpectedApkFile(release).takeIf { it.exists() }
+        } ?: mediaStoreMatch?.file ?: GitHubUpdateManager.getExpectedApkFile(release).takeIf { it.exists() }
 
         val contentUri = when {
             dmUri != null && dmUri.scheme == "content" -> dmUri
             parsedLocal != null && parsedLocal.scheme == "content" -> parsedLocal
+            mediaStoreMatch?.contentUri != null -> mediaStoreMatch.contentUri
             else -> null
         }
 

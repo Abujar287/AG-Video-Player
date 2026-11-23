@@ -591,14 +591,18 @@ export function useLibraryState() {
       return;
     }
 
+    const fileName = release.apkFileName || `AG-Video-Player-v${release.versionName}.apk`;
     if (outcome === 'fallback_link') {
       const a = document.createElement('a');
       a.href = release.apkDownloadUrl;
-      a.download = release.apkFileName || 'AG Video Player.apk';
+      a.download = fileName;
       a.rel = 'noopener noreferrer';
       document.body.appendChild(a);
       a.click();
       a.remove();
+      setActionMessage(`Download started in browser: ${fileName}`);
+    } else {
+      setActionMessage(`Downloaded ${fileName} to Downloads`);
     }
     setShowUpdateDialog(false);
     setUpdateState({ status: 'available', release });

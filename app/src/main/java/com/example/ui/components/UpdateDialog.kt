@@ -112,11 +112,24 @@ fun UpdateDialog(
                     val progress = if (state.bytesTotal > 0L) {
                         (state.bytesDownloaded.toFloat() / state.bytesTotal.toFloat()).coerceIn(0f, 1f)
                     } else 0f
+                    val targetLabel = buildString {
+                        append(if (state.usingDownloadManager) "Download Manager → " else "Saving → ")
+                        append("0/Download")
+                        if (state.fileName.isNotBlank()) {
+                            append("/")
+                            append(state.fileName)
+                        }
+                    }
 
                     Column(
                         modifier = Modifier.fillMaxWidth(),
                         verticalArrangement = Arrangement.spacedBy(10.dp)
                     ) {
+                        Text(
+                            text = targetLabel,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
                         if (state.bytesTotal > 0L) {
                             LinearProgressIndicator(
                                 progress = { progress },
@@ -145,6 +158,7 @@ fun UpdateDialog(
                     }
                 }
                 is UpdateUiState.ReadyToInstall -> {
+                    val savedName = state.filePath.substringAfterLast('/', "").ifBlank { "APK" }
                     Column(
                         modifier = Modifier.fillMaxWidth(),
                         verticalArrangement = Arrangement.spacedBy(10.dp)
@@ -159,9 +173,10 @@ fun UpdateDialog(
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Text(
-                                text = "Download complete",
+                                text = "Saved to 0/Download/$savedName",
                                 style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.weight(1f)
                             )
                             Text(
                                 text = "100%",
@@ -186,6 +201,11 @@ fun UpdateDialog(
                         Button(onClick = { onStartDownload(state.release) }) {
                             Text("Download")
                         }
+                    }
+                }
+                is UpdateUiState.Downloading -> {
+                    TextButton(onClick = onDismiss) {
+                        Text("Hide")
                     }
                 }
                 is UpdateUiState.ReadyToInstall -> {
