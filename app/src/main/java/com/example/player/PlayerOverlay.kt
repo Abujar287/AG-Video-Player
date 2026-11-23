@@ -300,6 +300,27 @@ fun PlayerOverlay(
                 )
             }
     ) {
+        // Floating On-Screen Back Button when controls are hidden
+        if (!isLocked && !controlsVisible) {
+            Box(
+                modifier = Modifier
+                    .padding(12.dp)
+                    .size(44.dp)
+                    .clip(CircleShape)
+                    .background(Color.Black.copy(alpha = 0.65f))
+                    .border(1.dp, Color.White.copy(alpha = 0.25f), CircleShape)
+                    .clickable(onClick = onBack),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    imageVector = Icons.AutoMirrored.Rounded.ArrowBack,
+                    contentDescription = "Back",
+                    tint = Color.White,
+                    modifier = Modifier.size(24.dp)
+                )
+            }
+        }
+
         // Controls Overlay
         AnimatedVisibility(
             visible = controlsVisible && !isLocked,

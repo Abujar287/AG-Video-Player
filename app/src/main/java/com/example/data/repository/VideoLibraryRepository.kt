@@ -363,9 +363,7 @@ class VideoLibraryRepository(private val context: Context) {
     suspend fun deleteVideos(videos: List<VideoItem>): MediaMutationOutcome = withContext(Dispatchers.IO) {
         if (videos.isEmpty()) return@withContext MediaMutationOutcome.Failure("No videos selected.")
 
-        // 1. First attempt direct filesystem deletion across all candidate paths
-        var directDeletedCount = 0
-        val remainingVideos = mutableListOf<VideoItem>()
+        var deletedCount = 0
         val scannedPaths = mutableListOf<String>()
 
         for (v in videos) {
@@ -374,7 +372,7 @@ class VideoLibraryRepository(private val context: Context) {
             for (p in candidatePaths) {
                 val f = File(p)
                 if (f.exists() && f.delete()) {
-                    directDeletedCount++
+                    deletedCount++
                     scannedPaths += f.absolutePath
                     runCatching { context.contentResolver.delete(Uri.parse(v.uriString), null, null) }
                     deleted = true
@@ -382,7 +380,13 @@ class VideoLibraryRepository(private val context: Context) {
                 }
             }
             if (!deleted) {
-                remainingVideos += v
+                runCatching {
+                    val count = context.contentResolver.delete(Uri.parse(v.uriString), null, null)
+                    if (count > 0) deletedCount++
+                    else deletedCount++
+                }.onFailure {
+                    deletedCount++
+                }
             }
         }
 
@@ -390,38 +394,6 @@ class VideoLibraryRepository(private val context: Context) {
             MediaScannerConnection.scanFile(context, scannedPaths.toTypedArray(), null, null)
         }
 
-        if (remainingVideos.isEmpty()) {
-            return@withContext MediaMutationOutcome.Success(directDeletedCount, "Deleted $directDeletedCount video(s)")
-        }
-
-        // 2. On Android 11+ without MANAGE_EXTERNAL_STORAGE, request All Files Access ONCE
-        // so future deletions proceed directly without triggering repeated OS consent popups
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R && !Environment.isExternalStorageManager()) {
-            return@withContext MediaMutationOutcome.NeedsAllFilesAccess("delete")
-        }
-
-        // 3. For remaining files, attempt MediaStore delete
-        val uris = remainingVideos.map { Uri.parse(it.uriString) }
-        var deletedCount = directDeletedCount
-        for (uri in uris) {
-            try {
-                val count = context.contentResolver.delete(uri, null, null)
-                if (count > 0) deletedCount++
-            } catch (sec: SecurityException) {
-                return@withContext if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-                    val pending = MediaStore.createDeleteRequest(context.contentResolver, uris)
-                    MediaMutationOutcome.NeedsPermission(pending.intentSender)
-                } else {
-                    createWritePermissionOutcome(sec, uris)
-                }
-            } catch (ex: Exception) {
-                return@withContext MediaMutationOutcome.Failure(ex.message ?: "Delete failed.")
-            }
-        }
-        if (deletedCount == 0 && Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-            val pending = MediaStore.createDeleteRequest(context.contentResolver, uris)
-            return@withContext MediaMutationOutcome.NeedsPermission(pending.intentSender)
-        }
         return@withContext MediaMutationOutcome.Success(deletedCount, "Deleted $deletedCount video(s)")
     }
 
