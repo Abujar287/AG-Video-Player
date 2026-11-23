@@ -82,6 +82,8 @@ interface LibraryBrowserScreenProps {
   onToggleGridView: () => void;
   onApplySort: (field: SortField, dir: SortDirection) => void;
   onOpenUpdateCheck: () => void;
+  onStartDownload: (release: import('../types/media').GitHubReleaseInfo) => void;
+  onCancelDownload: () => void;
   onDismissUpdateDialog: () => void;
   onSearchQueryChange: (q: string) => void;
   onFolderClick: (bucketId: string) => void;
@@ -640,6 +642,8 @@ export function LibraryBrowserScreen(props: LibraryBrowserScreenProps) {
           state={updateState}
           onDismiss={props.onDismissUpdateDialog}
           onRetryCheck={props.onOpenUpdateCheck}
+          onStartDownload={props.onStartDownload}
+          onCancelDownload={props.onCancelDownload}
         />
       )}
 

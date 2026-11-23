@@ -300,6 +300,8 @@ export default function App() {
         onToggleGridView={lib.toggleGridView}
         onApplySort={lib.setSortOption}
         onOpenUpdateCheck={() => void lib.openUpdateCheck()}
+        onStartDownload={(release) => void lib.startUpdateDownload(release)}
+        onCancelDownload={lib.cancelUpdateDownload}
         onDismissUpdateDialog={lib.dismissUpdateDialog}
         onSearchQueryChange={lib.setSearchQuery}
         onFolderClick={handleOpenFolder}

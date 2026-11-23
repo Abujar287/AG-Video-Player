@@ -196,6 +196,7 @@ export type UpdateUiState =
   | { status: 'idle' }
   | { status: 'checking' }
   | { status: 'available'; release: GitHubReleaseInfo }
+  | { status: 'downloading'; percent: number; bytesDownloaded: number; bytesTotal: number }
   | { status: 'up_to_date'; versionName: string }
   | { status: 'error'; message: string };
 

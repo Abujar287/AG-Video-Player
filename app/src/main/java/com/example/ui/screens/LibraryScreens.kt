@@ -191,7 +191,9 @@ fun LibraryBrowserScreen(
     onShowAllButtons: () -> Unit,
     onProgressBarStyleChange: (com.example.data.model.ProgressBarStyle) -> Unit,
     onStartDownload: (com.example.data.model.GitHubReleaseInfo) -> Unit,
-    onInstallUpdate: (String) -> Unit
+    onCancelDownload: () -> Unit,
+    onInstallUpdate: (String) -> Unit,
+    onOpenExternalDownloader: (com.example.data.model.GitHubReleaseInfo) -> Unit
 ) {
     val context = LocalContext.current
     val snackbarHostState = remember { SnackbarHostState() }
@@ -683,7 +685,9 @@ fun LibraryBrowserScreen(
             onDismiss = onDismissUpdateDialog,
             onRetryCheck = onOpenUpdateCheck,
             onStartDownload = onStartDownload,
-            onInstallUpdate = onInstallUpdate
+            onCancelDownload = onCancelDownload,
+            onInstallUpdate = onInstallUpdate,
+            onOpenExternalDownloader = onOpenExternalDownloader
         )
     }
 

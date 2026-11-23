@@ -20,6 +20,7 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -28,6 +29,9 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.text.font.FontWeight
 import androidx.core.content.ContextCompat
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.data.model.VideoItem
 import com.example.player.PlayerActivity
@@ -133,6 +137,19 @@ class MainActivity : ComponentActivity() {
                 intentSenderLauncher.launch(IntentSenderRequest.Builder(sender).build())
             }
 
+            val lifecycleOwner = LocalLifecycleOwner.current
+            DisposableEffect(lifecycleOwner) {
+                val observer = LifecycleEventObserver { _, event ->
+                    if (event == Lifecycle.Event.ON_RESUME) {
+                        vm.retryPendingInstallIfAllowed()
+                    }
+                }
+                lifecycleOwner.lifecycle.addObserver(observer)
+                onDispose {
+                    lifecycleOwner.lifecycle.removeObserver(observer)
+                }
+            }
+
             fun openPlayer(video: VideoItem, list: List<VideoItem>) {
                 val (entries, idx) = vm.buildPlaylistFor(video, list)
                 PlayerSessionManager.setPlaylist(entries, idx)
@@ -235,7 +252,9 @@ class MainActivity : ComponentActivity() {
                     onShowAllButtons = vm::showAllPlayerButtons,
                     onProgressBarStyleChange = vm::setProgressBarStyle,
                     onStartDownload = vm::startUpdateDownload,
-                    onInstallUpdate = vm::installUpdate
+                    onCancelDownload = vm::cancelUpdateDownload,
+                    onInstallUpdate = vm::installUpdate,
+                    onOpenExternalDownloader = vm::openExternalDownloader
                 )
 
                 if (showExitDialog) {

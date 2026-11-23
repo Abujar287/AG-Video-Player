@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   type BrowserDestination,
   type LibrarySnapshot,
@@ -29,7 +29,7 @@ import {
   moveVideoItems,
   renameVideoItem,
 } from '../repositories/videoLibraryRepository';
-import { checkForUpdate, getCurrentAppVersionLabel } from '../services/githubUpdater';
+import { checkForUpdate, downloadApkInBrowser, getCurrentAppVersionLabel } from '../services/githubUpdater';
 
 function filterAndSortVideos(
   raw: VideoItem[],
@@ -86,6 +86,8 @@ export function useLibraryState() {
   );
   const [updateState, setUpdateState] = useState<UpdateUiState>({ status: 'idle' });
   const [showUpdateDialog, setShowUpdateDialog] = useState(false);
+  const downloadAbortRef = useRef<AbortController | null>(null);
+  const lastReleaseRef = useRef<import('../types/media').GitHubReleaseInfo | null>(null);
 
   // Sync dark mode class on <html>
   useEffect(() => {
@@ -556,10 +558,62 @@ export function useLibraryState() {
   // GitHub Updates
   const openUpdateCheck = useCallback(async () => {
     setShowUpdateDialog(true);
-    setUpdateState({ status: 'checking' });
+    setUpdateState((prev) => (prev.status === 'downloading' ? prev : { status: 'checking' }));
+    if (updateState.status === 'downloading') return;
     const next = await checkForUpdate(preferences.githubRepoSlug);
+    if (next.status === 'available') {
+      lastReleaseRef.current = next.release;
+    }
     setUpdateState(next);
-  }, [preferences.githubRepoSlug]);
+  }, [preferences.githubRepoSlug, updateState.status]);
+
+  const startUpdateDownload = useCallback(async (release: import('../types/media').GitHubReleaseInfo) => {
+    lastReleaseRef.current = release;
+    downloadAbortRef.current?.abort();
+    const controller = new AbortController();
+    downloadAbortRef.current = controller;
+    setUpdateState({
+      status: 'downloading',
+      percent: 0,
+      bytesDownloaded: 0,
+      bytesTotal: release.apkSizeBytes,
+    });
+
+    const outcome = await downloadApkInBrowser(
+      release,
+      (bytesDownloaded, bytesTotal, percent) => {
+        setUpdateState({ status: 'downloading', percent, bytesDownloaded, bytesTotal });
+      },
+      controller.signal
+    );
+
+    if (outcome === 'aborted') {
+      return;
+    }
+
+    if (outcome === 'fallback_link') {
+      const a = document.createElement('a');
+      a.href = release.apkDownloadUrl;
+      a.download = release.apkFileName || 'AG Video Player.apk';
+      a.rel = 'noopener noreferrer';
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+    }
+    setShowUpdateDialog(false);
+    setUpdateState({ status: 'available', release });
+  }, []);
+
+  const cancelUpdateDownload = useCallback(() => {
+    downloadAbortRef.current?.abort();
+    downloadAbortRef.current = null;
+    setShowUpdateDialog(false);
+    if (lastReleaseRef.current) {
+      setUpdateState({ status: 'available', release: lastReleaseRef.current });
+    } else {
+      setUpdateState({ status: 'idle' });
+    }
+  }, []);
 
   const dismissUpdateDialog = useCallback(() => {
     setShowUpdateDialog(false);
@@ -627,6 +681,8 @@ export function useLibraryState() {
     setPlayerButtonVisible,
     showAllPlayerButtons,
     openUpdateCheck,
+    startUpdateDownload,
+    cancelUpdateDownload,
     dismissUpdateDialog,
   };
 }

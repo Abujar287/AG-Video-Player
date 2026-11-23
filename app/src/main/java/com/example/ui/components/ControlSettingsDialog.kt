@@ -321,7 +321,7 @@ fun ControlSettingsDialog(
                                             }
                                         }
                                         val rowSubtitle = if (tab == SettingsTab.UPDATE) {
-                                            "Version ${BuildConfig.VERSION_NAME}"
+                                            "Version ${currentVersionLabel.removePrefix("v").split(' ').firstOrNull().orEmpty().ifBlank { BuildConfig.VERSION_NAME }}"
                                         } else {
                                             tab.subtitle
                                         }
