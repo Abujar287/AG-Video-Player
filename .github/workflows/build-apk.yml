@@ -22,6 +22,11 @@ jobs:
     - name: Setup Gradle
       uses: gradle/actions/setup-gradle@v3
 
+    - name: Download Gradle Wrapper Jar
+      run: |
+        mkdir -p gradle/wrapper
+        curl -sL https://raw.githubusercontent.com/gradle/gradle/v8.12.0/gradle/wrapper/gradle-wrapper.jar -o gradle/wrapper/gradle-wrapper.jar || true
+
     - name: Build Release APK (v1.0.33)
       env:
         appVersionCode: "33"
