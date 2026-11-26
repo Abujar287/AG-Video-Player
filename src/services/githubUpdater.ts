@@ -15,26 +15,35 @@ export function isNewerVersion(
   remoteVersionName: string,
   remoteVersionCode: number | null
 ): boolean {
-  if (remoteVersionCode !== null) {
+  if (remoteVersionCode !== null && currentVersionCode > 0) {
     if (remoteVersionCode > currentVersionCode) return true;
     if (remoteVersionCode < currentVersionCode) return false;
   }
+
   const parseParts = (v: string) =>
-    v.split('.').map((p) => {
+    v.replace(/^v/i, '').split('.').map((p) => {
       const digits = p.replace(/\D/g, '');
       return digits ? parseInt(digits, 10) : 0;
     });
 
   const currParts = parseParts(currentVersionName);
   const remParts = parseParts(remoteVersionName);
-  const maxLen = Math.max(currParts.length, remParts.length);
 
-  for (let i = 0; i < maxLen; i++) {
-    const c = currParts[i] ?? 0;
-    const r = remParts[i] ?? 0;
-    if (r > c) return true;
-    if (r < c) return false;
-  }
+  const majorR = remParts[0] ?? 0;
+  const majorC = currParts[0] ?? 0;
+  if (majorR > majorC) return true;
+  if (majorR < majorC) return false;
+
+  const minorR = remParts[1] ?? 0;
+  const minorC = currParts[1] ?? 0;
+  if (minorR > minorC) return true;
+  if (minorR < minorC) return false;
+
+  const patchR = remParts[2] ?? 0;
+  const patchC = currParts[2] ?? 0;
+  if (patchR > patchC) return true;
+  if (patchR < patchC) return false;
+
   return false;
 }
 
@@ -48,20 +57,18 @@ function compareVersions(
     return codeA - codeB;
   }
   const parseParts = (v: string) =>
-    v.split('.').map((p) => {
+    v.replace(/^v/i, '').split('.').map((p) => {
       const digits = p.replace(/\D/g, '');
       return digits ? parseInt(digits, 10) : 0;
     });
 
   const partsA = parseParts(nameA);
   const partsB = parseParts(nameB);
-  const maxLen = Math.max(partsA.length, partsB.length);
 
-  for (let i = 0; i < maxLen; i++) {
-    const a = partsA[i] ?? 0;
-    const b = partsB[i] ?? 0;
-    if (a !== b) return a - b;
-  }
+  if (partsA[0] !== partsB[0]) return partsA[0] - partsB[0];
+  if (partsA[1] !== partsB[1]) return partsA[1] - partsB[1];
+  if (partsA[2] !== partsB[2]) return partsA[2] - partsB[2];
+
   return (codeA ?? 0) - (codeB ?? 0);
 }
 
@@ -166,6 +173,7 @@ export async function checkForUpdate(repoSlug: string): Promise<UpdateUiState> {
     }
 
     if (bestRelease) {
+      // STRICT CHECK: Only consider update available if remote version is strictly newer than current app version
       if (!isNewerVersion(APP_VERSION_NAME, APP_VERSION_CODE, bestRelease.versionName, bestRelease.versionCode)) {
         return { status: 'up_to_date', versionName: APP_VERSION_NAME };
       }
