@@ -76,7 +76,40 @@ interface StoredImportedVideo {
 }
 
 const objectUrlRegistry = new Map<string, string>();
-const metadataCache = new Map<string, { durationMs: number; width: number; height: number; sizeBytes: number }>();
+const BUNDLED_STATIC_METADATA: Record<
+  string,
+  { durationMs: number; width: number; height: number; sizeBytes: number }
+> = {
+  '/preview_videos/Downloads/Sample_Lecture_Clip.mp4': {
+    durationMs: 25000,
+    width: 480,
+    height: 270,
+    sizeBytes: 327828,
+  },
+  '/preview_videos/Movies/Cinema_Test_Reel.mp4': {
+    durationMs: 40000,
+    width: 480,
+    height: 270,
+    sizeBytes: 193983,
+  },
+  '/preview_videos/Movies/Neon_Horizon_Preview.mp4': {
+    durationMs: 30000,
+    width: 480,
+    height: 270,
+    sizeBytes: 145494,
+  },
+  '/preview_videos/Movies/Ocean_Pulse_Clip.mp4': {
+    durationMs: 35000,
+    width: 480,
+    height: 270,
+    sizeBytes: 170375,
+  },
+};
+
+const metadataCache = new Map<
+  string,
+  { durationMs: number; width: number; height: number; sizeBytes: number }
+>(Object.entries(BUNDLED_STATIC_METADATA));
 
 export function resolvePlayableUrl(uriString: string): string {
   return objectUrlRegistry.get(uriString) ?? uriString;

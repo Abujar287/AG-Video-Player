@@ -1,11 +1,79 @@
-import { useEffect, useState } from 'react';
+import { memo, useEffect, useState } from 'react';
 import { Film } from 'lucide-react';
 import { resolvePlayableUrl } from '../repositories/videoLibraryRepository';
 
-const thumbnailCache = new Map<string, string>();
-const MAX_CACHE_SIZE = 100;
+const BUNDLED_STATIC_THUMBS: Record<string, string> = {
+  '/preview_videos/Downloads/Sample_Lecture_Clip.mp4': '/preview_videos/Downloads/Sample_Lecture_Clip_thumb.jpg',
+  '/preview_videos/Movies/Cinema_Test_Reel.mp4': '/preview_videos/Movies/Cinema_Test_Reel_thumb.jpg',
+  '/preview_videos/Movies/Neon_Horizon_Preview.mp4': '/preview_videos/Movies/Neon_Horizon_Preview_thumb.jpg',
+  '/preview_videos/Movies/Ocean_Pulse_Clip.mp4': '/preview_videos/Movies/Ocean_Pulse_Clip_thumb.jpg',
+};
 
-function extractVideoThumbnail(srcUrl: string): Promise<string | null> {
+const thumbnailMemoryCache = new Map<string, string>();
+const inFlightPromises = new Map<string, Promise<string | null>>();
+const MAX_CACHE_SIZE = 150;
+
+// Initialize cache from session storage if available
+try {
+  const stored = sessionStorage.getItem('ag_thumb_cache_v1');
+  if (stored) {
+    const parsed = JSON.parse(stored) as Record<string, string>;
+    for (const [k, v] of Object.entries(parsed)) {
+      thumbnailMemoryCache.set(k, v);
+    }
+  }
+} catch {
+  // Ignore quota or session storage errors
+}
+
+function persistThumbToStorage(uri: string, dataUrl: string) {
+  thumbnailMemoryCache.set(uri, dataUrl);
+  if (thumbnailMemoryCache.size > MAX_CACHE_SIZE) {
+    const oldestKey = thumbnailMemoryCache.keys().next().value;
+    if (oldestKey) thumbnailMemoryCache.delete(oldestKey);
+  }
+  // Throttled background save
+  try {
+    const obj: Record<string, string> = {};
+    let count = 0;
+    for (const [k, v] of thumbnailMemoryCache.entries()) {
+      if (count++ > 30) break;
+      obj[k] = v;
+    }
+    sessionStorage.setItem('ag_thumb_cache_v1', JSON.stringify(obj));
+  } catch {
+    // Ignore storage quota
+  }
+}
+
+// Concurrency queue to protect mobile video hardware decoders (max 2 decoders at a time)
+let activeDecoderCount = 0;
+const decoderQueue: Array<() => void> = [];
+
+function acquireDecoderSlot(): Promise<void> {
+  if (activeDecoderCount < 2) {
+    activeDecoderCount++;
+    return Promise.resolve();
+  }
+  return new Promise((resolve) => {
+    decoderQueue.push(() => {
+      activeDecoderCount++;
+      resolve();
+    });
+  });
+}
+
+function releaseDecoderSlot(): void {
+  activeDecoderCount--;
+  const next = decoderQueue.shift();
+  if (next) {
+    next();
+  }
+}
+
+async function extractVideoThumbnail(srcUrl: string): Promise<string | null> {
+  await acquireDecoderSlot();
+
   return new Promise((resolve) => {
     const video = document.createElement('video');
     video.muted = true;
@@ -19,6 +87,7 @@ function extractVideoThumbnail(srcUrl: string): Promise<string | null> {
       video.onerror = null;
       video.removeAttribute('src');
       video.load();
+      releaseDecoderSlot();
     };
 
     const finish = (dataUrl: string | null) => {
@@ -28,12 +97,13 @@ function extractVideoThumbnail(srcUrl: string): Promise<string | null> {
       resolve(dataUrl);
     };
 
-    const timer = window.setTimeout(() => finish(null), 5000);
+    // Fast timeout of 3.5s to never block the UI
+    const timer = window.setTimeout(() => finish(null), 3500);
 
     video.onloadedmetadata = () => {
       const targetTime =
         Number.isFinite(video.duration) && video.duration > 0
-          ? Math.min(1.0, Math.max(0.1, video.duration * 0.25))
+          ? Math.min(1.0, Math.max(0.1, video.duration * 0.2))
           : 0.5;
       try {
         video.currentTime = targetTime;
@@ -78,32 +148,74 @@ function extractVideoThumbnail(srcUrl: string): Promise<string | null> {
   });
 }
 
+function getOrFetchThumbnail(uriString: string): Promise<string | null> {
+  // Static bundled preview check
+  if (BUNDLED_STATIC_THUMBS[uriString]) {
+    return Promise.resolve(BUNDLED_STATIC_THUMBS[uriString]);
+  }
+
+  // Memory cache check
+  const cached = thumbnailMemoryCache.get(uriString);
+  if (cached) {
+    return Promise.resolve(cached);
+  }
+
+  // In-flight request deduplication
+  const inFlight = inFlightPromises.get(uriString);
+  if (inFlight) {
+    return inFlight;
+  }
+
+  const playableUrl = resolvePlayableUrl(uriString);
+  const promise = extractVideoThumbnail(playableUrl)
+    .then((result) => {
+      if (result) {
+        persistThumbToStorage(uriString, result);
+      }
+      return result;
+    })
+    .finally(() => {
+      inFlightPromises.delete(uriString);
+    });
+
+  inFlightPromises.set(uriString, promise);
+  return promise;
+}
+
 interface VideoThumbnailProps {
   uriString: string;
   alt?: string;
   className?: string;
 }
 
-export function VideoThumbnail({ uriString, alt = '', className = '' }: VideoThumbnailProps) {
-  const [thumbUrl, setThumbUrl] = useState<string | null>(() => thumbnailCache.get(uriString) ?? null);
+export const VideoThumbnail = memo(function VideoThumbnail({
+  uriString,
+  alt = '',
+  className = '',
+}: VideoThumbnailProps) {
+  const [thumbUrl, setThumbUrl] = useState<string | null>(() => {
+    return BUNDLED_STATIC_THUMBS[uriString] ?? thumbnailMemoryCache.get(uriString) ?? null;
+  });
 
   useEffect(() => {
-    const cached = thumbnailCache.get(uriString);
+    // If already has static or cached thumb, use it instantly
+    const staticThumb = BUNDLED_STATIC_THUMBS[uriString];
+    if (staticThumb) {
+      setThumbUrl(staticThumb);
+      return;
+    }
+
+    const cached = thumbnailMemoryCache.get(uriString);
     if (cached) {
       setThumbUrl(cached);
       return;
     }
 
     let cancelled = false;
-    const playableUrl = resolvePlayableUrl(uriString);
-    void extractVideoThumbnail(playableUrl).then((dataUrl) => {
-      if (cancelled || !dataUrl) return;
-      if (thumbnailCache.size >= MAX_CACHE_SIZE) {
-        const oldestKey = thumbnailCache.keys().next().value;
-        if (oldestKey) thumbnailCache.delete(oldestKey);
+    void getOrFetchThumbnail(uriString).then((url) => {
+      if (!cancelled && url) {
+        setThumbUrl(url);
       }
-      thumbnailCache.set(uriString, dataUrl);
-      setThumbUrl(dataUrl);
     });
 
     return () => {
@@ -119,7 +231,8 @@ export function VideoThumbnail({ uriString, alt = '', className = '' }: VideoThu
         <img
           src={thumbUrl}
           alt={alt}
-          className="h-full w-full object-cover"
+          loading="lazy"
+          className="h-full w-full object-cover transition-opacity duration-200"
           draggable={false}
         />
       ) : (
@@ -127,4 +240,4 @@ export function VideoThumbnail({ uriString, alt = '', className = '' }: VideoThu
       )}
     </div>
   );
-}
+});
