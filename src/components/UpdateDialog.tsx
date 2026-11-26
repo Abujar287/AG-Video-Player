@@ -44,7 +44,14 @@ export function UpdateDialog({
         aria-modal="true"
         aria-label={title}
       >
-        <h2 className="text-base font-bold">{title}</h2>
+        <div className="flex flex-col items-center text-center">
+          <img
+            src="/icon.png"
+            alt="AG Video Player"
+            className="h-16 w-16 object-contain drop-shadow-md mb-2 select-none"
+          />
+          <h2 className="text-base font-bold">{title}</h2>
+        </div>
 
         <div className="mt-4">
           {(state.status === 'idle' || state.status === 'checking') && (

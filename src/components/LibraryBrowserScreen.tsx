@@ -315,7 +315,7 @@ export function LibraryBrowserScreen(props: LibraryBrowserScreenProps) {
                 <img
                   src="/icon.png"
                   alt="AG Video Player"
-                  className="h-[34px] w-[34px] shrink-0 rounded-lg object-cover"
+                  className="h-9 w-9 shrink-0 object-contain drop-shadow-sm select-none"
                 />
               )}
               <div className="min-w-0 flex-1">

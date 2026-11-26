@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Headphones, LogOut, Pause, Play, RefreshCw, X } from 'lucide-react';
+import { Headphones, Pause, Play, RefreshCw, X } from 'lucide-react';
 import type { PlaylistEntry, VideoItem } from './types/media';
 import { useLibraryState } from './hooks/useLibraryState';
 import { LibraryBrowserScreen } from './components/LibraryBrowserScreen';
@@ -423,9 +423,11 @@ export default function App() {
       {/* Exited View (if tab cannot be closed automatically) */}
       {hasExited && (
         <div className="fixed inset-0 z-50 flex flex-col items-center justify-center bg-[#0d1117] p-6 text-white">
-          <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-white/10 text-white mb-4">
-            <LogOut className="h-8 w-8 text-[var(--primary)]" />
-          </div>
+          <img
+            src="/icon.png"
+            alt="AG Video Player"
+            className="h-24 w-24 object-contain drop-shadow-xl mb-4 select-none"
+          />
           <h1 className="text-xl font-bold">AG Video Player Exited</h1>
           <p className="mt-2 text-sm text-[var(--text-muted)] text-center max-w-sm">
             You have exited the application. You can now safely close this window or tab.

@@ -513,8 +513,15 @@ export function ExitConfirmDialog({
         aria-modal="true"
         aria-label="Exit confirmation"
       >
-        <h2 className="text-base font-bold">Exit AG Video Player</h2>
-        <p className="mt-2 text-sm text-[var(--text-muted)]">
+        <div className="flex flex-col items-center text-center">
+          <img
+            src="/icon.png"
+            alt="AG Video Player"
+            className="h-14 w-14 object-contain drop-shadow-md mb-2 select-none"
+          />
+          <h2 className="text-base font-bold">Exit AG Video Player</h2>
+        </div>
+        <p className="mt-2 text-center text-sm text-[var(--text-muted)]">
           Are you sure you want to exit?
         </p>
         <div className="mt-5 flex justify-end gap-2">

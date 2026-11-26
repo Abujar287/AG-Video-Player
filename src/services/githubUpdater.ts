@@ -2,7 +2,8 @@ import type { GitHubReleaseInfo, UpdateUiState } from '../types/media';
 
 export const APP_VERSION_NAME = '1.0.0';
 export const APP_VERSION_CODE = 1;
-export const DEFAULT_GITHUB_REPO_SLUG = 'Abujar287/AG-Video-Player';
+export const DEFAULT_GITHUB_REPO_SLUG =
+  (import.meta.env.VITE_GITHUB_REPO_SLUG as string | undefined)?.trim() || 'Abujar287/AG-Video-Player';
 
 export function getCurrentAppVersionLabel(): string {
   return `v${APP_VERSION_NAME}`;

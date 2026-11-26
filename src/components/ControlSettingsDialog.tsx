@@ -251,8 +251,12 @@ export function ControlSettingsDialog({
               </p>
             )}
           </div>
-          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[var(--primary)]/15 text-[var(--primary)]">
-            <HeaderIcon className="h-5 w-5" />
+          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[var(--primary)]/15 text-[var(--primary)] overflow-hidden">
+            {activeTabMeta ? (
+              <HeaderIcon className="h-5 w-5" />
+            ) : (
+              <img src="/icon.png" alt="AG Video Player" className="h-8 w-8 object-contain" />
+            )}
           </div>
         </div>
       </header>
@@ -261,7 +265,23 @@ export function ControlSettingsDialog({
       <div className="flex-1 overflow-y-auto">
         <div className="mx-auto w-full max-w-3xl space-y-4 px-4 py-5 md:px-6">
           {activeTab === null && (
-            <div className="space-y-2.5">
+            <div className="space-y-4">
+              <div className="flex flex-col items-center justify-center rounded-3xl border border-[var(--outline)]/30 bg-gradient-to-b from-[var(--bg-surface-variant)]/60 to-[var(--bg-surface)] p-6 text-center shadow-sm">
+                <img
+                  src="/icon.png"
+                  alt="AG Video Player"
+                  className="h-24 w-24 object-contain drop-shadow-lg select-none"
+                />
+                <h3 className="mt-3 text-lg font-bold tracking-tight">AG Video Player</h3>
+                <p className="font-mono-label text-xs text-[var(--primary)] font-semibold mt-0.5">
+                  Version {currentVersionLabel.replace(/^v/i, '').split(' ')[0] || '1.0.0'}
+                </p>
+                <p className="mt-1 text-xs text-[var(--text-muted)] max-w-xs">
+                  Hardware-accelerated, lightweight media player with 200% audio boost, PiP and folder browsing.
+                </p>
+              </div>
+
+              <div className="space-y-2.5">
               {SETTINGS_TABS.map((tab) => {
                 const Icon = tab.icon;
                 const showNew = tab.id === 'UPDATE' && hasAvailableUpdate;
@@ -303,6 +323,7 @@ export function ControlSettingsDialog({
                   </button>
                 );
               })}
+              </div>
             </div>
           )}
 
