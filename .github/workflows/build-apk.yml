@@ -27,7 +27,9 @@ jobs:
         appVersionCode: "33"
         appVersionName: "1.0.33"
         githubRepoSlug: "Abujar287/AG-Video-Player"
-      run: ./gradlew assembleRelease --no-daemon
+      run: |
+        chmod +x ./gradlew
+        ./gradlew assembleRelease --no-daemon
 
     - name: Upload APK Artifact
       uses: actions/upload-artifact@v4
