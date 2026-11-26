@@ -1,3 +1,5 @@
+import com.google.gms.googleservices.GoogleServicesPlugin.MissingGoogleServicesStrategy
+
 plugins {
   alias(libs.plugins.android.application)
   alias(libs.plugins.kotlin.compose)
@@ -12,9 +14,9 @@ android {
 
   defaultConfig {
     val ciVersionCode = (project.findProperty("appVersionCode") as? String)
-      ?.toIntOrNull()?.takeIf { it > 0 } ?: 33
+      ?.toIntOrNull()?.takeIf { it > 0 } ?: 1
     val ciVersionName = (project.findProperty("appVersionName") as? String)
-      ?.takeIf { it.isNotBlank() } ?: "1.0.33"
+      ?.takeIf { it.isNotBlank() } ?: "1.0.0"
     val ciRepoSlug = (project.findProperty("githubRepoSlug") as? String)
       ?.takeIf { it.contains('/') }
       ?: System.getenv("GITHUB_REPOSITORY")?.takeIf { it.contains('/') }
@@ -28,12 +30,44 @@ android {
     buildConfigField("String", "GITHUB_REPO_SLUG", "\"$ciRepoSlug\"")
 
     testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+
+    ndk {
+      abiFilters += listOf("arm64-v8a", "armeabi-v7a")
+    }
+
+    androidResources {
+      localeFilters += listOf("en")
+    }
   }
 
   buildTypes {
     release {
-      isMinifyEnabled = false
+      isCrunchPngs = true
+      isMinifyEnabled = true
+      isShrinkResources = true
       proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
+
+      val keystorePath = System.getenv("KEYSTORE_PATH") ?: "${rootDir}/my-upload-key.jks"
+      val keystoreFile = file(keystorePath)
+      val storePass = System.getenv("STORE_PASSWORD")
+      val keyPass = System.getenv("KEY_PASSWORD")?.takeIf { it.isNotBlank() } ?: storePass
+      val customAlias = System.getenv("KEY_ALIAS")?.takeIf { it.isNotBlank() } ?: "upload"
+
+      signingConfig = if (keystoreFile.exists() && !storePass.isNullOrBlank()) {
+        signingConfigs.create("releaseCustom") {
+          storeFile = keystoreFile
+          storePassword = storePass
+          keyAlias = customAlias
+          keyPassword = keyPass
+          enableV1Signing = true
+          enableV2Signing = true
+        }
+      } else {
+        signingConfigs.getByName("debug")
+      }
+    }
+    debug {
+      signingConfig = signingConfigs.getByName("debug")
     }
   }
   compileOptions {
@@ -44,12 +78,100 @@ android {
     compose = true
     buildConfig = true
   }
+  testOptions { unitTests { isIncludeAndroidResources = true } }
+  dependenciesInfo {
+    includeInApk = false
+    includeInBundle = false
+  }
+  packaging {
+    jniLibs {
+      useLegacyPackaging = true
+    }
+    dex {
+      useLegacyPackaging = true
+    }
+    resources {
+      excludes += listOf(
+        "META-INF/DEPENDENCIES",
+        "META-INF/LICENSE",
+        "META-INF/LICENSE.txt",
+        "META-INF/license.txt",
+        "META-INF/NOTICE",
+        "META-INF/NOTICE.txt",
+        "META-INF/notice.txt",
+        "META-INF/ASL2.0",
+        "META-INF/*.kotlin_module",
+        "META-INF/*.version",
+        "META-INF/{AL2.0,LGPL2.1}",
+        "META-INF/INDEX.LIST",
+        "META-INF/maven/**",
+        "META-INF/proguard/**",
+        "META-INF/com.android.tools/**",
+        "DebugProbesKt.bin",
+        "kotlin-tooling-metadata.json",
+        "**/*.proto"
+      )
+    }
+  }
 }
+
+base {
+  archivesName.set("AG Video Player")
+}
+
+tasks.register<Copy>("copyAgVideoPlayerApk") {
+  from(layout.buildDirectory.dir("outputs/apk/release"))
+  from(layout.buildDirectory.dir("outputs/apk/debug"))
+  into(layout.buildDirectory.dir("export"))
+  include("*.apk")
+  rename { "AG Video Player.apk" }
+  duplicatesStrategy = DuplicatesStrategy.INCLUDE
+}
+
+tasks.matching { it.name == "assembleDebug" || it.name == "assembleRelease" || it.name == "assemble" }.configureEach {
+  finalizedBy("copyAgVideoPlayerApk")
+}
+
+secrets {
+  propertiesFileName = ".env"
+  defaultPropertiesFileName = ".env.example"
+  ignoreList.add("FIREBASE_APPCHECK_DEBUG_TOKEN")
+  ignoreList.add("GITHUB_REPO_SLUG")
+}
+
+googleServices { missingGoogleServicesStrategy = MissingGoogleServicesStrategy.WARN }
 
 dependencies {
   implementation(platform(libs.androidx.compose.bom))
   implementation(libs.androidx.activity.compose)
+  implementation(libs.androidx.compose.material.icons.core)
+  implementation(libs.androidx.compose.material.icons.extended)
   implementation(libs.androidx.compose.material3)
   implementation(libs.androidx.compose.ui)
+  implementation(libs.androidx.compose.ui.graphics)
   implementation(libs.androidx.core.ktx)
+  implementation(libs.androidx.datastore.preferences)
+  implementation(libs.androidx.lifecycle.runtime.compose)
+  implementation(libs.androidx.lifecycle.runtime.ktx)
+  implementation(libs.androidx.lifecycle.viewmodel.compose)
+  implementation(libs.androidx.room.ktx)
+  implementation(libs.androidx.room.runtime)
+  ksp(libs.androidx.room.compiler)
+  implementation(libs.androidx.media3.exoplayer)
+  implementation(libs.androidx.media3.session)
+  implementation(libs.androidx.media3.ui)
+  implementation(libs.androidx.media3.common)
+  implementation(libs.kotlinx.coroutines.android)
+  implementation(libs.kotlinx.coroutines.core)
+
+  testImplementation(libs.junit)
+  testImplementation(libs.androidx.junit)
+  testImplementation(libs.androidx.core)
+  testImplementation(libs.kotlinx.coroutines.test)
+  testImplementation(libs.robolectric)
+  testImplementation(libs.androidx.compose.ui.test.junit4)
+
+  debugImplementation(libs.androidx.compose.ui.tooling)
+  debugImplementation(libs.androidx.compose.ui.tooling.preview)
+  debugImplementation(libs.androidx.compose.ui.test.manifest)
 }
