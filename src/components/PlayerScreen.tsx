@@ -198,6 +198,7 @@ export function PlayerScreen({
     startVolume: number;
     moved: boolean;
     isTopEdge: boolean;
+    isBottomEdge: boolean;
   }>({
     active: false,
     pointerId: null,
@@ -210,6 +211,7 @@ export function PlayerScreen({
     startVolume: 100,
     moved: false,
     isTopEdge: false,
+    isBottomEdge: false,
   });
 
   const singleTapTimerRef = useRef<number | null>(null);
@@ -932,8 +934,12 @@ export function PlayerScreen({
 
     const rect = containerRef.current?.getBoundingClientRect();
     const topOffset = rect ? e.clientY - rect.top : e.clientY;
+    const containerHeight = rect?.height ?? window.innerHeight;
+    const bottomOffset = containerHeight - topOffset;
     // Top 60px reserved for system notification pull-down / status bar gestures
     const isTopEdge = topOffset <= 60;
+    // Bottom 60px reserved for system navigation bar pull-up gestures (back/home/recents)
+    const isBottomEdge = bottomOffset <= 60;
 
     gestureRef.current = {
       active: true,
@@ -947,6 +953,7 @@ export function PlayerScreen({
       startVolume: volumePercent,
       moved: false,
       isTopEdge,
+      isBottomEdge,
     };
   };
 
@@ -1004,6 +1011,12 @@ export function PlayerScreen({
         // Swiping down from the very top edge is the system notification shade gesture!
         // Do NOT engage volume or brightness gesture so notification panel can be opened cleanly.
         if (g.isTopEdge && dyTotal > 0) {
+          return;
+        }
+
+        // Swiping up from the very bottom edge is the system navigation bar gesture (home/back/recents)!
+        // Do NOT engage volume or brightness gesture so navigation keys can be opened cleanly.
+        if (g.isBottomEdge && dyTotal < 0) {
           return;
         }
 

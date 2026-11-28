@@ -339,6 +339,8 @@ fun PlayerOverlay(
 
                         val topEdgeZonePx = (boxSize.height * 0.10f).coerceAtLeast(64f)
                         val isStartedFromTopEdge = startPos.y <= topEdgeZonePx
+                        val bottomEdgeZonePx = (boxSize.height * 0.10f).coerceAtLeast(64f)
+                        val isStartedFromBottomEdge = startPos.y >= (boxSize.height - bottomEdgeZonePx)
 
                         if (gestureDragMode == DragMode.NONE) {
                             if (abs(accumX) > 22f && abs(accumX) > abs(accumY) * 1.15f) {
@@ -351,6 +353,11 @@ fun PlayerOverlay(
                                 // If touch started at the top edge and dragging downwards,
                                 // allow Android system notification shade to open without altering volume/brightness!
                                 if (isStartedFromTopEdge && accumY > 0f) {
+                                    continue
+                                }
+                                // If touch started at the bottom edge and dragging upwards,
+                                // allow Android system navigation bar / gesture keys to open without altering volume/brightness!
+                                if (isStartedFromBottomEdge && accumY < 0f) {
                                     continue
                                 }
                                 gestureDragMode = if (startPos.x < boxSize.width / 2f) {
