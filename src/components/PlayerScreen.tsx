@@ -1,6 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ArrowLeft,
+  Battery,
+  BatteryCharging,
+  BatteryMedium,
+  BatteryWarning,
   Captions,
   Check,
   Cpu,
@@ -129,6 +133,54 @@ export function PlayerScreen({
   const [isPinching, setIsPinching] = useState(false);
   const [isInPip, setIsInPip] = useState(false);
 
+  // Duration toggle: false = show total duration, true = show remaining duration
+  const [showRemainingDuration, setShowRemainingDuration] = useState(false);
+
+  // Device Battery state
+  const [battery, setBattery] = useState<{ level: number; charging: boolean }>({
+    level: 85,
+    charging: false,
+  });
+
+  useEffect(() => {
+    let batteryManager: any = null;
+    let isMounted = true;
+
+    const handleBatteryUpdate = (bm: any) => {
+      if (!isMounted) return;
+      const lvl = Math.round((bm.level ?? 0.85) * 100);
+      const chg = Boolean(bm.charging);
+      setBattery({ level: lvl, charging: chg });
+    };
+
+    if (typeof navigator !== 'undefined' && 'getBattery' in navigator) {
+      (navigator as any)
+        .getBattery()
+        .then((bm: any) => {
+          if (!isMounted) return;
+          batteryManager = bm;
+          handleBatteryUpdate(bm);
+          bm.addEventListener('levelchange', () => handleBatteryUpdate(bm));
+          bm.addEventListener('chargingchange', () => handleBatteryUpdate(bm));
+        })
+        .catch(() => {
+          // Keep default if restricted
+        });
+    }
+
+    return () => {
+      isMounted = false;
+      if (batteryManager) {
+        try {
+          batteryManager.removeEventListener('levelchange', () => handleBatteryUpdate(batteryManager));
+          batteryManager.removeEventListener('chargingchange', () => handleBatteryUpdate(batteryManager));
+        } catch {
+          // ignore
+        }
+      }
+    };
+  }, []);
+
   // Gesture HUD state
   const [dragMode, setDragMode] = useState<DragMode>('NONE');
   const [previewSeekMs, setPreviewSeekMs] = useState(0);
@@ -145,6 +197,7 @@ export function PlayerScreen({
     startBrightness: number;
     startVolume: number;
     moved: boolean;
+    isTopEdge: boolean;
   }>({
     active: false,
     pointerId: null,
@@ -156,6 +209,7 @@ export function PlayerScreen({
     startBrightness: 100,
     startVolume: 100,
     moved: false,
+    isTopEdge: false,
   });
 
   const singleTapTimerRef = useRef<number | null>(null);
@@ -657,9 +711,14 @@ export function PlayerScreen({
     if (!nextSw && volumePercent > 100) {
       applyVolume(100, false);
     }
+    // Ensure video continues playing seamlessly if it was playing
+    const video = videoRef.current;
+    if (video && isPlaying && video.paused) {
+      void video.play().catch(() => {});
+    }
     onSetDefaultSoftwareDecoder(nextSw);
-    setStatusBanner(nextSw ? 'Switched to SW Decoder' : 'Switched to HW Decoder');
-  }, [useSoftwareDecoder, volumePercent, applyVolume, onSetDefaultSoftwareDecoder]);
+    setStatusBanner(nextSw ? 'Switched to SW Decoder (Audio Boost 200%)' : 'Switched to HW Decoder');
+  }, [useSoftwareDecoder, volumePercent, isPlaying, applyVolume, onSetDefaultSoftwareDecoder]);
 
   const handleToggleRotation = useCallback(async () => {
     const next = !isRotated;
@@ -871,6 +930,11 @@ export function PlayerScreen({
       return;
     }
 
+    const rect = containerRef.current?.getBoundingClientRect();
+    const topOffset = rect ? e.clientY - rect.top : e.clientY;
+    // Top 60px reserved for system notification pull-down / status bar gestures
+    const isTopEdge = topOffset <= 60;
+
     gestureRef.current = {
       active: true,
       pointerId: e.pointerId,
@@ -882,6 +946,7 @@ export function PlayerScreen({
       startBrightness: brightnessPercent,
       startVolume: volumePercent,
       moved: false,
+      isTopEdge,
     };
   };
 
@@ -936,6 +1001,12 @@ export function PlayerScreen({
         Math.abs(dyTotal) > 14 &&
         Math.abs(dyTotal) > Math.abs(dx) * 1.15
       ) {
+        // Swiping down from the very top edge is the system notification shade gesture!
+        // Do NOT engage volume or brightness gesture so notification panel can be opened cleanly.
+        if (g.isTopEdge && dyTotal > 0) {
+          return;
+        }
+
         const isLeft = g.startX - (rect?.left ?? 0) < width / 2;
         g.mode = isLeft ? 'BRIGHTNESS' : 'VOLUME';
         setDragMode(g.mode);
@@ -1178,6 +1249,22 @@ export function PlayerScreen({
             <h1 className="min-w-0 flex-1 truncate text-[15px] font-semibold">
               {currentEntry?.title ?? 'Video'}
             </h1>
+            {/* Battery Status Indicator */}
+            <div
+              className="flex shrink-0 items-center gap-1.5 rounded-lg bg-black/40 px-2 py-1 text-[11px] font-medium text-white/90 border border-white/10 tabular-nums select-none"
+              title={`Battery: ${battery.level}%${battery.charging ? ' (Charging)' : ''}`}
+            >
+              {battery.charging ? (
+                <BatteryCharging className="h-3.5 w-3.5 text-emerald-400" />
+              ) : battery.level <= 20 ? (
+                <BatteryWarning className="h-3.5 w-3.5 text-rose-400" />
+              ) : battery.level <= 50 ? (
+                <BatteryMedium className="h-3.5 w-3.5 text-amber-400" />
+              ) : (
+                <Battery className="h-3.5 w-3.5 text-emerald-400" />
+              )}
+              <span className="font-mono-label">{battery.level}%</span>
+            </div>
             {useSoftwareDecoder && volumePercent > 100 && (
               <span className="shrink-0 rounded-md bg-[var(--boost-orange)]/25 px-2 py-1 text-[11px] font-bold text-[var(--boost-orange)] tabular-nums">
                 BOOST {volumePercent}%
@@ -1340,9 +1427,17 @@ export function PlayerScreen({
               </div>
             )}
 
-            <span className="font-mono-label min-w-12 shrink-0 text-right text-[11px] text-white/85 tabular-nums">
-              {formatDuration(durationMs)}
-            </span>
+            <button
+              type="button"
+              onClick={() => setShowRemainingDuration((prev) => !prev)}
+              aria-label={showRemainingDuration ? 'Show full duration' : 'Show remaining duration'}
+              title="Click to toggle remaining / total duration"
+              className="font-mono-label min-w-14 shrink-0 text-right text-[11px] text-white/85 hover:text-white transition-colors cursor-pointer tabular-nums select-none hover:bg-white/10 active:scale-95 px-1 py-0.5 rounded"
+            >
+              {showRemainingDuration
+                ? `-${formatDuration(Math.max(0, durationMs - activePos))}`
+                : formatDuration(durationMs)}
+            </button>
           </div>
 
           {/* Primary Transport Row */}

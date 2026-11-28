@@ -32,10 +32,18 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import android.content.BroadcastReceiver
+import android.content.Context
+import android.content.Intent
+import android.content.IntentFilter
+import android.os.BatteryManager
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.automirrored.rounded.VolumeOff
 import androidx.compose.material.icons.automirrored.rounded.VolumeUp
+import androidx.compose.material.icons.rounded.BatteryAlert
+import androidx.compose.material.icons.rounded.BatteryChargingFull
+import androidx.compose.material.icons.rounded.BatteryFull
 import androidx.compose.material.icons.rounded.BrightnessHigh
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.FileOpen
@@ -66,6 +74,7 @@ import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
@@ -76,6 +85,7 @@ import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -187,6 +197,38 @@ fun PlayerOverlay(
     var scrubMs by remember { mutableLongStateOf(0L) }
     var isPinching by remember { mutableStateOf(false) }
     var pinchDisplayScale by remember { mutableFloatStateOf(quickZoomScale) }
+    var showRemainingDuration by remember { mutableStateOf(false) }
+
+    val context = LocalContext.current
+    var batteryLevel by remember {
+        val bm = context.getSystemService(Context.BATTERY_SERVICE) as? BatteryManager
+        val cur = bm?.getIntProperty(BatteryManager.BATTERY_PROPERTY_CAPACITY) ?: 85
+        mutableIntStateOf(if (cur in 0..100) cur else 85)
+    }
+    var isBatteryCharging by remember { mutableStateOf(false) }
+
+    DisposableEffect(context) {
+        val receiver = object : BroadcastReceiver() {
+            override fun onReceive(c: Context?, intent: Intent?) {
+                if (intent?.action == Intent.ACTION_BATTERY_CHANGED) {
+                    val level = intent.getIntExtra(BatteryManager.EXTRA_LEVEL, -1)
+                    val scale = intent.getIntExtra(BatteryManager.EXTRA_SCALE, -1)
+                    val status = intent.getIntExtra(BatteryManager.EXTRA_STATUS, -1)
+                    if (level >= 0 && scale > 0) {
+                        batteryLevel = (level * 100) / scale
+                    }
+                    isBatteryCharging = status == BatteryManager.BATTERY_STATUS_CHARGING ||
+                            status == BatteryManager.BATTERY_STATUS_FULL
+                }
+            }
+        }
+        context.registerReceiver(receiver, IntentFilter(Intent.ACTION_BATTERY_CHANGED))
+        onDispose {
+            try {
+                context.unregisterReceiver(receiver)
+            } catch (_: Exception) {}
+        }
+    }
 
     val allTopTools = remember(preferences.hiddenButtons) {
         buildList {
@@ -295,6 +337,9 @@ fun PlayerOverlay(
                         accumX += dx
                         accumY += dy
 
+                        val topEdgeZonePx = (boxSize.height * 0.10f).coerceAtLeast(64f)
+                        val isStartedFromTopEdge = startPos.y <= topEdgeZonePx
+
                         if (gestureDragMode == DragMode.NONE) {
                             if (abs(accumX) > 22f && abs(accumX) > abs(accumY) * 1.15f) {
                                 gestureDragMode = DragMode.SEEK
@@ -303,6 +348,11 @@ fun PlayerOverlay(
                                 abs(accumY) > 18f &&
                                 abs(accumY) > abs(accumX) * 1.15f
                             ) {
+                                // If touch started at the top edge and dragging downwards,
+                                // allow Android system notification shade to open without altering volume/brightness!
+                                if (isStartedFromTopEdge && accumY > 0f) {
+                                    continue
+                                }
                                 gestureDragMode = if (startPos.x < boxSize.width / 2f) {
                                     DragMode.BRIGHTNESS
                                 } else {
@@ -435,6 +485,34 @@ fun PlayerOverlay(
                             )
                             Spacer(Modifier.width(6.dp))
                         }
+                        // Battery indicator
+                        Row(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(8.dp))
+                                .background(Color.Black.copy(alpha = 0.35f))
+                                .border(1.dp, Color.White.copy(alpha = 0.12f), RoundedCornerShape(8.dp))
+                                .padding(horizontal = 7.dp, vertical = 5.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            Icon(
+                                imageVector = if (isBatteryCharging) Icons.Rounded.BatteryChargingFull
+                                else if (batteryLevel <= 20) Icons.Rounded.BatteryAlert
+                                else Icons.Rounded.BatteryFull,
+                                contentDescription = "Battery",
+                                tint = if (isBatteryCharging) Color(0xFF34D399)
+                                else if (batteryLevel <= 20) Color(0xFFEF4444)
+                                else Color.White.copy(alpha = 0.85f),
+                                modifier = Modifier.size(13.dp)
+                            )
+                            Text(
+                                text = "$batteryLevel%",
+                                color = Color.White.copy(alpha = 0.9f),
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                        }
+                        Spacer(Modifier.width(6.dp))
                         if (preferences.isButtonVisible(PlayerControlButton.DECODER)) {
                             Row(
                                 modifier = Modifier
@@ -625,13 +703,22 @@ fun PlayerOverlay(
                             )
                         }
                         Text(
-                            text = FormatUtils.formatDuration(durationMs),
+                            text = if (showRemainingDuration) {
+                                val remaining = (durationMs - activePos).coerceAtLeast(0L)
+                                "-${FormatUtils.formatDuration(remaining)}"
+                            } else {
+                                FormatUtils.formatDuration(durationMs)
+                            },
                             color = Color.White.copy(alpha = 0.85f),
                             fontSize = 11.sp,
                             maxLines = 1,
                             softWrap = false,
                             textAlign = TextAlign.End,
-                            modifier = Modifier.widthIn(min = 46.dp)
+                            modifier = Modifier
+                                .widthIn(min = 52.dp)
+                                .clip(RoundedCornerShape(4.dp))
+                                .clickable { showRemainingDuration = !showRemainingDuration }
+                                .padding(horizontal = 4.dp, vertical = 2.dp)
                         )
                     }
 

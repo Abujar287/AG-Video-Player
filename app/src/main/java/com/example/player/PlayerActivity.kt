@@ -271,7 +271,7 @@ class PlayerActivity : ComponentActivity() {
 
             onSubtitleAddedBanner = { msg -> statusBanner = msg }
 
-            fun rebuildPlayer(software: Boolean, seekPosMs: Long = -1L) {
+            fun rebuildPlayer(software: Boolean, seekPosMs: Long = -1L, autoPlay: Boolean = true) {
                 mediaSession?.release()
                 mediaSession = null
                 exoPlayer?.release()
@@ -324,9 +324,10 @@ class PlayerActivity : ComponentActivity() {
                     player.repeatMode = repeatMode
                     player.playbackParameters = PlaybackParameters(playbackSpeed)
                     player.prepare()
-                    val granted = requestAppAudioFocus()
-                    player.playWhenReady = granted
-                    updateMediaNotification(playingNow = granted)
+                    val granted = if (autoPlay) requestAppAudioFocus() else false
+                    player.playWhenReady = autoPlay && granted
+                    isPlaying = autoPlay && granted
+                    updateMediaNotification(playingNow = autoPlay && granted)
                 }
 
                 player.addListener(object : Player.Listener {
@@ -649,8 +650,9 @@ class PlayerActivity : ComponentActivity() {
                                 if (!nextSw && volumePercent > 100) {
                                     applyVolume(100)
                                 }
+                                val wasPlaying = exoPlayer?.isPlaying == true || exoPlayer?.playWhenReady == true
                                 val pos = exoPlayer?.currentPosition ?: 0L
-                                rebuildPlayer(nextSw, pos)
+                                rebuildPlayer(nextSw, pos, autoPlay = wasPlaying)
                                 lifecycleScope.launch { prefsRepo.setDefaultSoftwareDecoder(nextSw) }
                                 statusBanner = if (nextSw) "Switched to SW Decoder" else "Switched to HW Decoder"
                             },
